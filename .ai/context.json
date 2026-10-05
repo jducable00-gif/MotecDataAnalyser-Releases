@@ -1,0 +1,72 @@
+# Project Context: Motec Data Analyser (AMS2)
+
+## 🎯 Mission Statement
+Build an intelligent driving assistant for Automobilista 2 that correlates vehicle setup constraints (`.cdf` files), current session settings (Shared Memory), and real-time performance data (Motec Telemetry) to provide actionable tuning recommendations.
+
+---
+
+## 🏗️ System Architecture
+
+The application follows a three-layer architecture designed to separate theoretical limits from physical reality:
+
+### 1. Knowledge Base Layer (Theory)
+*   **Data Source**: `.cdf` files parsed via `scripts/build_vehicles_db.py`.
+*   **Format**: `data/vehicles_db.json`.
+*   **Content**: Vehicle-specific constraints including parameter names, min/max limits, step increments, and default values.
+*   **Role**: Provides the "Rules of Engagement" for all recommendations.
+
+### 2. Session Snapshot Layer (Intent)
+*   **Data Source**: AMS2 Shared Memory (Version 14).
+*   **Mechanism**: `Ams2LiveCapture` reads memory frames, validating sequence numbers to ensure data integrity.
+*   **Content**: The exact configuration the driver has selected for the current session.
+*   **Role**: Establishes the baseline from which changes are proposed.
+
+### 3. Telemetry Analysis Layer (Reality)
+*   **Data Source**: Motec Data (.csv or live stream).
+*   **Mechanism**: `MotecToCSV` and telemetry parsing logic.
+*   **Content**: High-frequency sensor data (G-forces, suspension travel, tyre temps, etc.).
+*   **Role**: Detects performance anomalies that trigger the recommendation engine.
+
+---
+
+## 🛠️ Technical Stack
+
+| Component | Technology | Purpose |
+| :--- | :--- | :--- |
+| **Core Application** | C++ (Embarcadero C++Builder) | High-performance data processing and UI. |
+| **Data Consolidation** | Python | Automating the conversion of CDF to JSON. |
+| **Database Format** | JSON | Lightweight, human-readable vehicle constraints. |
+| **Communication** | Shared Memory (AMS2) | Real-time interface with the simulator. |
+| **Telemetry Interface** | Motec Data Files | Historical and real-time performance analysis. |
+
+---
+
+## 🚀 Development Roadmap
+
+### Phase 1: Foundations (COMPLETED ✅)
+*   [x] CDF parsing logic development.
+*   [x] Python consolidation script creation & testing.
+*   [x] Knowledge Base structure (`vehicles_db.json`) established.
+*   [x] Shared Memory interface implementation (`Ams2LiveCapture`).
+
+### Phase 2: Snapshotting (IN PROGRESS 🚧)
+*   [ ] Implement `VehicleDatabase` class in C++ to load and query `vehicles_db.json`.
+*   [ ] Create a "Session Manager" to capture the initial state of all settings from Shared Memory at session start.
+
+### Phase 3: Recommendation Engine (PLANNED 📅)
+*   [ ] Implement correlation logic using proxy analysis (e.g., Aero $\leftrightarrow$ Suspension).
+*   [ ] Develop rule-based engine that respects `min`/`max`/`step` constraints.
+
+### Phase 4: Reporting & UI (PLANNED 📅)
+*   [ ] Build a dashboard to visualize "Current vs. Recommended" settings.
+*   [ ] Generate post-session diagnostic reports.
+
+---
+
+## 🧠 Key Principles for Developers
+
+1.  **Respect the Step**: Never suggest a value that isn't an integer multiple of the parameter's `step`.
+2.  **Bounds Awareness**: Every recommendation must be validated against the `min` and `max` values in the JSON.
+3.  **Proxy Logic**: When direct telemetry is missing (e.g., Aero), use physical proxies (Suspension/G-force) to infer state.
+4.  **Snapshot vs. Default**: Always compare performance against what the driver *actually* set, not what the car came with by default.
+

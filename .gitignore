@@ -1,0 +1,20 @@
+# Build output
+Win32/
+__history/
+__recovery/
+
+# IDE / project local files
+*.tds
+*.local
+*.identcache
+
+# Telemetry data and reference files
+data/
+
+# Python virtual environment
+.venv/
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
