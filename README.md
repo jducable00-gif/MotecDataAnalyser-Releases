@@ -170,3 +170,5 @@ Copy it to one of those locations and rename without `.example`. If no rules fil
 ```
 
 See `AGENTS.md` for the full toolchain (Embarcadero C++ Builder 12 / Clang VCL), command-line build details, and packaging notes. Do **not** retarget to MSVC/MinGW/g++.
+#   M o t e c D a t a A n a l y s e r  
+ 
