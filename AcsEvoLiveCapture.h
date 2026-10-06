@@ -50,5 +50,4 @@ bool AcsEvoIsInPits(const SPageFileGraphicEvo& gfx);
 
 // Detect a lap change via the npos wrap (0.0 -> 1.0 per lap).
 // Returns true when the position wrapped from near the end to near the start.
-bool AcsEvoDetectLapChange(const SPageFileGraphicEvo& prev,
-                           const SPageFileGraphicEvo& curr);
+

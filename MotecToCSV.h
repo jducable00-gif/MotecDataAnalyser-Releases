@@ -1,11 +1,9 @@
 //---------------------------------------------------------------------------
 // MotecToCSV.h — Décodage binaire des fichiers LD/LDX MoTeC.
 //
-// Déclare la structure MotecColumnInfo (une colonne décodée) et les fonctions
-// DecodeMotecLd (lecture des blocs de données) et ExportMotecToCsv (export CSV).
+// Déclare la structure MotecColumnInfo (une colonne décodée) et la fonction
+// DecodeMotecLd (lecture des blocs de données).
 // L'analyse elle-même (parseMotecLd) réutilise DecodeMotecLd.
-//---------------------------------------------------------------------------
-
 //---------------------------------------------------------------------------
 
 #ifndef MotecToCSVH
@@ -31,23 +29,10 @@ struct MotecColumnInfo
     std::string trackName;    // header offset 350, max 128 chars
 };
 
-extern std::string MotecExePath;
-
-std::string GetMotecExePath();
-
 bool DecodeMotecLd(const std::string& inputFile,
                    std::vector<MotecColumnInfo>& columns,
                    std::vector<double>& beaconMarkers,
                    std::string& errorMessage,
                    ExportProgressCallback progressCallback = NULL);
-
-bool ExportMotecToCsv(const std::string& motecExePath,
-					  const std::string& inputFile,
-					  const std::string& outputCsv,
-					  ExportProgressCallback progressCallback = NULL);
-
-const std::string& GetMotecExportError();
-
-std::string DetectMotecRegistry();
 
 #endif

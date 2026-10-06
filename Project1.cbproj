@@ -207,13 +207,6 @@
         <CppCompile Include="analyze_motec_setup.cpp">
             <BuildOrder>3</BuildOrder>
         </CppCompile>
-        <CppCompile Include="LapDiagnostics.cpp">
-            <DependentOn>LapDiagnostics.h</DependentOn>
-            <BuildOrder>10</BuildOrder>
-        </CppCompile>
-        <None Include="LapDiagnostics.h">
-            <BuildOrder>6</BuildOrder>
-        </None>
         <CppCompile Include="LapReportGenerator.cpp">
             <DependentOn>LapReportGenerator.h</DependentOn>
             <BuildOrder>12</BuildOrder>

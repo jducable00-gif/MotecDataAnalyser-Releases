@@ -92,7 +92,6 @@ public:
     // Restaure les valeurs par défaut intégrées (règles + alias).
     void resetToDefaults();
 
-    const RuleSymptom* findRule(const std::string& symptom) const;
     const std::vector<RuleSymptom>& rules() const { return m_rules; }
     const std::vector<ChannelMapping>& channelMappings() const { return m_channelMappings; }
 
@@ -108,10 +107,6 @@ public:
     // Résout un nom de canal brut (raw) vers son alias canonique via les mappings JSON.
     bool resolveRawToAlias(ChannelProfile profile, MappingSource source,
                            const std::string& rawName, std::string& outAlias) const;
-
-    // Résout un alias applicatif vers un canal d'une source et d'un profil.
-    bool resolveChannelMapping(ChannelProfile profile, MappingSource source,
-                               const std::string& alias, ChannelMapping& outMapping) const;
 
 private:
     RuleConfig();

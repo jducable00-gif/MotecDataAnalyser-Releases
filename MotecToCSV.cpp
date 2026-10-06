@@ -1,13 +1,11 @@
-//---------------------------------------------------------------------------
-// MotecToCSV.cpp — Décodage du format binaire LD MoTeC.
+﻿//---------------------------------------------------------------------------
+// MotecToCSV.cpp - Decodage du format binaire LD MoTeC.
 //
-// Lit le fichier .ld (enchaînement de blocs pointés par l'en-tête), extrait
-// chaque canal (nom, unité, fréquence, valeurs) et les marqueurs de balises
-// depuis le fichier .ldx. ConvertMotecLdToCsv ré-écrit le tout au format CSV.
+// Lit le fichier .ld (enchainement de blocs pointes par l'en-tete), extrait
+// chaque canal (nom, unite, frequence, valeurs) et les marqueurs de balises
+// depuis le fichier .ldx.
 //
-// NB : le décodage LD est indépendant de l'analyse CSV (voir AGENTS.md).
-//---------------------------------------------------------------------------
-
+// NB : le decodage LD est independant de l'analyse CSV (voir AGENTS.md).
 //---------------------------------------------------------------------------
 
 #pragma hdrstop
@@ -15,47 +13,15 @@
 #include "MotecToCSV.h"
 //---------------------------------------------------------------------------
 #pragma package(smart_init)
-#include <windows.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <cstdlib>
 #include <fstream>
-#include <iomanip>
 #include <iterator>
 #include <sstream>
 #include <string>
 #include <vector>
-
-// Classe RAII pour gérer les handles Windows
-class RegistryKeyHandle {
-public:
-    explicit RegistryKeyHandle(HKEY key = NULL) : m_key(key) {}
-    ~RegistryKeyHandle() { if (m_key != NULL) RegCloseKey(m_key); }
-    operator HKEY() const { return m_key; }
-
-private:
-    HKEY m_key;
-};
-
-// Classe RAII pour gérer les handles de fichiers Windows
-class FindFileHandle {
-public:
-    explicit FindFileHandle(HANDLE handle = INVALID_HANDLE_VALUE) : m_handle(handle) {}
-    ~FindFileHandle() { if (m_handle != INVALID_HANDLE_VALUE) FindClose(m_handle); }
-    operator HANDLE() const { return m_handle; }
-
-private:
-    HANDLE m_handle;
-};
-
-std::string MotecExePath;
-std::string MotecExportError;
-
-const std::string& GetMotecExportError()
-{
-    return MotecExportError;
-}
 
 unsigned short ReadU16(const std::vector<unsigned char>& data, size_t offset)
 {
@@ -93,10 +59,10 @@ std::vector<double> ReadBeaconMarkers(const std::string& inputFile)
     std::string ldxPath;
     const size_t dot = inputFile.find_last_of('.');
     if (dot != std::string::npos && inputFile.compare(dot, 3, ".ld") == 0) {
-        // Input is a .ld file → append 'x' to get .ldx
+        // Input is a .ld file â†’ append 'x' to get .ldx
         ldxPath = inputFile + "x";
     } else if (dot != std::string::npos) {
-        // Input has some other extension (e.g. .ldx) → replace with .ldx
+        // Input has some other extension (e.g. .ldx) â†’ replace with .ldx
         ldxPath = inputFile.substr(0, dot) + ".ldx";
     } else {
         // No extension: assume bare stem
@@ -121,59 +87,6 @@ std::vector<double> ReadBeaconMarkers(const std::string& inputFile)
     return markers;
 }
 
-bool WriteCsvValue(std::ofstream& output, const std::string& value)
-{
-    output << '"';
-    for (size_t index = 0; index < value.size(); ++index)
-    {
-        if (value[index] == '"')
-            output << '"';
-        output << value[index];
-    }
-    output << '"';
-    return output.good();
-}
-
-void WriteCsvNumber(std::ofstream& output, double value)
-{
-	output << std::setprecision(6) << std::defaultfloat << value;
-}
-
-void WriteI2Value(std::ofstream& output, const MotecColumnInfo& column, double value)
-{
-    double displayValue = value;
-    int precision = 0;
-
-    if (column.name == "SPEED")
-    {
-        displayValue *= 3.6;
-        precision = 1;
-    }
-    else if (column.name == "ROTY")
-    {
-        displayValue *= 57.295779513;
-        precision = 2;
-    }
-    else if (column.name == "AERO_BALANCE" || column.unit == "m/s2" || column.unit == "rad/s" ||
-        column.unit == "deg/s" || column.unit == "deg")
-    {
-        precision = 2;
-    }
-
-    output << std::fixed << std::setprecision(precision) << displayValue;
-}
-
-std::string I2Unit(const MotecColumnInfo& column)
-{
-    if (column.name == "SPEED")
-        return "km/h";
-    if (column.name == "ROTY")
-        return "deg/s";
-    if (column.unit == "Nm")
-        return "N.m";
-    return column.unit;
-}
-
 // Reads a NUL-terminated text field from the LD header (fixed offsets).
 static std::string readHeaderField(const std::vector<unsigned char>& data, size_t offset, size_t length) {
     std::string result;
@@ -192,7 +105,6 @@ bool DecodeMotecLd(const std::string& inputFile,
                    ExportProgressCallback progressCallback)
 {
     errorMessage.clear();
-    MotecExportError.clear();
     if (progressCallback)
         progressCallback(0);
 
@@ -200,7 +112,6 @@ bool DecodeMotecLd(const std::string& inputFile,
     if (!input)
     {
         errorMessage = "Could not open the selected LD file.";
-        MotecExportError = errorMessage;
         return false;
     }
 
@@ -208,7 +119,6 @@ bool DecodeMotecLd(const std::string& inputFile,
     if (data.size() < 1636)
     {
         errorMessage = "The LD file is too small or has an unsupported format.";
-        MotecExportError = errorMessage;
         return false;
     }
 
@@ -318,153 +228,10 @@ bool DecodeMotecLd(const std::string& inputFile,
                 << ", Header=" << headerStart
                 << ", Blocks=" << blocks.size();
         errorMessage = details.str();
-        MotecExportError = errorMessage;
         return false;
     }
 
     beaconMarkers = ReadBeaconMarkers(inputFile);
     return true;
-}
-
-bool ConvertMotecLdToCsv(const std::string& inputFile, const std::string& outputCsv,
-                         ExportProgressCallback progressCallback)
-{
-    MotecExportError.clear();
-    if (progressCallback)
-        progressCallback(0);
-
-    std::vector<MotecColumnInfo> columns;
-    std::vector<double> beaconMarkers;
-    std::string decodeError;
-    if (!DecodeMotecLd(inputFile, columns, beaconMarkers, decodeError, progressCallback))
-    {
-        MotecExportError = decodeError;
-        return false;
-    }
-
-    std::ifstream input(inputFile.c_str(), std::ios::binary);
-    if (!input)
-    {
-        MotecExportError = "Could not open the selected LD file.";
-        return false;
-    }
-
-    std::vector<unsigned char> data((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-    if (data.size() < 1636)
-    {
-        MotecExportError = "The LD file is too small or has an unsupported format.";
-        return false;
-    }
-
-    unsigned long raceTypeStart = ReadU32(data, 36);
-    int masterFrequency = 1;
-    double duration = 0.0;
-    for (size_t index = 0; index < columns.size(); ++index)
-    {
-        masterFrequency = std::max(masterFrequency, columns[index].frequency);
-        duration = std::max(duration, (double)columns[index].values.size() / columns[index].frequency);
-    }
-    unsigned long sampleCount = (unsigned long)(duration * masterFrequency);
-    size_t speedColumn = columns.size();
-    for (size_t index = 0; index < columns.size(); ++index)
-    {
-        if (columns[index].name == "SPEED")
-        {
-            speedColumn = index;
-            break;
-        }
-    }
-
-    std::ofstream output(outputCsv.c_str(), std::ios::out | std::ios::trunc);
-    if (!output)
-    {
-        MotecExportError = "The CSV output file could not be created.";
-        return false;
-    }
-    output << "\"Format\",\"MoTeC CSV File\"\n";
-    output << "\"Device\","; WriteCsvValue(output, ReadText(data, 74, 8)); output << "\n";
-    output << "\"Date\","; WriteCsvValue(output, ReadText(data, 92, 34)); output << "\n";
-    output << "\"Time\","; WriteCsvValue(output, ReadText(data, 126, 32)); output << "\n";
-    output << "\"Driver\","; WriteCsvValue(output, ReadText(data, 158, 64)); output << "\n";
-    output << "\"Vehicle\","; WriteCsvValue(output, ReadText(data, 222, 128)); output << "\n";
-    output << "\"Track\","; WriteCsvValue(output, ReadText(data, 350, 128)); output << "\n";
-    if (raceTypeStart < data.size())
-    {
-        output << "\"Type\",";
-        WriteCsvValue(output, ReadText(data, raceTypeStart, 64));
-        output << "\n";
-    }
-    output << "\"Comment\",";
-    WriteCsvValue(output, ReadText(data, 1572, 64));
-    output << "\n\"Beacon Markers\",";
-    for (size_t index = 0; index < beaconMarkers.size(); ++index)
-    {
-        if (index > 0)
-            output << ' ';
-        output << std::setprecision(6) << beaconMarkers[index];
-    }
-    output << "\n\n";
-
-    WriteCsvValue(output, "Time");
-    output << ',';
-    WriteCsvValue(output, "Distance");
-    for (size_t index = 0; index < columns.size(); ++index)
-    {
-        output << ',';
-        WriteCsvValue(output, columns[index].name);
-    }
-    output << "\n";
-    WriteCsvValue(output, "s");
-    output << ',';
-    WriteCsvValue(output, "m");
-    for (size_t index = 0; index < columns.size(); ++index)
-    {
-        output << ',';
-        WriteCsvValue(output, I2Unit(columns[index]));
-    }
-    output << "\n";
-
-    double distance = 0.0;
-    for (unsigned long row = 0; row < sampleCount; ++row)
-    {
-        double currentTime = (double)row / masterFrequency;
-        output << std::fixed << std::setprecision(3) << currentTime;
-        output << ',';
-        output << std::fixed << std::setprecision(0) << distance;
-        for (size_t index = 0; index < columns.size(); ++index)
-        {
-            unsigned long sample = (unsigned long)(currentTime * columns[index].frequency + 0.000001);
-            output << ',';
-            if (sample < columns[index].values.size())
-                WriteI2Value(output, columns[index], columns[index].values[sample]);
-        }
-        output << '\n';
-        if (speedColumn < columns.size())
-        {
-            unsigned long speedSample = (unsigned long)(currentTime * columns[speedColumn].frequency + 0.000001);
-            if (speedSample < columns[speedColumn].values.size())
-                distance += columns[speedColumn].values[speedSample] / masterFrequency;
-        }
-        if (progressCallback && sampleCount > 0)
-            progressCallback(50 + (int)(((row + 1.0) / sampleCount) * 50.0));
-    }
-
-    output.close();
-    if (!output)
-    {
-        MotecExportError = "An error occurred while writing the CSV file.";
-        return false;
-    }
-
-    return true;
-}
-
-bool ExportMotecToCsv(const std::string& motecExePath,
-                      const std::string& inputFile,
-                      const std::string& outputCsv,
-                      ExportProgressCallback progressCallback)
-{
-    (void)motecExePath;
-    return ConvertMotecLdToCsv(inputFile, outputCsv, progressCallback);
 }
 

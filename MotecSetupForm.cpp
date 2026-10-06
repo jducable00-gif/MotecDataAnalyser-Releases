@@ -579,11 +579,6 @@ void UpdateProgress(int percent, const String& message)
 		Application->ProcessMessages();
 }
 
-void ExportProgress(int percent)
-{
-	UpdateProgress(percent, "Converting LD file...");
-}
-
 void AnalysisProgress(int percent)
 {
 	if (percent < 50)
@@ -1221,7 +1216,6 @@ void __fastcall TFormMotecSetup::resetAnalysisGraphics()
     hasTireTempData = false;
     aeroBalanceValue = 0.0;
     aeroBalanceValid = false;
-    hasSuspensionData = false;
 
     for (int i = 0; i < 4; ++i) {
         brakeTemps[i].avg = 0.0;
@@ -1577,27 +1571,6 @@ void __fastcall TFormMotecSetup::TireTempPaintBoxPaint(TObject *Sender)
 // Removed legacy SuspensionPaintBoxPaint implementation as it is replaced by TChart components.
 
 
-
-void __fastcall TFormMotecSetup::AnalyzeDefaultCsv()
-{
-    MemoSummary->Clear();
-
-    String searchPath = ExtractFilePath(Application->ExeName) + "*.csv";
-    TSearchRec searchRec;
-    if (FindFirst(searchPath, faAnyFile, searchRec) == 0) {
-        try {
-            String fullPath = ExtractFilePath(Application->ExeName) + searchRec.Name;
-			std::string errorMessage;
-			if (!AnalyzeSelectedFile(AnsiString(fullPath).c_str(), errorMessage))
-				MemoSummary->Text = "Analysis failed.\n" + String(errorMessage.c_str());
-        } __finally {
-            FindClose(searchRec);
-        }
-    } else {
-        MemoSummary->Lines->Add("No CSV file was found in the application folder.");
-        MemoSummary->Lines->Add("Use the Load button to analyze a MoTeC export manually.");
-    }
-}
 
 bool __fastcall TFormMotecSetup::AnalyzeSelectedFile(const std::string& filePath, std::string& errorMessage)
 {
@@ -2198,10 +2171,8 @@ void __fastcall TFormMotecSetup::UpdateReportTabs(const ReportResult& result)
 
 void __fastcall TFormMotecSetup::UpdateSuspension(std::vector<LapStats>& laps)
 {
-    if (laps.empty()) {
-        hasSuspensionData = false;
+    if (laps.empty())
         return;
-    }
 
     LapStats avg = buildAverageLapData(laps);
 
@@ -2212,47 +2183,6 @@ void __fastcall TFormMotecSetup::UpdateSuspension(std::vector<LapStats>& laps)
     const DamperCornerStats* dampers[4] = { &avg.damperLF, &avg.damperRF, &avg.damperLR, &avg.damperRR };
     const StatSummary* travels[4] = { &avg.susTravelLF, &avg.susTravelRF, &avg.susTravelLR, &avg.susTravelRR };
     const StatSummary* bumpstops[4] = { &avg.bumpStopLF, &avg.bumpStopRF, &avg.bumpStopLR, &avg.bumpStopRR };
-
-    for (int i = 0; i < 4; i++) {
-        const VelocityHistogram& hist =
-            suspVels[i]->totalCount > 0 ? *suspVels[i] : dampers[i]->histogram;
-        suspensionData[i].valid = hist.totalCount > 0;
-        if (suspensionData[i].valid) {
-            for (int b = 0; b < VelocityHistogram::kBinCount; b++) {
-                suspensionData[i].bins[b] = static_cast<double>(hist.bins[b]) / static_cast<double>(hist.totalCount);
-            }
-            suspensionData[i].travel = travels[i]->average();
-            suspensionData[i].bumpstop = bumpstops[i]->max;
-            suspensionData[i].issue = hasDamperIssue(*dampers[i]);
-        }
-    }
-
-    hasSuspensionData = suspensionData[0].valid || suspensionData[1].valid || suspensionData[2].valid || suspensionData[3].valid;
-
-    // Shared Y-axis scale: highest bin across all four corners.
-    suspensionMaxBin = 0.0;
-    for (int i = 0; i < 4; ++i)
-        if (suspensionData[i].valid) {
-            for (int b = 0; b < VelocityHistogram::kBinCount; ++b)
-                if (suspensionData[i].bins[b] > suspensionMaxBin)
-                    suspensionMaxBin = suspensionData[i].bins[b];
-        }
-
-    // Repaint the four damper histogram paint boxes so they reflect the new data.
-    if (DamperFLPaintBox != NULL) DamperFLPaintBox->Invalidate();
-    if (DamperFRPaintBox != NULL) DamperFRPaintBox->Invalidate();
-    if (DamperRLPaintBox != NULL) DamperRLPaintBox->Invalidate();
-    if (DamperRRPaintBox != NULL) DamperRRPaintBox->Invalidate();
-}
-
-void __fastcall TFormMotecSetup::UpdateDamperHistograms(LapStats& stats)
-{
-    // Priority (profile-agnostic): direct suspension-velocity channel first;
-    // fall back to the virtual channel derived from damper travel over time.
-    const VelocityHistogram* suspVels[4] = { &stats.suspVelLF, &stats.suspVelRF, &stats.suspVelLR, &stats.suspVelRR };
-    const DamperCornerStats* dampers[4] = { &stats.damperLF, &stats.damperRF, &stats.damperLR, &stats.damperRR };
-    const StatSummary* travels[4] = { &stats.susTravelLF, &stats.susTravelRF, &stats.susTravelLR, &stats.susTravelRR };
-    const StatSummary* bumpstops[4] = { &stats.bumpStopLF, &stats.bumpStopRF, &stats.bumpStopLR, &stats.bumpStopRR };
 
     for (int i = 0; i < 4; i++) {
         const VelocityHistogram& hist =

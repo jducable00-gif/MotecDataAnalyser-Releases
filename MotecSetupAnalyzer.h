@@ -1159,40 +1159,18 @@ inline AnalysisRegistry buildDefaultAnalysisRegistry() {
 }
 
 // ===============================
-// Shared formatting helpers (defined in RecommendationEngine.cpp)
-// ===============================
-std::string formatDouble(double value, int precision = 2);
-std::string formatTime(double seconds);
-
-// ===============================
 // External functions
 // ===============================
 LapStats buildAverageLapData(const std::vector<LapStats>& laps);
 
 bool hasDamperIssue(const DamperCornerStats& stats);
 
-// Confidence scoring: computes a 0-1 confidence based on how far the value
-// is from the threshold, sample count, and reproducibility across laps.
-double computeConfidence(double value, double threshold, int sampleCount,
-                         int lapsReproduced, int channelsAvailable, int channelsNeeded);
-
-// Returns a localized data-quality label based on confidence.
-std::string dataQualityLabel(double confidence, ReportLanguage language);
-
-ReportResult buildBestThreeLapReport(const std::vector<LapStats>& laps, bool fullReport = false,
-                                   ReportLanguage language = ReportLanguage::English,
-                                   ChannelProfile profile = ChannelProfile::EvoM1);
 ReportResult buildAverageLapReport(const std::vector<LapStats>& laps, bool fullReport = false,
                                   ReportLanguage language = ReportLanguage::English,
                                   ChannelProfile profile = ChannelProfile::EvoM1);
-ReportResult buildLapReport(const LapStats& lap, bool fullReport = false,
-                          ReportLanguage language = ReportLanguage::English,
-                          ChannelProfile profile = ChannelProfile::EvoM1);
 
 std::vector<AnalysisResult> evaluateLapWithRules(const LapStats& lap,
                                                 const AnalysisSettings& settings = AnalysisSettings());
-std::vector<AnalysisResult> evaluateLapsWithRules(const std::vector<LapStats>& laps,
-                                                 const AnalysisSettings& settings = AnalysisSettings());
 
 typedef void (*AnalysisProgressCallback)(int percent);
 std::string resolveChannelKey(const std::string& rawName,
@@ -1208,15 +1186,7 @@ bool parseMotecLd(const std::string& path,
                   AnalysisProgressCallback progressCallback = NULL,
                   ChannelProfile profile = ChannelProfile::EvoM1);
 
-// Generates the formatted report string for averaged laps.
-std::string buildAverageLapReportString(const std::vector<LapStats>& laps, bool fullReport, 
-                                        ReportLanguage language, ChannelProfile profile);
-
 // Returns the averaged LapStats object (all but last lap).
 // Requires at least 2 laps to be valid (returns empty if < 2).
 LapStats buildAverageLapData(const std::vector<LapStats>& laps);
-
-// Generates a single lap report.
-ReportResult buildLapReport(const LapStats& lap, bool fullReport, ReportLanguage language,
-                           ChannelProfile profile);
 

@@ -20,8 +20,6 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
-#include <iomanip>
-#include <iostream>
 #include <limits>
 #include <sstream>
 #include <string>
@@ -341,27 +339,6 @@ static void conversionForChannel(const std::string& key, const std::string& unit
     }
 }
 
-static double toDouble(const std::string& token, double fallback = 0.0) {
-	if (token.empty()) {
-		return fallback;
-	}
-    const char* start = token.c_str();
-    char* end = NULL;
-    double value = std::strtod(start, &end);
-    if (end == start)
-        return fallback;
-    while (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n')
-        ++end;
-    return *end == '\0' ? value : fallback;
-}
-
-
-
-ReportResult buildBestThreeLapReport(const std::vector<LapStats>& laps, bool fullReport,
-                                   ReportLanguage language, ChannelProfile profile) {
-    return LapReportGenerator::generateBestThreeLaps(laps, fullReport, language, profile);
-}
-
 // Returns the averaged data for all but the last lap. 
 // Requires at least 2 laps to be valid (returns empty if < 2).
 LapStats buildAverageLapData(const std::vector<LapStats>& laps) {
@@ -373,27 +350,12 @@ ReportResult buildAverageLapReport(const std::vector<LapStats>& laps, bool fullR
     return LapReportGenerator::generateAverageLaps(laps, fullReport, language, profile);
 }
 
-ReportResult buildLapReport(const LapStats& lap, bool fullReport, ReportLanguage language,
-                           ChannelProfile profile) {
-    return LapReportGenerator::generate(lap, fullReport, language, profile);
-}
-
 std::vector<AnalysisResult> evaluateLapWithRules(const LapStats& lap,
                                                 const AnalysisSettings& settings) {
     DataProvider provider = buildDataProviderFromLap(lap);
     provider.setChannelMappings(RuleConfig::instance().channelMappings());
     const AnalysisRegistry registry = buildDefaultAnalysisRegistry();
     return registry.evaluateAll(provider, settings);
-}
-
-std::vector<AnalysisResult> evaluateLapsWithRules(const std::vector<LapStats>& laps,
-                                                 const AnalysisSettings& settings) {
-    std::vector<AnalysisResult> allResults;
-    for (std::size_t i = 0; i < laps.size(); ++i) {
-        const std::vector<AnalysisResult> lapResults = evaluateLapWithRules(laps[i], settings);
-        allResults.insert(allResults.end(), lapResults.begin(), lapResults.end());
-    }
-    return allResults;
 }
 
 std::vector<std::string> splitCsvRow(const std::string& row)

@@ -103,7 +103,6 @@ public:
     static ReportLanguage ReadReportLanguageSetting();
     bool __fastcall AnalyzeSelectedFile(const std::string& filePath, std::string& errorMessage);
     bool __fastcall AnalyzeSelectedLdFile(const std::string& filePath, std::string& errorMessage);
-    void __fastcall AnalyzeDefaultCsv();
     void __fastcall resetAnalysisGraphics();
     void __fastcall stopLiveCapture();
     void __fastcall processLiveFrame(const Ams2SharedMemory& frame);
@@ -116,7 +115,6 @@ public:
     // Internal update helpers (NOT VCL event handlers — must stay out of __published).
     void __fastcall UpdateTireTemps(const std::vector<LapStats>& laps);
     void __fastcall UpdateBrakeTemps(const std::vector<LapStats>& laps);
-    void __fastcall UpdateDamperHistograms(LapStats& stats);
     void __fastcall UpdateSuspension(std::vector<LapStats>& laps);
 
     struct TireTempData {
@@ -151,7 +149,6 @@ public:
 
     SuspensionCornerData suspensionData[4]; // 0=LF, 1=RF, 2=LR, 3=RR
     double suspensionMaxBin = 0.0;          // shared Y-axis max (highest bin across all 4 corners)
-    bool hasSuspensionData = false;
 
     // --- Live capture state ---
     bool liveActive = false;

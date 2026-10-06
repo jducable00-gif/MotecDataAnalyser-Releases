@@ -597,13 +597,6 @@ RuleLoadStatus RuleConfig::loadChannelMappings(const std::string& jsonPath) {
     return RuleLoadStatus::Ok;
 }
 
-const RuleSymptom* RuleConfig::findRule(const std::string& symptom) const {
-    for (std::size_t i = 0; i < m_rules.size(); ++i)
-        if (m_rules[i].id == symptom)
-            return &m_rules[i];
-    return NULL;
-}
-
 bool RuleConfig::resolveAlias(ChannelProfile profile, const std::string& key, std::string& outKey) const {
     // Ordre identique à l'ancien resolveChannelKey : generic d'abord (tous profils),
     // puis la table spécifique au profil EvoM1.
@@ -616,29 +609,6 @@ bool RuleConfig::resolveAlias(ChannelProfile profile, const std::string& key, st
         std::unordered_map<std::string, std::string>::const_iterator evoIt = m_evoAliases.find(key);
         if (evoIt != m_evoAliases.end()) {
             outKey = evoIt->second;
-            return true;
-        }
-    }
-    return false;
-}
-
-bool RuleConfig::resolveChannelMapping(ChannelProfile profile, MappingSource source,
-                                       const std::string& alias, ChannelMapping& outMapping) const {
-    const std::string normalizedAlias = toUpperCopy(trimCopy(alias));
-    for (std::size_t i = 0; i < m_channelMappings.size(); ++i) {
-        const ChannelMapping& mapping = m_channelMappings[i];
-        if (mapping.type == ChannelMappingType::Raw &&
-            mapping.profile == profile && mapping.source == source &&
-            toUpperCopy(mapping.alias) == normalizedAlias) {
-            outMapping = mapping;
-            return true;
-        }
-    }
-    for (std::size_t i = 0; i < m_channelMappings.size(); ++i) {
-        const ChannelMapping& mapping = m_channelMappings[i];
-        if (mapping.type == ChannelMappingType::Virtual &&
-            toUpperCopy(mapping.alias) == normalizedAlias) {
-            outMapping = mapping;
             return true;
         }
     }

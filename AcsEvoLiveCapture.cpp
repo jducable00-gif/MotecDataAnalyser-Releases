@@ -194,17 +194,6 @@ bool AcsEvoIsInPits(const SPageFileGraphicEvo& gfx)
 }
 
 // ---------------------------------------------------------------------------
-// AcsEvoDetectLapChange — npos wrap (0.0 -> 1.0 per lap)
-// ---------------------------------------------------------------------------
-bool AcsEvoDetectLapChange(const SPageFileGraphicEvo& prev,
-                           const SPageFileGraphicEvo& curr)
-{
-    // A lap completes when the position wraps from near the end (> 0.9)
-    // back to near the start (< 0.1).
-    return (prev.npos > 0.9f) && (curr.npos < 0.1f);
-}
-
-// ---------------------------------------------------------------------------
 // AcsEvoFeedLap — feed one frame into LapStats accumulators
 // ---------------------------------------------------------------------------
 //
