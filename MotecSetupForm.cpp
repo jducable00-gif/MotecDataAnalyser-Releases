@@ -1009,6 +1009,19 @@ void __fastcall TFormMotecSetup::BrakeTempPaintBoxPaint(TObject *Sender)
             graphics.DrawArc(&segPen, arcX, arcY, arcW, arcW, startAng, sweepAng);
         }
 
+        // Red warning zone: ~30° arc starting at the threshold temperature
+        {
+            const double tMin = 40.0, tMax = 150.0;
+            float threshFrac = (float)((warnThreshold - tMin) / (tMax - tMin));
+            if (threshFrac < 0.0f) threshFrac = 0.0f;
+            if (threshFrac > 1.0f) threshFrac = 1.0f;
+            float warnStart = 180.0f + threshFrac * 180.0f;
+            float warnSweep = 30.0f;
+            if (warnStart + warnSweep > 360.0f) warnSweep = 360.0f - warnStart;
+            Gdiplus::Pen warnPen(Gdiplus::Color(255, 220, 40, 40), 5.0f);
+            graphics.DrawArc(&warnPen, arcX, arcY, arcW, arcW, warnStart, warnSweep);
+        }
+
         // Needle
         if (dataValid) {
             const double tMin = 40.0, tMax = 150.0;
