@@ -440,6 +440,17 @@ void loadThresholdsPart1(TIniFile* ini)
 	g_thresholds.histogramYOffset = ini->ReadFloat("Damper", "HistogramYOffset", g_thresholds.histogramYOffset);
 	g_thresholds.damperSlowSpeedRange = ini->ReadFloat("Damper", "SlowSpeedRange", g_thresholds.damperSlowSpeedRange);
 
+	// Damper 4-zone targets (%)
+	g_thresholds.damperHscTargetMin = ini->ReadFloat("DamperZones", "HscTargetMin", g_thresholds.damperHscTargetMin);
+	g_thresholds.damperHscTargetMax = ini->ReadFloat("DamperZones", "HscTargetMax", g_thresholds.damperHscTargetMax);
+	g_thresholds.damperLscTargetMin = ini->ReadFloat("DamperZones", "LscTargetMin", g_thresholds.damperLscTargetMin);
+	g_thresholds.damperLscTargetMax = ini->ReadFloat("DamperZones", "LscTargetMax", g_thresholds.damperLscTargetMax);
+	g_thresholds.damperLsrTargetMin = ini->ReadFloat("DamperZones", "LsrTargetMin", g_thresholds.damperLsrTargetMin);
+	g_thresholds.damperLsrTargetMax = ini->ReadFloat("DamperZones", "LsrTargetMax", g_thresholds.damperLsrTargetMax);
+	g_thresholds.damperHsrTargetMin = ini->ReadFloat("DamperZones", "HsrTargetMin", g_thresholds.damperHsrTargetMin);
+	g_thresholds.damperHsrTargetMax = ini->ReadFloat("DamperZones", "HsrTargetMax", g_thresholds.damperHsrTargetMax);
+	g_thresholds.damperZoneModerateBand = ini->ReadFloat("DamperZones", "ModerateBand", g_thresholds.damperZoneModerateBand);
+
 	// Handling
 	g_thresholds.brakePedalMin = ini->ReadFloat("Handling", "BrakePedalMin", g_thresholds.brakePedalMin);
 	g_thresholds.throttleMaxBraking = ini->ReadFloat("Handling", "ThrottleMaxBraking", g_thresholds.throttleMaxBraking);
@@ -2194,7 +2205,7 @@ void __fastcall TFormMotecSetup::UpdateSuspension(std::vector<LapStats>& laps)
             }
             suspensionData[i].travel = travels[i]->average();
             suspensionData[i].bumpstop = bumpstops[i]->max;
-            suspensionData[i].issue = hasDamperIssue(*dampers[i]);
+            suspensionData[i].issue = hasDamperIssue(hist);
         }
     }
 

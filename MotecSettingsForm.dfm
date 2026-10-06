@@ -407,13 +407,156 @@ object FormMotecSettings: TFormMotecSettings
           Text = '92.0'
         end
       end
+      object GroupDamperZones: TGroupBox
+        Left = 16
+        Top = 200
+        Width = 552
+        Height = 190
+        Caption = 'Damper 4-Zone Targets (%)'
+        TabOrder = 1
+        object LblHscTargetMin: TLabel
+          Left = 16
+          Top = 32
+          Width = 100
+          Height = 15
+          Caption = 'Hi Comp Min:'
+        end
+        object LblHscTargetMax: TLabel
+          Left = 300
+          Top = 32
+          Width = 100
+          Height = 15
+          Caption = 'Hi Comp Max:'
+        end
+        object LblLscTargetMin: TLabel
+          Left = 16
+          Top = 64
+          Width = 100
+          Height = 15
+          Caption = 'Lo Comp Min:'
+        end
+        object LblLscTargetMax: TLabel
+          Left = 300
+          Top = 64
+          Width = 100
+          Height = 15
+          Caption = 'Lo Comp Max:'
+        end
+        object LblLsrTargetMin: TLabel
+          Left = 16
+          Top = 96
+          Width = 100
+          Height = 15
+          Caption = 'Lo Rebound Min:'
+        end
+        object LblLsrTargetMax: TLabel
+          Left = 300
+          Top = 96
+          Width = 100
+          Height = 15
+          Caption = 'Lo Rebound Max:'
+        end
+        object LblHsrTargetMin: TLabel
+          Left = 16
+          Top = 128
+          Width = 100
+          Height = 15
+          Caption = 'Hi Rebound Min:'
+        end
+        object LblHsrTargetMax: TLabel
+          Left = 300
+          Top = 128
+          Width = 100
+          Height = 15
+          Caption = 'Hi Rebound Max:'
+        end
+        object LblZoneModerateBand: TLabel
+          Left = 16
+          Top = 160
+          Width = 110
+          Height = 15
+          Caption = 'Moderate Band (pts):'
+        end
+        object EditHscTargetMin: TEdit
+          Left = 130
+          Top = 28
+          Width = 60
+          Height = 23
+          TabOrder = 0
+          Text = '10.0'
+        end
+        object EditHscTargetMax: TEdit
+          Left = 420
+          Top = 28
+          Width = 60
+          Height = 23
+          TabOrder = 1
+          Text = '20.0'
+        end
+        object EditLscTargetMin: TEdit
+          Left = 130
+          Top = 60
+          Width = 60
+          Height = 23
+          TabOrder = 2
+          Text = '30.0'
+        end
+        object EditLscTargetMax: TEdit
+          Left = 420
+          Top = 60
+          Width = 60
+          Height = 23
+          TabOrder = 3
+          Text = '40.0'
+        end
+        object EditLsrTargetMin: TEdit
+          Left = 130
+          Top = 92
+          Width = 60
+          Height = 23
+          TabOrder = 4
+          Text = '30.0'
+        end
+        object EditLsrTargetMax: TEdit
+          Left = 420
+          Top = 92
+          Width = 60
+          Height = 23
+          TabOrder = 5
+          Text = '40.0'
+        end
+        object EditHsrTargetMin: TEdit
+          Left = 130
+          Top = 124
+          Width = 60
+          Height = 23
+          TabOrder = 6
+          Text = '10.0'
+        end
+        object EditHsrTargetMax: TEdit
+          Left = 420
+          Top = 124
+          Width = 60
+          Height = 23
+          TabOrder = 7
+          Text = '20.0'
+        end
+        object EditZoneModerateBand: TEdit
+          Left = 130
+          Top = 156
+          Width = 60
+          Height = 23
+          TabOrder = 8
+          Text = '5.0'
+        end
+      end
       object GroupSuspension: TGroupBox
         Left = 16
-        Top = 208
+        Top = 396
         Width = 552
         Height = 192
         Caption = 'Suspension Geometry'
-        TabOrder = 1
+        TabOrder = 2
         object LblSuspTravelMax: TLabel
           Left = 16
           Top = 32

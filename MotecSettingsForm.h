@@ -70,6 +70,27 @@ __published:
     TLabel *LblDamperLowSpeedShareMin;
     TEdit *EditDamperLowSpeedShareMin;
 
+    // Damper 4-Zone Targets Tab
+    TGroupBox *GroupDamperZones;
+    TLabel *LblHscTargetMin;
+    TEdit *EditHscTargetMin;
+    TLabel *LblHscTargetMax;
+    TEdit *EditHscTargetMax;
+    TLabel *LblLscTargetMin;
+    TEdit *EditLscTargetMin;
+    TLabel *LblLscTargetMax;
+    TEdit *EditLscTargetMax;
+    TLabel *LblLsrTargetMin;
+    TEdit *EditLsrTargetMin;
+    TLabel *LblLsrTargetMax;
+    TEdit *EditLsrTargetMax;
+    TLabel *LblHsrTargetMin;
+    TEdit *EditHsrTargetMin;
+    TLabel *LblHsrTargetMax;
+    TEdit *EditHsrTargetMax;
+    TLabel *LblZoneModerateBand;
+    TEdit *EditZoneModerateBand;
+
     // Handling Tab
     TGroupBox *GroupHandling;
     TLabel *LblBrakePedalMin;

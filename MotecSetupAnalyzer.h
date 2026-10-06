@@ -75,6 +75,18 @@ struct Thresholds {
     double damperLowSpeedShareMin = 92.0;
     double damperLowSpeedStdDevMax = 25.0;
 
+    // Damper 4-zone targets (%) — HSC/LSC/LSR/HSR
+    double damperHscTargetMin = 10.0;
+    double damperHscTargetMax = 20.0;
+    double damperLscTargetMin = 30.0;
+    double damperLscTargetMax = 40.0;
+    double damperLsrTargetMin = 30.0;
+    double damperLsrTargetMax = 40.0;
+    double damperHsrTargetMin = 10.0;
+    double damperHsrTargetMax = 20.0;
+    // Severity band: points outside target before escalating NORMAL→MODERATE→IMPORTANT
+    double damperZoneModerateBand = 5.0;
+
     // Handling detection
     double brakePedalMin = 10.0;
     double throttleMaxBraking = 35.0;
@@ -869,6 +881,42 @@ struct DamperCornerStats {
     }
 };
 
+// ===============================
+// Damper 4-zone analysis (HSC/LSC/LSR/HSR)
+// Zone split at ±damperSlowSpeedRange mm/s:
+//   v < -B = HSC, -B <= v < 0 = LSC, 0 <= v <= B = LSR, v > B = HSR
+// ===============================
+enum class DamperZoneSeverity { Normal, Moderate, Important };
+
+struct DamperZoneResult {
+    double pct = 0.0;                    // measured percentage of samples in zone
+    DamperZoneSeverity severity = DamperZoneSeverity::Normal;
+    bool aboveTarget = false;            // true if above target max, false if below target min
+};
+
+struct DamperZoneReport {
+    DamperZoneResult hsc;
+    DamperZoneResult lsc;
+    DamperZoneResult lsr;
+    DamperZoneResult hsr;
+
+    // Global balances (diagnostic only)
+    double compressionPct = 0.0;         // HSC + LSC
+    double reboundPct = 0.0;             // LSR + HSR
+    double lowSpeedPct = 0.0;            // LSC + LSR
+    double highSpeedPct = 0.0;           // HSC + HSR
+
+    bool hasData = false;                // enough samples to evaluate
+    std::string text;                    // localized recommendation (empty if all normal)
+
+    bool anyIssue() const {
+        return hsc.severity != DamperZoneSeverity::Normal ||
+               lsc.severity != DamperZoneSeverity::Normal ||
+               lsr.severity != DamperZoneSeverity::Normal ||
+               hsr.severity != DamperZoneSeverity::Normal;
+    }
+};
+
 struct HandlingPhaseStats {
     std::size_t sampleCount = 0;
     std::size_t understeerIndicators = 0;
@@ -1280,23 +1328,142 @@ inline DamperFinding evaluateDamperCorner(const DamperCornerStats& stats,
     return finding;
 }
 
+// Classify a single zone percentage against its target range.
+inline DamperZoneResult classifyDamperZone(double pct, double targetMin, double targetMax) {
+    DamperZoneResult r;
+    r.pct = pct;
+    if (pct >= targetMin && pct <= targetMax) {
+        r.severity = DamperZoneSeverity::Normal;
+    } else {
+        double deviation = (pct > targetMax) ? (pct - targetMax) : (targetMin - pct);
+        r.aboveTarget = (pct > targetMax);
+        r.severity = (deviation <= g_thresholds.damperZoneModerateBand)
+            ? DamperZoneSeverity::Moderate
+            : DamperZoneSeverity::Important;
+    }
+    return r;
+}
+
+// Evaluates a damper-velocity histogram against 4-zone targets.
+inline DamperZoneReport evaluateDamperZones(const VelocityHistogram& h, ReportLanguage language) {
+    auto tr = [&](const std::string& en, const std::string& fr) -> std::string {
+        return language == ReportLanguage::French ? fr : en;
+    };
+
+    DamperZoneReport report;
+    if (h.totalCount < g_thresholds.minDamperSamples)
+        return report;
+
+    report.hasData = true;
+
+    // Zone boundaries: ±damperSlowSpeedRange mm/s
+    // Sign convention: positive velocity = compression, negative = rebound
+    const double B = g_thresholds.damperSlowSpeedRange;
+    const double rMax = VelocityHistogram::rangeMax();
+
+    // Compute 4 zone percentages
+    double hscPct = h.percentInRange(B, rMax + 1.0);          // v > B (high-speed compression)
+    double lscPct = h.percentInRange(0.0, B + 1.0);           // 0 <= v <= B (low-speed compression)
+    double lsrPct = h.percentInRange(-B - 1.0, 0.0);          // -B <= v < 0 (low-speed rebound)
+    double hsrPct = h.percentInRange(-rMax - 1.0, -B);        // v < -B (high-speed rebound)
+
+    // Classify each zone
+    report.hsc = classifyDamperZone(hscPct, g_thresholds.damperHscTargetMin, g_thresholds.damperHscTargetMax);
+    report.lsc = classifyDamperZone(lscPct, g_thresholds.damperLscTargetMin, g_thresholds.damperLscTargetMax);
+    report.lsr = classifyDamperZone(lsrPct, g_thresholds.damperLsrTargetMin, g_thresholds.damperLsrTargetMax);
+    report.hsr = classifyDamperZone(hsrPct, g_thresholds.damperHsrTargetMin, g_thresholds.damperHsrTargetMax);
+
+    // Global balances
+    report.compressionPct = hscPct + lscPct;
+    report.reboundPct     = lsrPct + hsrPct;
+    report.lowSpeedPct    = lscPct + lsrPct;
+    report.highSpeedPct   = hscPct + hsrPct;
+
+    // Generate localized text
+    if (!report.anyIssue()) {
+        report.text = tr(
+            "velocity distribution is within target ranges for all 4 zones; no damper change indicated.",
+            "la distribution de vitesse est dans les plages cibles pour les 4 zones ; aucun changement d'amortisseur necessaire.");
+        return report;
+    }
+
+    // Human-readable zone labels (localized)
+    struct ZoneInfo { const char* en; const char* fr; DamperZoneResult& r; };
+    ZoneInfo zones[4] = {
+        { "Hi Comp",  "Comp. Haute",  report.hsc },
+        { "Lo Comp",  "Comp. Basse",  report.lsc },
+        { "Lo Rebound", "Détente Basse", report.lsr },
+        { "Hi Rebound", "Détente Haute", report.hsr }
+    };
+
+    // Build description of out-of-target zones + suggested action
+    const char* descEn[4] = { "high-speed compression", "low-speed compression",
+                              "low-speed rebound", "high-speed rebound" };
+    const char* descFr[4] = { "la compression haute vitesse", "la compression basse vitesse",
+                              "la détente basse vitesse", "la détente haute vitesse" };
+    double tMin[4] = { g_thresholds.damperHscTargetMin, g_thresholds.damperLscTargetMin,
+                       g_thresholds.damperLsrTargetMin, g_thresholds.damperHsrTargetMin };
+    double tMax[4] = { g_thresholds.damperHscTargetMax, g_thresholds.damperLscTargetMax,
+                       g_thresholds.damperLsrTargetMax, g_thresholds.damperHsrTargetMax };
+
+    std::string parts;
+    for (int i = 0; i < 4; ++i) {
+        if (zones[i].r.severity == DamperZoneSeverity::Normal) continue;
+        const char* name = (language == ReportLanguage::French) ? zones[i].fr : zones[i].en;
+        const char* desc = (language == ReportLanguage::French) ? descFr[i] : descEn[i];
+
+        std::string pctStr   = std::to_string(static_cast<int>(zones[i].r.pct + 0.5));
+        std::string targetStr = std::to_string(static_cast<int>(tMin[i] + 0.5)) + "-" +
+                                std::to_string(static_cast<int>(tMax[i] + 0.5));
+
+        const char* action = zones[i].r.aboveTarget
+            ? (language == ReportLanguage::French ? "raidir " : "stiffen ")
+            : (language == ReportLanguage::French ? "adoucir " : "soften ");
+
+        std::string part = std::string(name) + " " + pctStr + "% (target " + targetStr + "%) — " + action + desc;
+        if (!parts.empty()) parts += ", ";
+        parts += part;
+    }
+
+    report.text = tr(
+        ("outside target: " + parts + "."),
+        ("hors cible : " + parts + "."));
+
+    return report;
+}
+
 } // namespace detail
 
 // True when a corner's damper-velocity distribution indicates an issue
-// (asymmetry, excessive high-speed share, or a suspension that barely moves).
-inline bool hasDamperIssue(const DamperCornerStats& stats) {
-    detail::DamperFinding finding = detail::evaluateDamperCorner(stats, "LF", "AV-G", ReportLanguage::English);
-    return finding.issue;
+// (any of the 4 zones HSC/LSC/LSR/HSR is Moderate or Important).
+inline bool hasDamperIssue(const VelocityHistogram& h) {
+    DamperZoneReport report = detail::evaluateDamperZones(h, ReportLanguage::English);
+    return report.hasData && report.anyIssue();
 }
 
 // Human-readable damper recommendation for one corner (localized).
 // cornerIndex: 0=LF, 1=RF, 2=LR, 3=RR. Empty string if not enough samples.
-inline std::string getDamperRecommendation(const DamperCornerStats& stats, int cornerIndex, ReportLanguage language) {
+inline std::string getDamperRecommendation(const VelocityHistogram& h, int cornerIndex, ReportLanguage language) {
     static const char* enLabels[4] = { "LF", "RF", "LR", "RR" };
     static const char* frLabels[4] = { "AV-G", "AD-G", "AR-G", "AR-D" };
     if (cornerIndex < 0 || cornerIndex > 3) return std::string();
-    detail::DamperFinding finding = detail::evaluateDamperCorner(stats, enLabels[cornerIndex], frLabels[cornerIndex], language);
-    return finding.text;
+    DamperZoneReport report = detail::evaluateDamperZones(h, language);
+    if (!report.hasData) return std::string();
+    const char* label = (language == ReportLanguage::French) ? frLabels[cornerIndex] : enLabels[cornerIndex];
+    return std::string(label) + " — " + report.text;
+}
+
+// Pick the best velocity histogram for a corner: prefer the direct
+// suspension-velocity channel when it has data, otherwise fall back to
+// the travel-derivative histogram. Mirrors the display logic in MotecSetupForm.
+inline const VelocityHistogram& pickDamperHistogram(const LapStats& lap, int cornerIndex) {
+    switch (cornerIndex) {
+        case 0: return lap.suspVelLF.totalCount > 0 ? lap.suspVelLF : lap.damperLF.histogram;
+        case 1: return lap.suspVelRF.totalCount > 0 ? lap.suspVelRF : lap.damperRF.histogram;
+        case 2: return lap.suspVelLR.totalCount > 0 ? lap.suspVelLR : lap.damperLR.histogram;
+        case 3: return lap.suspVelRR.totalCount > 0 ? lap.suspVelRR : lap.damperRR.histogram;
+        default: return lap.damperLF.histogram;
+    }
 }
 
 // ===============================
