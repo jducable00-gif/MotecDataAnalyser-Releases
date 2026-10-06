@@ -19,7 +19,6 @@ __published:
     TPageControl *PageControl;
     TTabSheet *TabGeneral;
     TTabSheet *TabTyre;
-    TTabSheet *TabDamper;
     TTabSheet *TabHandling;
     TTabSheet *TabThermal;
     TTabSheet *TabSuspension;

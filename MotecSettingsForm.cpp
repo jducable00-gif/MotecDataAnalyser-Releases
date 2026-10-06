@@ -199,7 +199,6 @@ void TFormMotecSettings::TranslateUI()
     PageControl->ActivePage = TabBrake; // Keep active page as is
     TabGeneral->Caption = isFr ? "Général" : "General";
     TabTyre->Caption = isFr ? "Pneus" : "Tyre";
-    TabDamper->Caption = isFr ? "Amortisseurs" : "Damper";
     TabHandling->Caption = isFr ? "Comportement" : "Handling";
     TabThermal->Caption = isFr ? "Thermique" : "Thermal";
     TabSuspension->Caption = isFr ? "Suspension" : "Suspension";
@@ -224,7 +223,7 @@ void TFormMotecSettings::TranslateUI()
     LblCamberMinSpread->Caption = isFr ? "Écart Intérieur/Extérieur Min :" : "Min Inner/Outer Spread:";
     LblCamberMaxSpread->Caption = isFr ? "Écart Intérieur/Extérieur Max :" : "Max Inner/Outer Spread:";
 
-    GroupDamper->Caption = isFr ? "Réglages Amortisseurs" : "Damper Settings";
+    GroupDamper->Caption = isFr ? "Vitesse Amortisseur" : "Damper Velocity";
     LblDamperLowSpeedThreshold->Caption = isFr ? "Seuil Basse Vitesse :" : "Low Speed Threshold:";
     LblDamperAsymmetryThreshold->Caption = isFr ? "Seuil Asymétrie :" : "Asymmetry Threshold:";
     LblDamperHighSpeedShareMax->Caption = isFr ? "Part Haute Vitesse Max :" : "High Speed Share Max:";
@@ -239,7 +238,7 @@ void TFormMotecSettings::TranslateUI()
     LblWaterTempMax->Caption = isFr ? "Temp Eau Max :" : "Max Water Temp:";
     LblOilTempMax->Caption = isFr ? "Temp Huile Max :" : "Max Oil Temp:";
 
-    GroupSuspension->Caption = isFr ? "Seuils Suspension" : "Suspension Thresholds";
+    GroupSuspension->Caption = isFr ? "Géométrie Suspension" : "Suspension Geometry";
     LblSuspTravelMax->Caption = isFr ? "Course Max (mm) :" : "Max Travel (mm):";
     LblRideHeightDiffMax->Caption = isFr ? "Diff Hauteur Caisse Max (G/D) :" : "Max Ride Height Diff (L/R):";
     LblSuspVelocityMax->Caption = isFr ? "Vitesse Max (mm/s) :" : "Max Velocity (mm/s):";

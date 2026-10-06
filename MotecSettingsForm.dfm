@@ -240,77 +240,6 @@ object FormMotecSettings: TFormMotecSettings
         end
       end
     end
-    object TabDamper: TTabSheet
-      Caption = 'Damper'
-      object GroupDamper: TGroupBox
-        Left = 16
-        Top = 16
-        Width = 552
-        Height = 384
-        Caption = 'Damper Settings'
-        TabOrder = 0
-        object LblDamperLowSpeedThreshold: TLabel
-          Left = 16
-          Top = 32
-          Width = 115
-          Height = 15
-          Caption = 'Low Speed Threshold:'
-        end
-        object LblDamperAsymmetryThreshold: TLabel
-          Left = 16
-          Top = 64
-          Width = 119
-          Height = 15
-          Caption = 'Asymmetry Threshold:'
-        end
-        object LblDamperHighSpeedShareMax: TLabel
-          Left = 16
-          Top = 96
-          Width = 122
-          Height = 15
-          Caption = 'High Speed Share Max:'
-        end
-        object LblDamperLowSpeedShareMin: TLabel
-          Left = 16
-          Top = 128
-          Width = 116
-          Height = 15
-          Caption = 'Low Speed Share Min:'
-        end
-        object EditDamperLowSpeedThreshold: TEdit
-          Left = 170
-          Top = 28
-          Width = 60
-          Height = 23
-          TabOrder = 0
-          Text = '50.0'
-        end
-        object EditDamperAsymmetryThreshold: TEdit
-          Left = 170
-          Top = 60
-          Width = 60
-          Height = 23
-          TabOrder = 1
-          Text = '8.0'
-        end
-        object EditDamperHighSpeedShareMax: TEdit
-          Left = 170
-          Top = 92
-          Width = 60
-          Height = 23
-          TabOrder = 2
-          Text = '25.0'
-        end
-        object EditDamperLowSpeedShareMin: TEdit
-          Left = 170
-          Top = 124
-          Width = 60
-          Height = 23
-          TabOrder = 3
-          Text = '92.0'
-        end
-      end
-    end
     object TabHandling: TTabSheet
       Caption = 'Handling'
       object GroupHandling: TGroupBox
@@ -410,13 +339,81 @@ object FormMotecSettings: TFormMotecSettings
     end
     object TabSuspension: TTabSheet
       Caption = 'Suspension'
-      object GroupSuspension: TGroupBox
+      object GroupDamper: TGroupBox
         Left = 16
         Top = 16
         Width = 552
-        Height = 384
-        Caption = 'Suspension Thresholds'
+        Height = 178
+        Caption = 'Damper Velocity'
         TabOrder = 0
+        object LblDamperLowSpeedThreshold: TLabel
+          Left = 16
+          Top = 32
+          Width = 115
+          Height = 15
+          Caption = 'Low Speed Threshold:'
+        end
+        object LblDamperAsymmetryThreshold: TLabel
+          Left = 16
+          Top = 64
+          Width = 119
+          Height = 15
+          Caption = 'Asymmetry Threshold:'
+        end
+        object LblDamperHighSpeedShareMax: TLabel
+          Left = 16
+          Top = 96
+          Width = 122
+          Height = 15
+          Caption = 'High Speed Share Max:'
+        end
+        object LblDamperLowSpeedShareMin: TLabel
+          Left = 16
+          Top = 128
+          Width = 116
+          Height = 15
+          Caption = 'Low Speed Share Min:'
+        end
+        object EditDamperLowSpeedThreshold: TEdit
+          Left = 170
+          Top = 28
+          Width = 60
+          Height = 23
+          TabOrder = 0
+          Text = '50.0'
+        end
+        object EditDamperAsymmetryThreshold: TEdit
+          Left = 170
+          Top = 60
+          Width = 60
+          Height = 23
+          TabOrder = 1
+          Text = '8.0'
+        end
+        object EditDamperHighSpeedShareMax: TEdit
+          Left = 170
+          Top = 92
+          Width = 60
+          Height = 23
+          TabOrder = 2
+          Text = '25.0'
+        end
+        object EditDamperLowSpeedShareMin: TEdit
+          Left = 170
+          Top = 124
+          Width = 60
+          Height = 23
+          TabOrder = 3
+          Text = '92.0'
+        end
+      end
+      object GroupSuspension: TGroupBox
+        Left = 16
+        Top = 208
+        Width = 552
+        Height = 192
+        Caption = 'Suspension Geometry'
+        TabOrder = 1
         object LblSuspTravelMax: TLabel
           Left = 16
           Top = 32

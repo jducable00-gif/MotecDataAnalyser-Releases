@@ -15,6 +15,8 @@
 //---------------------------------------------------------------------------
 USEFORM("MotecSetupForm.cpp", FormMotecSetup);
 USEFORM("MotecSettingsForm.cpp", FormMotecSettings);
+#include "MotecSetupForm.h"
+#include "MotecSettingsForm.h"
 //---------------------------------------------------------------------------
 int WINAPI _tWinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
 {

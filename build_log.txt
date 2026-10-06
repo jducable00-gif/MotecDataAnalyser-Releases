@@ -2,3 +2,5 @@ Microsoft (R) Build Engine version 4.8.9032.0
 [Microsoft .NET Framework, version 4.0.30319.42000]
 Copyright (C) Microsoft Corporation. All rights reserved.
 
+Project1.cpp(25,37): error E2639: expected a type [C:\Users\Raymond\Documents\MotecDataAnalyser\Project1.cbproj]
+Project1.cpp(25,56): error E5892: use of undeclared identifier 'FormMotecSetup' [C:\Users\Raymond\Documents\MotecDataAnalyser\Project1.cbproj]
