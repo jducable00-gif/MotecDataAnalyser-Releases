@@ -246,13 +246,6 @@
             <BuildOrder>1</BuildOrder>
             <PCH>true</PCH>
         </PCHCompile>
-        <CppCompile Include="RecommendationEngine.cpp">
-            <DependentOn>RecommendationEngine.h</DependentOn>
-            <BuildOrder>11</BuildOrder>
-        </CppCompile>
-        <None Include="RecommendationEngine.h">
-            <BuildOrder>7</BuildOrder>
-        </None>
         <CppCompile Include="RuleConfig.cpp">
             <DependentOn>RuleConfig.h</DependentOn>
             <BuildOrder>9</BuildOrder>

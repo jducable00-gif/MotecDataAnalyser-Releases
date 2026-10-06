@@ -115,14 +115,14 @@ evaluateLapWithRules(lap, settings) {
 }
 ```
 
-## 4. RecommendationEngine (`RecommendationEngine.h/.cpp`) — Damper Only
+## 4. Damper-Velocity Detection (in `MotecSetupAnalyzer.h`)
 
-This file contains **only** damper-velocity detection:
+Inline in the core analyzer header (previously `RecommendationEngine.h/.cpp`, now merged):
 
-- `evaluateDamperCorner(stats, cornerLabel, ...)` -> detects 3 issues:
+- `detail::evaluateDamperCorner(stats, cornerLabel, ...)` -> detects 3 issues:
   1. Bump/rebound asymmetry > threshold
-  2. High-speed part > max
-  3. Low-speed part < min AND stdDev < max (suspension nearly static)
+  2. High-speed share > max
+  3. Low-speed share high AND stdDev < max (suspension nearly static)
 - `hasDamperIssue(stats)` = shorthand for LF corner
 
 > **Note:** The structured `Recommendation` pipeline (`computeConfidence`, `dataQualityLabel`, `applyRuleToRecommendation`, `findSymptomRule`) was **removed** as dead code. The `CauseEntry` and `Recommendation` structs still exist in `MotecSetupAnalyzer.h` but are **not wired** to the active engine. They will be re-wired when the report engine is extended.
@@ -134,9 +134,8 @@ This file contains **only** damper-velocity detection:
 | `Project1.cpp` | `WinMain`, creates `TFormMotecSetup` |
 | `MotecSetupForm.h/.cpp/.dfm` | Main VCL form: file dialogs, progress, report tabs, GDI+ paint boxes (tyre temps, suspension/damper), threshold INI load/save, live-capture wiring |
 | `MotecSettingsForm.h/.cpp/.dfm` | Threshold editor dialog (6 tabs: General, Tyre, Handling, Thermal, Suspension, Brake). Reads/writes `g_thresholds` directly |
-| `MotecSetupAnalyzer.h` | Core types: `LapStats`, `DataProvider`, `AnalysisAlias`, `ChannelMapping`, `AnalysisRule`, `AnalysisRegistry`, `AnalysisResult`, `AnalysisSettings`, `Thresholds` + `g_thresholds`, 4 inline rule classes, `CauseEntry`/`Recommendation` (disabled pipeline) |
+| `MotecSetupAnalyzer.h` | Core types: `LapStats`, `DataProvider`, `AnalysisAlias`, `ChannelMapping`, `AnalysisRule`, `AnalysisRegistry`, `AnalysisResult`, `AnalysisSettings`, `Thresholds` + `g_thresholds`, 4 inline rule classes, damper-velocity detection (`evaluateDamperCorner`, `hasDamperIssue`), `CauseEntry`/`Recommendation` (disabled pipeline) |
 | `analyze_motec_setup.cpp` | CSV/LD parsing (`parseMotecCsv`, `parseMotecLd`), `buildDataProviderFromLap`, `evaluateLapWithRules`, `mapAnalysisResultToReportSection`, `saveSymptomWeights`/`loadSymptomWeights` |
-| `RecommendationEngine.h/.cpp` | Damper-velocity detection only (`evaluateDamperCorner`, `hasDamperIssue`) |
 | `RuleConfig.h/.cpp` | Singleton: symptom registry + channel alias mappings + JSON parser. `buildDefaults()`, `resolveAlias()`, `loadChannelMappings()` |
 | `LapReportGenerator.h/.cpp` | Lap selection/averaging, report section generation (`generate*`), `ReportResult` |
 | `MotecToCSV.h/.cpp` | Binary LD/LDX decoder (`DecodeMotecLd`), Bresenham resampling, beacon markers, session metadata |

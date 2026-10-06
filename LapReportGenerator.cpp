@@ -395,6 +395,21 @@ ReportResult LapReportGenerator::generate(const LapStats& lap, bool fullReport,
         data.hasRecommendation = true;
     }
 
+    // --- Damper-velocity recommendations (Suspension section) ---
+    {
+        const DamperCornerStats* corners[4] = { &lap.damperLF, &lap.damperRF, &lap.damperLR, &lap.damperRR };
+        for (int c = 0; c < 4; ++c) {
+            const std::string rec = getDamperRecommendation(*corners[c], c, language);
+            if (!rec.empty()) {
+                SectionData& data = result[ReportSection::Suspension];
+                if (!data.content.empty())
+                    data.content += "\n";
+                data.content += rec + "\n";
+                data.hasRecommendation = true;
+            }
+        }
+    }
+
     std::ostringstream summary;
     const bool fr = (language == ReportLanguage::French);
 
