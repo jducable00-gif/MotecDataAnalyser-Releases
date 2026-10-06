@@ -1,72 +1,104 @@
-# Project Context: Motec Data Analyser (AMS2)
-
-## 🎯 Mission Statement
-Build an intelligent driving assistant for Automobilista 2 that correlates vehicle setup constraints (`.cdf` files), current session settings (Shared Memory), and real-time performance data (Motec Telemetry) to provide actionable tuning recommendations.
-
----
-
-## 🏗️ System Architecture
-
-The application follows a three-layer architecture designed to separate theoretical limits from physical reality:
-
-### 1. Knowledge Base Layer (Theory)
-*   **Data Source**: `.cdf` files parsed via `scripts/build_vehicles_db.py`.
-*   **Format**: `data/vehicles_db.json`.
-*   **Content**: Vehicle-specific constraints including parameter names, min/max limits, step increments, and default values.
-*   **Role**: Provides the "Rules of Engagement" for all recommendations.
-
-### 2. Session Snapshot Layer (Intent)
-*   **Data Source**: AMS2 Shared Memory (Version 14).
-*   **Mechanism**: `Ams2LiveCapture` reads memory frames, validating sequence numbers to ensure data integrity.
-*   **Content**: The exact configuration the driver has selected for the current session.
-*   **Role**: Establishes the baseline from which changes are proposed.
-
-### 3. Telemetry Analysis Layer (Reality)
-*   **Data Source**: Motec Data (.csv or live stream).
-*   **Mechanism**: `MotecToCSV` and telemetry parsing logic.
-*   **Content**: High-frequency sensor data (G-forces, suspension travel, tyre temps, etc.).
-*   **Role**: Detects performance anomalies that trigger the recommendation engine.
-
----
-
-## 🛠️ Technical Stack
-
-| Component | Technology | Purpose |
-| :--- | :--- | :--- |
-| **Core Application** | C++ (Embarcadero C++Builder) | High-performance data processing and UI. |
-| **Data Consolidation** | Python | Automating the conversion of CDF to JSON. |
-| **Database Format** | JSON | Lightweight, human-readable vehicle constraints. |
-| **Communication** | Shared Memory (AMS2) | Real-time interface with the simulator. |
-| **Telemetry Interface** | Motec Data Files | Historical and real-time performance analysis. |
-
----
-
-## 🚀 Development Roadmap
-
-### Phase 1: Foundations (COMPLETED ✅)
-*   [x] CDF parsing logic development.
-*   [x] Python consolidation script creation & testing.
-*   [x] Knowledge Base structure (`vehicles_db.json`) established.
-*   [x] Shared Memory interface implementation (`Ams2LiveCapture`).
-
-### Phase 2: Snapshotting (IN PROGRESS 🚧)
-*   [ ] Implement `VehicleDatabase` class in C++ to load and query `vehicles_db.json`.
-*   [ ] Create a "Session Manager" to capture the initial state of all settings from Shared Memory at session start.
-
-### Phase 3: Recommendation Engine (PLANNED 📅)
-*   [ ] Implement correlation logic using proxy analysis (e.g., Aero $\leftrightarrow$ Suspension).
-*   [ ] Develop rule-based engine that respects `min`/`max`/`step` constraints.
-
-### Phase 4: Reporting & UI (PLANNED 📅)
-*   [ ] Build a dashboard to visualize "Current vs. Recommended" settings.
-*   [ ] Generate post-session diagnostic reports.
-
----
-
-## 🧠 Key Principles for Developers
-
-1.  **Respect the Step**: Never suggest a value that isn't an integer multiple of the parameter's `step`.
-2.  **Bounds Awareness**: Every recommendation must be validated against the `min` and `max` values in the JSON.
-3.  **Proxy Logic**: When direct telemetry is missing (e.g., Aero), use physical proxies (Suspension/G-force) to infer state.
-4.  **Snapshot vs. Default**: Always compare performance against what the driver *actually* set, not what the car came with by default.
-
+{
+  "project": "MotecDataAnalyser",
+  "description": "Desktop telemetry analysis tool for MoTeC data (CSV/LD/LDX) and live simulator capture (AMS2, AC EVO). C++ Builder 12 VCL application.",
+  "architecture": {
+    "pattern": "Rule-based analysis engine with alias abstraction layer",
+    "layers": [
+      {
+        "name": "Data Ingestion",
+        "description": "Parse CSV/LD/LDX files or read live shared memory into LapStats structures",
+        "files": [
+          "analyze_motec_setup.cpp",
+          "MotecToCSV.h/.cpp",
+          "Ams2LiveCapture.*",
+          "AcsEvoLiveCapture.*"
+        ]
+      },
+      {
+        "name": "Alias Resolution (DataProvider)",
+        "description": "Maps raw channel names to semantic aliases per simulator profile. Supports virtual channels (e.g. Rake). Configured via MotecDataAnalyser.mapping.json",
+        "files": [
+          "MotecSetupAnalyzer.h (DataProvider, AnalysisAlias, ChannelMapping)",
+          "RuleConfig.h/.cpp (loadChannelMappings)"
+        ]
+      },
+      {
+        "name": "Rule Engine (AnalysisRegistry)",
+        "description": "Evaluates independent AnalysisRule instances against DataProvider. Each rule declares requiredInputs() and returns AnalysisResult. Currently 4 rules: EngineTemperature, TyreTemperature, TyrePressure, HandlingBalance",
+        "files": [
+          "MotecSetupAnalyzer.h (AnalysisRule, AnalysisRegistry, rule classes)",
+          "analyze_motec_setup.cpp (evaluateLapWithRules)"
+        ]
+      },
+      {
+        "name": "Report Generation",
+        "description": "Maps AnalysisResults to report sections. Generates structured ReportResult for UI display",
+        "files": [
+          "LapReportGenerator.h/.cpp",
+          "analyze_motec_setup.cpp (mapAnalysisResultToReportSection)"
+        ]
+      },
+      {
+        "name": "UI (VCL)",
+        "description": "Main form with report tabs, GDI+ paint boxes for tyre temps and damper histograms. Threshold editor dialog. Live capture controls",
+        "files": [
+          "MotecSetupForm.h/.cpp/.dfm",
+          "MotecSettingsForm.h/.cpp/.dfm"
+        ]
+      }
+    ],
+    "disabled_pipeline": {
+      "description": "Structured Recommendation pipeline (computeConfidence, dataQualityLabel, applyRuleToRecommendation) was removed as dead code. CauseEntry and Recommendation structs exist in MotecSetupAnalyzer.h but are not wired to the active engine.",
+      "status": "pending re-wire when report engine is extended"
+    }
+  },
+  "configuration": {
+    "files": [
+      {
+        "name": "MotecDataAnalyser.ini",
+        "purpose": "UI options (language, profile, full-report, last folder)"
+      },
+      {
+        "name": "MotecDataAnalyser.thresholds.ini",
+        "purpose": "Numeric thresholds + SymptomWeights overrides. Restart required after edits"
+      },
+      {
+        "name": "MotecDataAnalyser.rules.json",
+        "purpose": "Optional custom symptoms/aliases/weights. Fallback: buildDefaults() in code"
+      },
+      {
+        "name": "MotecDataAnalyser.mapping.json",
+        "purpose": "Channel alias mappings per profile + virtual channels"
+      }
+    ],
+    "load_order": [
+      "rules.json",
+      "mapping.json",
+      "thresholds.ini"
+    ],
+    "weight_priority": "INI [SymptomWeights] > rules.json > buildDefaults()"
+  },
+  "roadmap": {
+    "completed": [
+      "Cleanup: removed hardcoded analysis logic, centralized thresholds in AnalysisSettings",
+      "Mapping abstraction: DataProvider + alias system + external mapping.json",
+      "Rule-based engine: AnalysisRule/AnalysisRegistry with 4 initial rules",
+      "Virtual channels: Rake via ride-height difference"
+    ],
+    "in_progress": [
+      "Source channel decoupling: replace direct channel dispatch in analyze_motec_setup.cpp with DataProvider ingestion (depends on mapping source/profile definition)"
+    ],
+    "planned": [
+      "UI Dispatcher: route AnalysisResults to the correct TTab dynamically",
+      "Cross-validation: test with AMS2 Motec file + AC EVO live session",
+      "Regression tests: verify no data loss through alias layer",
+      "Re-wire structured Recommendation pipeline when report engine is extended"
+    ]
+  },
+  "key_principles": [
+    "Simulator-agnostic: rules use semantic aliases, never raw channel names",
+    "Data-driven: symptoms/aliases/weights from RuleConfig (code + optional JSON), no recompile to add a symptom",
+    "Exe-relative paths: all file I/O anchored to executable directory",
+    "GDI+ rendering: all charts are custom GDI+, no TChart"
+  ]
+}
