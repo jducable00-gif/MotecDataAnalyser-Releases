@@ -763,7 +763,7 @@ void __fastcall TFormMotecSetup::FormResize(TObject *Sender)
     // 1.5 Brake Temp Box - Positioned between Tire Temps and Dampers
     if (BrakeTempPaintBox != NULL) {
         int areaLeft = tireBoxWidth + 30;
-        int brakeBoxWidth = 240; // Fixed width for the brake icons/legend
+        int brakeBoxWidth = 300; // Wide enough for brake discs + water/oil gauges on the right
         int brakeBoxHeight = tireBoxHeight;
 
         BrakeTempPaintBox->Left = areaLeft;
@@ -967,6 +967,97 @@ void __fastcall TFormMotecSetup::BrakeTempPaintBoxPaint(TObject *Sender)
         Gdiplus::RectF maxRect((Gdiplus::REAL)(pos[i].x - 16), (Gdiplus::REAL)(pos[i].y + iconSize + 19), (Gdiplus::REAL)(iconSize + 32), 15);
         graphics.DrawString(maxBuf, -1, &tempFont, maxRect, &centerFmt, &maxBrush);
     }
+
+    // --- Temperature Gauge rendering (Water & Oil) in third column ---
+    const int gaugeX = leftPad + 2 * (iconSize + colGap) + 30; // x of gauge column (pushed to the right)
+    const float gaugeD = 46.0f;                            // same diameter as brake discs
+
+    auto drawTempGauge = [&](float gx, float gy, double tempValue, bool dataValid, double warnThreshold, const wchar_t* caption) {
+        float cx = gx + gaugeD / 2.0f;
+        float cy = gy + gaugeD / 2.0f;
+
+        // Gauge background circle (dark)
+        Gdiplus::SolidBrush gaugeBg(Gdiplus::Color(255, 40, 42, 48));
+        graphics.FillEllipse(&gaugeBg, gx, gy, gaugeD, gaugeD);
+        Gdiplus::Pen gaugeRim(Gdiplus::Color(255, 100, 104, 112), 1.5f);
+        graphics.DrawEllipse(&gaugeRim, gx, gy, gaugeD, gaugeD);
+
+        // Colored arc segments (blue -> yellow -> red) over top half
+        const int segCount = 24;
+        float arcInset = gaugeD * 0.12f;
+        float arcX = gx + arcInset;
+        float arcY = gy + arcInset;
+        float arcW = gaugeD - 2.0f * arcInset;
+
+        for (int s = 0; s < segCount; ++s) {
+            float t = (float)s / (segCount - 1);
+            int r, g, b;
+            if (t < 0.5f) {
+                float f = t * 2.0f;
+                r = (int)(60 + f * 195);   // 60 -> 255
+                g = (int)(140 + f * 80);   // 140 -> 220
+                b = (int)(255 - f * 195);  // 255 -> 60
+            } else {
+                float f = (t - 0.5f) * 2.0f;
+                r = 255;
+                g = (int)(220 - f * 150);   // 220 -> 70
+                b = (int)(60 - f * 10);     // 60 -> 50
+            }
+            float startAng = 180.0f + t * 180.0f / segCount;
+            float sweepAng = 180.0f / segCount + 0.5f;
+            Gdiplus::Pen segPen(Gdiplus::Color(255, r, g, b), 3.0f);
+            graphics.DrawArc(&segPen, arcX, arcY, arcW, arcW, startAng, sweepAng);
+        }
+
+        // Needle
+        if (dataValid) {
+            const double tMin = 40.0, tMax = 150.0;
+            double clamped = tempValue < tMin ? tMin : (tempValue > tMax ? tMax : tempValue);
+            float frac = (float)((clamped - tMin) / (tMax - tMin));
+            float needleAngRad = (float)(3.14159265 * (1.0 - frac)); // PI(left) to 0(right)
+            float needleLen = gaugeD * 0.38f;
+            float nx = cx + needleLen * cosf(needleAngRad);
+            float ny = cy - needleLen * sinf(needleAngRad);
+            // Needle turns red when the temperature exceeds the warning threshold
+            Gdiplus::Color needleCol = (tempValue > warnThreshold)
+                ? Gdiplus::Color(255, 230, 60, 50)   // alert red
+                : Gdiplus::Color(255, 240, 240, 240); // normal white
+            Gdiplus::Pen needlePen(needleCol, 2.0f);
+            graphics.DrawLine(&needlePen, cx, cy, nx, ny);
+        } else {
+            // No data: short grey needle pointing down
+            Gdiplus::Pen needlePen(Gdiplus::Color(255, 120, 120, 120), 2.0f);
+            graphics.DrawLine(&needlePen, cx, cy, cx, cy + gaugeD * 0.25f);
+        }
+
+        // Center hub dot
+        Gdiplus::SolidBrush hubDot(Gdiplus::Color(255, 200, 204, 210));
+        float hubR = 3.0f;
+        graphics.FillEllipse(&hubDot, cx - hubR, cy - hubR, hubR * 2.0f, hubR * 2.0f);
+
+        // Caption below gauge
+        Gdiplus::Font capFont(L"Segoe UI", 8.5f, Gdiplus::FontStyleBold);
+        Gdiplus::SolidBrush capBrush(Gdiplus::Color(255, 230, 230, 230));
+        Gdiplus::RectF capRect(gx - 6.0f, gy + gaugeD + 2.0f, gaugeD + 12.0f, 14.0f);
+        graphics.DrawString(caption, -1, &capFont, capRect, &centerFmt, &capBrush);
+
+        // Value text
+        wchar_t valBuf[16];
+        Gdiplus::RectF valRect(gx - 6.0f, gy + gaugeD + 17.0f, gaugeD + 12.0f, 14.0f);
+        if (dataValid) {
+            swprintf(valBuf, 16, L"%.0fC", tempValue);
+            Gdiplus::SolidBrush valBrush(Gdiplus::Color(255, 100, 200, 255));
+            graphics.DrawString(valBuf, -1, &tempFont, valRect, &centerFmt, &valBrush);
+        } else {
+            Gdiplus::SolidBrush noDataBrush(Gdiplus::Color(255, 140, 140, 140));
+            graphics.DrawString(L"--", -1, &tempFont, valRect, &centerFmt, &noDataBrush);
+        }
+    };
+
+    // Water gauge (front row) and Oil gauge (rear row)
+    // Needle turns red above the configured warning thresholds
+    drawTempGauge((float)gaugeX, (float)topY0, waterTemp.avg, waterTemp.valid, g_thresholds.waterTempMax, L"Water");
+    drawTempGauge((float)gaugeX, (float)topY1, oilTemp.avg, oilTemp.valid, g_thresholds.oilTempMax, L"Oil");
 }
 
 void __fastcall TFormMotecSetup::DrawModernHistogram(TCanvas* canvas, int x, int y, int width, int height, const SuspensionCornerData& stats, const String& label)
@@ -1211,6 +1302,23 @@ void __fastcall TFormMotecSetup::UpdateBrakeTemps(const std::vector<LapStats>& l
         } else {
             brakeTemps[i].valid = false;
         }
+    }
+
+    // Water & Oil temperatures
+    if (stats.waterTemp.count > 0) {
+        waterTemp.avg = stats.waterTemp.average();
+        waterTemp.max = stats.waterTemp.max;
+        waterTemp.valid = true;
+    } else {
+        waterTemp.valid = false;
+    }
+
+    if (stats.oilTemp.count > 0) {
+        oilTemp.avg = stats.oilTemp.average();
+        oilTemp.max = stats.oilTemp.max;
+        oilTemp.valid = true;
+    } else {
+        oilTemp.valid = false;
     }
 
     hasBrakeTempData = true;
@@ -1987,7 +2095,7 @@ void __fastcall TFormMotecSetup::UpdateReportTabs(const ReportResult& result)
     MemoEngineCooling->Lines->Clear();
     MemoHandling->Lines->Clear();
 
-    // 2. Populate content from result map
+    // 3. Populate content from result map
     auto formatForMemo = [](const std::string& s) -> String {
         std::string winS = s;
         size_t pos = 0;
@@ -2049,15 +2157,30 @@ void __fastcall TFormMotecSetup::UpdateReportTabs(const ReportResult& result)
     setTabVisible(TabEngineCooling, ReportSection::EngineCooling);
     setTabVisible(TabHandling, ReportSection::Handling);
 
-    // Summary is always visible if it has content
+    // Summary is always visible if it has content.
     if (TabSummary != NULL) {
         TabSummary->Visible = result.count(ReportSection::Summary);
     }
 
-    // Always land on Summary — it's the first tab and is present in every report.
-    // Set as the very last statement so VCL visibility re-layout can't override it.
-    if (TabSummary != NULL && TabSummary->Visible)
-        PageControlReport->ActivePage = TabSummary;
+    // Force a REAL page transition so Windows properly hides/shows tab windows
+    // and triggers painting. If ActivePage is already Summary, VCL does nothing
+    // on re-assignment — no show/hide, no repaint, stale pixels remain.
+    // Bouncing through another visible tab replicates what clicking does.
+    if (TabSummary != NULL && TabSummary->Visible) {
+        if (PageControlReport->ActivePage == TabSummary) {
+            TTabSheet* other = NULL;
+            for (int i = 0; i < PageControlReport->PageCount; ++i) {
+                TTabSheet* t = PageControlReport->Pages[i];
+                if (t != TabSummary && t->Visible) { other = t; break; }
+            }
+            if (other) {
+                PageControlReport->ActivePage = other;
+                PageControlReport->ActivePage = TabSummary;
+            }
+        } else {
+            PageControlReport->ActivePage = TabSummary;
+        }
+    }
 }
 
 void __fastcall TFormMotecSetup::UpdateSuspension(std::vector<LapStats>& laps)

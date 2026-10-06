@@ -138,6 +138,14 @@ public:
     BrakeTempData brakeTemps[4]; // 0=FL, 1=FR, 2=RL, 3=RR
     bool hasBrakeTempData = false;
 
+    struct FluidTempData {
+        double avg = 0.0;
+        double max = 0.0;
+        bool valid = false;
+    };
+    FluidTempData waterTemp;
+    FluidTempData oilTemp;
+
     double aeroBalanceValue = 0.0;
     bool aeroBalanceValid = false;
 
