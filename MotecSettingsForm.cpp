@@ -42,7 +42,7 @@ void TFormMotecSettings::LoadFromThresholds()
     EditPressFrontRearDiffMax->Text = FloatToStr(g_thresholds.pressureFrontRearDiffMax);
 
     // Tyre temp spread (C)
-    EditCamberMinSpread->Text = FloatToStr(g_thresholds.camberMinSpread);
+	EditCamberMinSpread->Text = FloatToStr(g_thresholds.camberMinSpread);
     EditCamberMaxSpread->Text = FloatToStr(g_thresholds.camberMaxSpread);
 
     // Damper velocity (mm/s)
@@ -262,4 +262,5 @@ void TFormMotecSettings::TranslateUI()
 }
 
 #pragma package(smart_init)
+
 

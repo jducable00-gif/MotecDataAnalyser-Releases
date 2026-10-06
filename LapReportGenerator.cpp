@@ -1,4 +1,4 @@
-//---------------------------------------------------------------------------
+﻿//---------------------------------------------------------------------------
 // LapReportGenerator.cpp - Rule-only report assembly.
 //---------------------------------------------------------------------------
 
@@ -376,7 +376,9 @@ ReportResult LapReportGenerator::generate(const LapStats& lap, bool fullReport,
     (void)profile;
 
     ReportResult result;
-    const std::vector<AnalysisResult> findings = evaluateLapWithRules(lap, buildDefaultAnalysisSettings());
+    AnalysisSettings settings = buildDefaultAnalysisSettings();
+    settings.language = language;
+    const std::vector<AnalysisResult> findings = evaluateLapWithRules(lap, settings);
     for (std::size_t i = 0; i < findings.size(); ++i) {
         const AnalysisResult& finding = findings[i];
         const ReportSection section = mapAnalysisResultToReportSection(finding);
@@ -395,6 +397,15 @@ ReportResult LapReportGenerator::generate(const LapStats& lap, bool fullReport,
 
     std::ostringstream summary;
     const bool fr = (language == ReportLanguage::French);
+
+    // --- Car & Track ---
+    auto displayName = [](const std::string& name) -> const char* {
+        if (name.empty() || name == "Unknown vehicle" || name == "Unknown circuit")
+            return "N/A";
+        return name.c_str();
+    };
+    summary << (fr ? "Voiture : " : "Car: ") << displayName(lap.vehicleName) << "\n";
+	summary << (fr ? "Circuit : " : "Track: ") << displayName(lap.trackName) << "\n\n";
 
     // --- Lap selection breakdown ---
     if (selection && selection->totalLaps > 0) {

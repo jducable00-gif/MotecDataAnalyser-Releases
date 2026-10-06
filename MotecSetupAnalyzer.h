@@ -1,4 +1,4 @@
-//---------------------------------------------------------------------------
+﻿//---------------------------------------------------------------------------
 // MotecSetupAnalyzer.h — Types et API d'analyse de la télémétrie MoTeC.
 //
 // Définit les structures de données (LapStats, histogrammes de butées,
@@ -223,6 +223,7 @@ struct AnalysisSettings {
     bool tyreAnalysisEnabled = true;
     bool engineAnalysisEnabled = true;
     bool pressureAnalysisEnabled = true;
+    ReportLanguage language = ReportLanguage::English;
 };
 
 enum class AnalysisAlias {
@@ -440,6 +441,9 @@ public:
     std::vector<AnalysisResult> evaluate(const DataProvider& provider,
                                         const AnalysisSettings& settings) const override {
         std::vector<AnalysisResult> results;
+        auto tr = [&](const std::string& en, const std::string& fr) -> std::string {
+            return settings.language == ReportLanguage::French ? fr : en;
+        };
 
         if (settings.engineAnalysisEnabled) {
             double waterTemp = 0.0;
@@ -447,9 +451,9 @@ public:
                 AnalysisResult result;
                 result.severity = AnalysisSeverity::Critical;
                 result.category = "Engine";
-                result.title = "Water temperature high";
-                result.description = "Water temperature exceeds the warning threshold.";
-                result.recommendation = "Check radiator flow, coolant level and fan operation.";
+                result.title = tr("Water temperature high", "Température d'eau élevée");
+                result.description = tr("Water temperature exceeds the warning threshold.", "La température de l'eau dépasse le seuil d'alerte.");
+                result.recommendation = tr("Check radiator flow, coolant level and fan operation.", "Vérifier le flux du radiateur, le niveau de liquide de refroidissement et le fonctionnement du ventilateur.");
                 results.push_back(result);
             }
 
@@ -458,9 +462,9 @@ public:
                 AnalysisResult result;
                 result.severity = AnalysisSeverity::Critical;
                 result.category = "Engine";
-                result.title = "Oil temperature high";
-                result.description = "Oil temperature exceeds the warning threshold.";
-                result.recommendation = "Verify oil cooling and reduce sustained load.";
+                result.title = tr("Oil temperature high", "Température d'huile élevée");
+                result.description = tr("Oil temperature exceeds the warning threshold.", "La température de l'huile dépasse le seuil d'alerte.");
+                result.recommendation = tr("Verify oil cooling and reduce sustained load.", "Vérifier le refroidissement de l'huile et réduire la charge soutenue.");
                 results.push_back(result);
             }
         }
@@ -487,6 +491,10 @@ public:
         if (!settings.tyreAnalysisEnabled)
             return results;
 
+        auto tr = [&](const std::string& en, const std::string& fr) -> std::string {
+            return settings.language == ReportLanguage::French ? fr : en;
+        };
+
         static const char* positions[] = { "FL", "FR", "RL", "RR" };
         static const AnalysisAlias innerAliases[] = {
             AnalysisAlias::TyreTempFLInner, AnalysisAlias::TyreTempFRInner,
@@ -511,19 +519,31 @@ public:
             const bool hasMiddle = provider.getValue(middleAliases[i], middle);
             const bool hasOuter = provider.getValue(outerAliases[i], outer);
 
-            if (hasInner && hasOuter) {
-                if (inner <= outer) {
-                    AnalysisResult result;
-                    result.severity = AnalysisSeverity::Warning;
-                    result.category = "Tyres";
-                    result.title = pos + " insufficient negative camber";
-                    result.description = pos + " tyre inner band is not hotter than the outer band.";
-                    result.recommendation = "Increase negative camber slightly and re-check the same corner on comparable laps.";
-                    results.push_back(result);
-                }
-            }
+			if (hasInner && hasOuter) {
+				if (inner <= outer+g_thresholds.camberMinSpread) {
+					AnalysisResult result;
+					result.severity = AnalysisSeverity::Warning;
+					result.category = "Tyres";
+					result.title = pos + tr(" insufficient negative camber", " carrossage négatif insuffisant");
+					result.description = pos + tr(" tyre inner band is not hotter than the outer band.", " pneu : la bande interne n'est pas plus chaude que la bande externe.");
+					result.recommendation = tr("Increase negative camber slightly and re-check the same corner on comparable laps.", "Augmenter légèrement le carrossage négatif et revérifier le même virage sur des tours comparables.");
+					results.push_back(result);
+				}
+			}
 
-            if (hasInner && hasMiddle && hasOuter) {
+			if (hasInner && hasOuter) {
+				if (inner >= outer+g_thresholds.camberMaxSpread) {
+					AnalysisResult result;
+					result.severity = AnalysisSeverity::Warning;
+					result.category = "Tyres";
+					result.title = pos + tr(" too much negative camber", " carrossage négatif insuffisant");
+					result.description = pos + tr(" tyre inner band is too much hotter than the outer band.", " pneu : la bande interne est trop chaude par rapport à la bande externe.");
+					result.recommendation = tr("decrease negative camber slightly and re-check the same corner on comparable laps.", "Diminuer légèrement le carrossage négatif et revérifier le même virage sur des tours comparables.");
+					results.push_back(result);
+				}
+			}
+
+			if (hasInner && hasMiddle && hasOuter) {
                 const double shoulderMin = std::min(inner, outer);
                 const double shoulderMax = std::max(inner, outer);
 
@@ -531,17 +551,17 @@ public:
                     AnalysisResult result;
                     result.severity = AnalysisSeverity::Warning;
                     result.category = "Tyres";
-                    result.title = pos + " center band below shoulders";
-                    result.description = pos + " tyre center band is not strictly between the inner and outer bands; both shoulders are as hot or hotter.";
-                    result.recommendation = "Raise the starting pressure slightly and re-check the hot tyre pressure and temperature profile.";
+                    result.title = pos + tr(" center band below shoulders", " bande centrale sous les épaules");
+                    result.description = pos + tr(" tyre center band is not strictly between the inner and outer bands; both shoulders are as hot or hotter.", " pneu : la bande centrale n'est pas strictement entre les bandes interne et externe ; les deux épaules sont aussi chaudes ou plus chaudes.");
+                    result.recommendation = tr("Raise the starting pressure slightly and re-check the hot tyre pressure and temperature profile.", "Augmenter légèrement la pression de départ et revérifier la pression et le profil de température du pneu à chaud.");
                     results.push_back(result);
                 } else if (middle >= shoulderMax) {
                     AnalysisResult result;
                     result.severity = AnalysisSeverity::Warning;
                     result.category = "Tyres";
-                    result.title = pos + " center band above shoulders";
-                    result.description = pos + " tyre center band is not strictly between the inner and outer bands; the center is as hot or hotter.";
-                    result.recommendation = "Reduce the starting pressure slightly and re-check the hot tyre pressure and temperature profile.";
+                    result.title = pos + tr(" center band above shoulders", " bande centrale au-dessus des épaules");
+                    result.description = pos + tr(" tyre center band is not strictly between the inner and outer bands; the center is as hot or hotter.", " pneu : la bande centrale n'est pas strictement entre les bandes interne et externe ; le centre est aussi chaud ou plus chaud.");
+                    result.recommendation = tr("Reduce the starting pressure slightly and re-check the hot tyre pressure and temperature profile.", "Réduire légèrement la pression de départ et revérifier la pression et le profil de température du pneu à chaud.");
                     results.push_back(result);
                 }
             }
@@ -564,6 +584,10 @@ public:
                                         const AnalysisSettings& settings) const override {
         std::vector<AnalysisResult> results;
 
+        auto tr = [&](const std::string& en, const std::string& fr) -> std::string {
+            return settings.language == ReportLanguage::French ? fr : en;
+        };
+
         if (!settings.tyreAnalysisEnabled || !settings.pressureAnalysisEnabled)
             return results;
 
@@ -583,9 +607,11 @@ public:
             AnalysisResult result;
             result.severity = AnalysisSeverity::Warning;
             result.category = "Tyres";
-            result.title = "Front pressure imbalance";
-            result.description = "Front left/right pressures differ too much for a balanced setup.";
-            result.recommendation = "Correct the front pressure split and re-check tyre temperatures.";
+            result.title = tr("Front pressure imbalance", "Déséquilibre de pression avant");
+            result.description = tr("Front left/right pressures differ too much for a balanced setup.",
+                                    "Les pressions avant gauche/droite diffèrent trop pour un équilibre correct.");
+            result.recommendation = tr("Correct the front pressure split and re-check tyre temperatures.",
+                                       "Corriger l'écart de pression avant et revérifier les températures des pneus.");
             results.push_back(result);
         }
 
@@ -593,9 +619,11 @@ public:
             AnalysisResult result;
             result.severity = AnalysisSeverity::Warning;
             result.category = "Tyres";
-            result.title = "Rear pressure imbalance";
-            result.description = "Rear left/right pressures differ too much for a balanced setup.";
-            result.recommendation = "Balance the rear pressure split to reduce asymmetry.";
+            result.title = tr("Rear pressure imbalance", "Déséquilibre de pression arrière");
+            result.description = tr("Rear left/right pressures differ too much for a balanced setup.",
+                                    "Les pressions arrière gauche/droite diffèrent trop pour un équilibre correct.");
+            result.recommendation = tr("Balance the rear pressure split to reduce asymmetry.",
+                                       "Équilibrer l'écart de pression arrière pour réduire l'asymétrie.");
             results.push_back(result);
         }
 
@@ -605,9 +633,11 @@ public:
             AnalysisResult result;
             result.severity = AnalysisSeverity::Warning;
             result.category = "Tyres";
-            result.title = "Front/rear pressure mismatch";
-            result.description = "Front and rear axle pressures are unevenly distributed.";
-            result.recommendation = "Reduce the axle pressure difference to improve balance.";
+            result.title = tr("Front/rear pressure mismatch", "Désaccord de pression avant/arrière");
+            result.description = tr("Front and rear axle pressures are unevenly distributed.",
+                                    "Les pressions des essieux avant et arrière sont inégalement réparties.");
+            result.recommendation = tr("Reduce the axle pressure difference to improve balance.",
+                                       "Réduire l'écart de pression entre les essieux pour améliorer l'équilibre.");
             results.push_back(result);
         }
 
@@ -628,6 +658,10 @@ public:
                                         const AnalysisSettings& settings) const override {
         std::vector<AnalysisResult> results;
 
+        auto tr = [&](const std::string& en, const std::string& fr) -> std::string {
+            return settings.language == ReportLanguage::French ? fr : en;
+        };
+
         double steer = 0.0;
         double yaw = 0.0;
         double rearSlip = 0.0;
@@ -642,9 +676,11 @@ public:
             AnalysisResult result;
             result.severity = AnalysisSeverity::Warning;
             result.category = "Handling";
-            result.title = "Rear wheel slip high";
-            result.description = "Rear wheels are spending too much time slipping compared to the handling baseline.";
-            result.recommendation = "Reduce rear slip with more rear grip, a softer differential setup or better traction.";
+            result.title = tr("Rear wheel slip high", "Patinage des roues arrière élevé");
+            result.description = tr("Rear wheels are spending too much time slipping compared to the handling baseline.",
+                                    "Les roues arrière patinent trop par rapport à la référence de comportement.");
+            result.recommendation = tr("Reduce rear slip with more rear grip, a softer differential setup or better traction.",
+                                       "Réduire le patinage arrière avec plus d'adhérence arrière, un différentiel plus souple ou une meilleure traction.");
             results.push_back(result);
         }
 
@@ -652,9 +688,11 @@ public:
             AnalysisResult result;
             result.severity = AnalysisSeverity::Warning;
             result.category = "Handling";
-            result.title = "Front wheel slip high";
-            result.description = "Front wheels are slipping more than expected under cornering or braking.";
-            result.recommendation = "Check brake bias, front tyre load and front grip balance.";
+            result.title = tr("Front wheel slip high", "Patinage des roues avant élevé");
+            result.description = tr("Front wheels are slipping more than expected under cornering or braking.",
+                                    "Les roues avant patinent plus que prévu en virage ou au freinage.");
+            result.recommendation = tr("Check brake bias, front tyre load and front grip balance.",
+                                       "Vérifier le répartiteur de freinage, la charge des pneus avant et l'équilibre d'adhérence avant.");
             results.push_back(result);
         }
 
@@ -663,9 +701,11 @@ public:
                 AnalysisResult result;
                 result.severity = AnalysisSeverity::Info;
                 result.category = "Handling";
-                result.title = "Potential understeer";
-                result.description = "Steering input is present while yaw response remains low, suggesting understeer.";
-                result.recommendation = "Increase front load or reduce front grip imbalance to improve turn-in.";
+                result.title = tr("Potential understeer", "Sous-virage potentiel");
+                result.description = tr("Steering input is present while yaw response remains low, suggesting understeer.",
+                                        "Une sollicitation du volant est présente tandis que la réponse en lacet reste faible, suggérant un sous-virage.");
+                result.recommendation = tr("Increase front load or reduce front grip imbalance to improve turn-in.",
+                                           "Augmenter la charge avant ou réduire le déséquilibre d'adhérence avant pour améliorer l'entrée en virage.");
                 results.push_back(result);
             }
 
@@ -673,9 +713,11 @@ public:
                 AnalysisResult result;
                 result.severity = AnalysisSeverity::Warning;
                 result.category = "Handling";
-                result.title = "Potential oversteer";
-                result.description = "The car is rotating faster than expected for the steering input.";
-                result.recommendation = "Reduce rear slip or add rear grip to improve stability.";
+                result.title = tr("Potential oversteer", "Survirage potentiel");
+                result.description = tr("The car is rotating faster than expected for the steering input.",
+                                        "La voiture tourne plus vite que prévu pour la sollicitation du volant.");
+                result.recommendation = tr("Reduce rear slip or add rear grip to improve stability.",
+                                           "Réduire le patinage arrière ou ajouter de l'adhérence arrière pour améliorer la stabilité.");
                 results.push_back(result);
             }
         }

@@ -18,7 +18,7 @@ object FormMotecSettings: TFormMotecSettings
     Top = 8
     Width = 584
     Height = 430
-    ActivePage = TabBrake
+    ActivePage = TabTyre
     TabHeight = 25
     TabOrder = 0
     TabWidth = 80
@@ -102,14 +102,14 @@ object FormMotecSettings: TFormMotecSettings
         object LblMinValidLapTime: TLabel
           Left = 16
           Top = 32
-          Width = 140
+          Width = 145
           Height = 15
           Caption = 'Min Valid Lap Time (x best):'
         end
         object LblMaxValidLapTime: TLabel
           Left = 16
           Top = 64
-          Width = 140
+          Width = 147
           Height = 15
           Caption = 'Max Valid Lap Time (x best):'
         end
