@@ -369,10 +369,9 @@ static std::string buildDataAvailabilityText(const LapStats& lap, ReportLanguage
     return oss.str();
 }
 
-ReportResult LapReportGenerator::generate(const LapStats& lap, bool fullReport,
+ReportResult LapReportGenerator::generate(const LapStats& lap,
                                           ReportLanguage language, ChannelProfile profile,
                                           const LapSelectionInfo* selection) {
-    (void)fullReport;
     (void)profile;
 
     ReportResult result;
@@ -464,7 +463,7 @@ ReportResult LapReportGenerator::generate(const LapStats& lap, bool fullReport,
 }
 
 ReportResult LapReportGenerator::generateAverageLaps(const std::vector<LapStats>& laps,
-                                                      bool fullReport, ReportLanguage language,
+                                                      ReportLanguage language,
                                                       ChannelProfile profile) {
     const LapSelectionResult sel = selectValidLaps(laps);
     if (sel.valid.size() < 2) {
@@ -479,11 +478,11 @@ ReportResult LapReportGenerator::generateAverageLaps(const std::vector<LapStats>
     for (std::size_t i = 0; i < sel.valid.size(); ++i)
         selected.push_back(sel.valid[i]);
     const LapSelectionInfo info = refineSelectionInfo(sel, selected);
-    return generate(averageSelectedLaps(selected), fullReport, language, profile, &info);
+    return generate(averageSelectedLaps(selected), language, profile, &info);
 }
 
 ReportResult LapReportGenerator::generateBestThreeLaps(const std::vector<LapStats>& laps,
-                                                        bool fullReport, ReportLanguage language,
+                                                        ReportLanguage language,
                                                         ChannelProfile profile) {
     const LapSelectionResult sel = selectValidLaps(laps);
     if (sel.valid.empty()) {
@@ -510,7 +509,7 @@ ReportResult LapReportGenerator::generateBestThreeLaps(const std::vector<LapStat
     for (std::size_t i = 0; i < selectedCount; ++i)
         selected.push_back(candidates[i].second);
     const LapSelectionInfo info = refineSelectionInfo(sel, selected);
-    return generate(averageSelectedLaps(selected), fullReport, language, profile, &info);
+    return generate(averageSelectedLaps(selected), language, profile, &info);
 }
 
 LapStats LapReportGenerator::getAverageLapData(const std::vector<LapStats>& laps) {

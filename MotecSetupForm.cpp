@@ -136,26 +136,6 @@ void SaveLastFolder(const String& section, const String& folder)
 	}
 }
 
-bool ReadFullReportSetting()
-{
-	TIniFile* settings = new TIniFile(SettingsFilePath());
-	try {
-		return settings->ReadBool("General", "FullReport", false);
-	} __finally {
-		delete settings;
-	}
-}
-
-void SaveFullReportSetting(bool value)
-{
-	TIniFile* settings = new TIniFile(SettingsFilePath());
-	try {
-		settings->WriteBool("General", "FullReport", value);
-	} __finally {
-		delete settings;
-	}
-}
-
 ReportLanguage TFormMotecSetup::ReadReportLanguageSetting()
 {
 	TIniFile* settings = new TIniFile(SettingsFilePath());
@@ -617,9 +597,6 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
 	// (creates the file with defaults if it does not exist yet).
 	loadThresholds();
 
-	FullReportCheckBox->Checked = ReadFullReportSetting();
-	FullReportCheckBox->OnClick = FullReportCheckBoxClick;
-
 	if (LanguageCombo != NULL) {
 		LanguageCombo->Items->Clear();
 		LanguageCombo->Items->Add("English");
@@ -651,7 +628,6 @@ void __fastcall TFormMotecSetup::TranslateUI()
     ButtonLoad->Caption = isFr ? "Charger CSV MoTeC" : "Load MoTeC CSV";
     Button1->Caption = isFr ? "Importer Données Motec" : "Import Motec Data";
     ButtonSettings->Caption = isFr ? "Réglages" : "Settings";
-    FullReportCheckBox->Caption = isFr ? "Rapport Complet" : "Full Report";
     LiveCaptureCheckBox->Caption = isFr ? "Capture Live" : "Live Capture";
 
     TabSummary->Caption = isFr ? "Résumé" : "Summary";
@@ -695,11 +671,6 @@ void __fastcall TFormMotecSetup::ButtonSettingsClick(TObject *Sender)
 	} __finally {
 		delete settingsForm;
 	}
-}
-
-void __fastcall TFormMotecSetup::FullReportCheckBoxClick(TObject *Sender)
-{
-	SaveFullReportSetting(FullReportCheckBox->Checked);
 }
 
 void __fastcall TFormMotecSetup::LanguageComboChange(TObject *Sender)
@@ -1599,9 +1570,8 @@ bool __fastcall TFormMotecSetup::AnalyzeSelectedFile(const std::string& filePath
     }
 	UpdateProgress(50, "Generating report...");
 
-    const bool fullReport = (FullReportCheckBox != NULL && FullReportCheckBox->Checked);
     ReportLanguage language = (LanguageCombo != NULL) ? (ReportLanguage)LanguageCombo->ItemIndex : ReadReportLanguageSetting();
-	ReportResult result = buildAverageLapReport(laps, fullReport, language, profile);
+	ReportResult result = buildAverageLapReport(laps, language, profile);
 
     UpdateReportTabs(result);
     std::vector<LapStats> validLaps = LapReportGenerator::getValidLaps(laps);
@@ -1633,9 +1603,8 @@ bool __fastcall TFormMotecSetup::AnalyzeSelectedLdFile(const std::string& filePa
     }
 
     UpdateProgress(50, "Generating report...");
-    const bool fullReport = (FullReportCheckBox != NULL && FullReportCheckBox->Checked);
     ReportLanguage language = (LanguageCombo != NULL) ? (ReportLanguage)LanguageCombo->ItemIndex : ReadReportLanguageSetting();
-	ReportResult result = buildAverageLapReport(laps, fullReport, language, profile);
+	ReportResult result = buildAverageLapReport(laps, language, profile);
 
     UpdateReportTabs(result);
     std::vector<LapStats> validLaps = LapReportGenerator::getValidLaps(laps);
@@ -2061,10 +2030,9 @@ void __fastcall TFormMotecSetup::generateLiveReport()
     if (ChannelProfileCombo != NULL)
         profile = (ChannelProfile)ChannelProfileCombo->ItemIndex;
 
-    const bool fullReport = (FullReportCheckBox != NULL && FullReportCheckBox->Checked);
     ReportLanguage language = (LanguageCombo != NULL) ? (ReportLanguage)LanguageCombo->ItemIndex : ReadReportLanguageSetting();
 
-	ReportResult result = buildAverageLapReport(liveLaps, fullReport, language, profile);
+	ReportResult result = buildAverageLapReport(liveLaps, language, profile);
 
     UpdateReportTabs(result);
 
@@ -2129,13 +2097,11 @@ void __fastcall TFormMotecSetup::UpdateReportTabs(const ReportResult& result)
         MemoHandling->Text = formatForMemo(result.at(ReportSection::Handling).content);
     }
 
-    // 3. Manage Tab Visibility based on "Full Report" flag
-    const bool fullReport = (FullReportCheckBox != NULL && FullReportCheckBox->Checked);
-
+    // 3. Manage Tab Visibility: show a tab only when it has data and a recommendation
     auto setTabVisible = [&](TTabSheet* tab, ReportSection section) {
         if (tab == NULL) return;
         const bool hasData = result.count(section) && !result.at(section).content.empty();
-        const bool visible = fullReport || (hasData && result.at(section).hasRecommendation);
+        const bool visible = hasData && result.at(section).hasRecommendation;
         tab->Visible = visible;
 
         // Visual indicator: ● prefix when section has content, plain name otherwise.

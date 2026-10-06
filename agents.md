@@ -58,7 +58,7 @@ Source file (CSV / LD-LDX) / Live capture (AMS2, AC EVO)
 
 | File | Purpose | Loaded by |
 |------|---------|-----------|
-| `MotecDataAnalyser.ini` | UI options: FullReport, ReportLanguage, ChannelProfile, LastFolder | on start / on change |
+| `MotecDataAnalyser.ini` | UI options: ReportLanguage, ChannelProfile, LastFolder | on start / on change |
 | `MotecDataAnalyser.thresholds.ini` | Numeric thresholds (`g_thresholds`) + `[SymptomWeights]` overrides; auto-created if missing | at startup -> **restart required** after edits |
 | `MotecDataAnalyser.rules.json` *(optional)* | Custom symptoms / aliases / weights (JSON). Fallback: `buildDefaults()` in code | at startup, before thresholds |
 | `MotecDataAnalyser.mapping.json` | Channel alias mappings per profile (EvoM1, AMS2, generic) + virtual channels (Rake) | at startup, after rules |
@@ -152,7 +152,7 @@ Inline in the core analyzer header (previously `RecommendationEngine.h/.cpp`, no
 - **Data-driven rules**: symptoms/aliases/weights come from `RuleConfig` (code defaults + optional JSON). No recompile to add a symptom.
 - **Exe-relative paths**: all file I/O anchored to the executable directory (`AppDirPath()`), never absolute.
 - **GDI+ rendering**: all charts are custom GDI+ in PaintBox. No TChart components.
-- **`fullReport` and `profile`** are accepted by `LapReportGenerator::generate()` but currently **ignored** — the report content is the same regardless.
+- **`profile`** is accepted by `LapReportGenerator::generate()` but currently **ignored** — the report content is the same regardless.
 
 ## 7. Operational Guidelines
 

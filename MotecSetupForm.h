@@ -50,10 +50,7 @@ __published:
     TMemo *MemoHandling;
 	TStatusBar *StatusBar1;
 	TButton *Button1;
-    TProgressBar *ProgressBarExport;
-	TCheckBox *FullReportCheckBox;
-    TComboBox *LanguageCombo;
-    TComboBox *ChannelProfileCombo;
+    TProgressBar *ProgressBarExport;    TComboBox *ChannelProfileCombo;
     TLabel *LabelTitle;
     TLabel *LabelSubtitle;
     TPanel *AccentLine;
@@ -70,11 +67,11 @@ __published:
     TTimer *LiveTimer;
     TTimer *LiveConnectTimer;
     TPaintBox *BrakeTempPaintBox;
+    TComboBox *LanguageCombo;
 
     void __fastcall ButtonLoadClick(TObject *Sender);
 	void __fastcall Button1Click(TObject *Sender);
     void __fastcall ButtonSettingsClick(TObject *Sender);
-    void __fastcall FullReportCheckBoxClick(TObject *Sender);
     void __fastcall LanguageComboChange(TObject *Sender);
     void __fastcall ChannelProfileComboChange(TObject *Sender);
     void __fastcall FormResize(TObject *Sender);

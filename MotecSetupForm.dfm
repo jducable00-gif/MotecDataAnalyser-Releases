@@ -325,21 +325,13 @@ object FormMotecSetup: TFormMotecSetup
     Height = 18
     TabOrder = 3
   end
-  object FullReportCheckBox: TCheckBox
-    Left = 421
-    Top = 107
-    Width = 97
-    Height = 19
-    Caption = 'Full Report'
-    TabOrder = 4
-  end
   object LanguageCombo: TComboBox
     Left = 282
     Top = 105
     Width = 130
     Height = 23
     Style = csDropDownList
-    TabOrder = 5
+    TabOrder = 4
     OnChange = LanguageComboChange
   end
   object ChannelProfileCombo: TComboBox
@@ -348,7 +340,7 @@ object FormMotecSetup: TFormMotecSetup
     Width = 110
     Height = 23
     Style = csDropDownList
-    TabOrder = 6
+    TabOrder = 5
     OnChange = ChannelProfileComboChange
   end
   object LiveCaptureCheckBox: TCheckBox
@@ -357,7 +349,7 @@ object FormMotecSetup: TFormMotecSetup
     Width = 120
     Height = 19
     Caption = 'Live Capture'
-    TabOrder = 7
+    TabOrder = 6
     OnClick = LiveCaptureCheckBoxClick
   end
   object LiveTimer: TTimer

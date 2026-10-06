@@ -1471,7 +1471,7 @@ inline const VelocityHistogram& pickDamperHistogram(const LapStats& lap, int cor
 // ===============================
 LapStats buildAverageLapData(const std::vector<LapStats>& laps);
 
-ReportResult buildAverageLapReport(const std::vector<LapStats>& laps, bool fullReport = false,
+ReportResult buildAverageLapReport(const std::vector<LapStats>& laps,
                                   ReportLanguage language = ReportLanguage::English,
                                   ChannelProfile profile = ChannelProfile::EvoM1);
 

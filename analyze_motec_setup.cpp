@@ -345,9 +345,9 @@ LapStats buildAverageLapData(const std::vector<LapStats>& laps) {
     return LapReportGenerator::getAverageLapData(laps);
 }
 
-ReportResult buildAverageLapReport(const std::vector<LapStats>& laps, bool fullReport, 
+ReportResult buildAverageLapReport(const std::vector<LapStats>& laps,
                                   ReportLanguage language, ChannelProfile profile) {
-    return LapReportGenerator::generateAverageLaps(laps, fullReport, language, profile);
+    return LapReportGenerator::generateAverageLaps(laps, language, profile);
 }
 
 std::vector<AnalysisResult> evaluateLapWithRules(const LapStats& lap,

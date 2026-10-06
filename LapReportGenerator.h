@@ -51,16 +51,16 @@ public:
     // Per-lap report (header + recommendations + data quality summary).
     // When `selection` is provided, the Summary tab also shows which laps were
     // included/excluded and a per-section data-availability breakdown.
-    static ReportResult generate(const LapStats& lap, bool fullReport,
+    static ReportResult generate(const LapStats& lap,
                                  ReportLanguage language, ChannelProfile profile,
                                  const LapSelectionInfo* selection = nullptr);
 
     // Best-three-laps average report (selection list + per-lap avg report + fastest-vs-slowest comparison)
-    static ReportResult generateBestThreeLaps(const std::vector<LapStats>& laps, bool fullReport,
+    static ReportResult generateBestThreeLaps(const std::vector<LapStats>& laps,
                                               ReportLanguage language, ChannelProfile profile);
 
     // Averaged lap report (all laps except the last one)
-    static ReportResult generateAverageLaps(const std::vector<LapStats>& laps, bool fullReport,
+    static ReportResult generateAverageLaps(const std::vector<LapStats>& laps,
                                              ReportLanguage language, ChannelProfile profile);
 
     // Returns the averaged LapStats object for all but the last lap. 
