@@ -700,10 +700,8 @@ void __fastcall TFormMotecSetup::TranslateUI()
     ReportLanguage lang = ReadReportLanguageSetting();
     bool isFr = (lang == ReportLanguage::French);
 
-    this->Caption = isFr ? "AC EVO - Analyseur de Setup MoTeC" : "AC EVO - MoTeC Setup Analyzer";
-    LabelTitle->Caption = isFr ? "Analyseur de Setup MoTeC" : "MoTeC Setup Analyzer";
-    LabelSubtitle->Caption = isFr ? "Analyser les données de télémétrie MoTeC" : "Analyze MoTeC telemetry data";
-    LabelProfile->Caption = isFr ? "Profil :" : "Profile:";
+    this->Caption = isFr ? "Analyseur de Setup MoTeC" : "MoTeC Setup Analyzer";
+	LabelProfile->Caption = isFr ? "Profil :" : "Profile:";
     LabelLanguage->Caption = isFr ? "Langue :" : "Language:";
     ButtonLoad->Caption = isFr ? "Charger CSV MoTeC" : "Load MoTeC CSV";
     Button1->Caption = isFr ? "Importer Données Motec" : "Import Motec Data";
@@ -799,10 +797,11 @@ void __fastcall TFormMotecSetup::FormResize(TObject *Sender)
     if (PageControlReport == NULL)
         return;
 
-    const int top = 170; // Clear progress bar (ends at 162)
+    // Match the IDE design: boxes sit just below ProgressBarExport (ends at y=82).
+    const int top = 96;              // DFM: TireTempPaintBox Top = 100, BrakeTop = 100
     const int gap = 10;
     const int tireBoxWidth = 280;
-    const int tireBoxHeight = 310;
+    const int tireBoxHeight = 358;   // DFM design heights (tire ~362 / brake 358)
 
     // 1. Tire Temp Box - Positioned on the Left
     if (TireTempPaintBox != NULL) {
@@ -835,13 +834,16 @@ void __fastcall TFormMotecSetup::FormResize(TObject *Sender)
         if (DamperLayoutTabs != NULL) {
             const int damperTabsAnchor =
                 (BrakeTempPaintBox != NULL) ? damperAreaLeft : tireBoxWidth + 30;
-            const int tabsTopY = top - 4;              // align with the DFM design (184 vs ~178)
+            const int tabsTopY = top - 8;              // DFM: DamperLayoutTabs Top=88, boxes at 96/100
             DamperLayoutTabs->Left = damperTabsAnchor; // right of the brake temp box
             DamperLayoutTabs->Top = tabsTopY;
             DamperLayoutTabs->Width = ClientWidth - damperTabsAnchor - 20;
-            // Two chart rows + gap, plus headroom for the VCL tab strip so nothing clips.
-            const int kTabHeaderH = 46;                // generous: covers tab strip + label padding
-            DamperLayoutTabs->Height = 2 * chartHeight + gap + kTabHeaderH;
+            // Bottom edge flush with the tire/brake boxes so all panels align.
+            const int panelBottomY = top + tireBoxHeight;      // e.g., 96+358=454
+            DamperLayoutTabs->Height = panelBottomY - tabsTopY;
+            // Grid rows fill the content area below the tab strip, ending at that same bottom edge.
+            const int kTabHeaderH = 40;                // VCL tab-strip headroom inside page control
+            chartHeight = (DamperLayoutTabs->Height - kTabHeaderH - gap) / 2;
         }
 
         if (DamperFLPaintBox != NULL && DamperFRPaintBox != NULL && DamperRLPaintBox != NULL && DamperRRPaintBox != NULL) {
@@ -1408,12 +1410,12 @@ void __fastcall TFormMotecSetup::DrawCombinedDamperChart(Gdiplus::Graphics& grap
         // Group headers centered over their three value columns each.
         Gdiplus::SolidBrush whiteText(Gdiplus::Color(255, 240, 240, 244));
         {
-            const wchar_t* grpReb = isFr ? L"R\u00e9action (rebound)" : L"Rebound";
+            const wchar_t* grpReb = isFr ? L"D\u00e9tente" : L"Rebound";
             Gdiplus::RectF gb; graphics.MeasureString(grpReb, -1, &fontBold, Gdiplus::PointF(0, 0), &gb);
             float rebCenter = valStartX + 1.5f * cellW;
             graphics.DrawString(grpReb, -1, &fontBold, Gdiplus::PointF(rebCenter - gb.Width / 2.0f, groupHdrY), &whiteText);
 
-            const wchar_t* grpBump = isFr ? L"But\u00e9e (bump)" : L"Bump";
+            const wchar_t* grpBump = isFr ? L"Compression" : L"Bump";
 
             Gdiplus::RectF bb; graphics.MeasureString(grpBump, -1, &fontBold, Gdiplus::PointF(0, 0), &bb);
             float bumpCenter = bumpStartX + 1.5f * cellW;

@@ -52,9 +52,6 @@ __published:
 	TStatusBar *StatusBar1;
 	TButton *Button1;
     TProgressBar *ProgressBarExport;    TComboBox *ChannelProfileCombo;
-    TLabel *LabelTitle;
-    TLabel *LabelSubtitle;
-    TPanel *AccentLine;
     TLabel *LabelProfile;
     TLabel *LabelLanguage;
     TPaintBox *TireTempPaintBox;

@@ -1,4 +1,4 @@
-﻿object FormMotecSetup: TFormMotecSetup
+object FormMotecSetup: TFormMotecSetup
   Left = 0
   Top = 0
   Caption = 'AC EVO  - MoTeC Setup Analyzer'
@@ -13,73 +13,45 @@
   Position = poScreenCenter
   OnResize = FormResize
   TextHeight = 15
-  object LabelTitle: TLabel
-    Left = 20
-    Top = 18
-    Width = 221
-    Height = 30
-    Caption = 'MoTeC Setup Analyzer'
-    Font.Charset = DEFAULT_CHARSET
-    Font.Color = clWindowText
-    Font.Height = -21
-    Font.Name = 'Segoe UI'
-    Font.Style = [fsBold]
-    ParentFont = False
-  end
-  object LabelSubtitle: TLabel
-    Left = 20
-    Top = 50
-    Width = 160
-    Height = 15
-    Caption = 'Analyze MoTeC telemetry data'
-    Color = clWhite
-    Font.Charset = DEFAULT_CHARSET
-    Font.Color = clGray
-    Font.Height = -12
-    Font.Name = 'Segoe UI'
-    Font.Style = []
-    ParentColor = False
-    ParentFont = False
-  end
   object LabelProfile: TLabel
-    Left = 20
-    Top = 108
+    Left = 4
+    Top = 28
     Width = 37
     Height = 15
     Caption = 'Profile:'
   end
   object LabelLanguage: TLabel
-    Left = 194
-    Top = 108
+    Left = 178
+    Top = 28
     Width = 55
     Height = 15
     Caption = 'Language:'
   end
   object TireTempPaintBox: TPaintBox
-    Left = 24
-    Top = 180
+    Left = 8
+    Top = 100
     Width = 280
-    Height = 310
+    Height = 362
     OnPaint = TireTempPaintBoxPaint
   end
   object BrakeTempPaintBox: TPaintBox
-    Left = 310
-    Top = 180
+    Left = 294
+    Top = 100
     Width = 300
-    Height = 310
+    Height = 358
     OnPaint = BrakeTempPaintBoxPaint
   end
   object LiveLed: TShape
-    Left = 418
-    Top = 116
+    Left = 528
+    Top = 28
     Width = 14
     Height = 15
     Brush.Color = clRed
     Shape = stCircle
   end
   object LabelLiveStatus: TLabel
-    Left = 438
-    Top = 116
+    Left = 548
+    Top = 28
     Width = 72
     Height = 15
     Caption = 'Disconnected'
@@ -91,13 +63,13 @@
     ParentFont = False
   end
   object DamperLayoutTabs: TPageControl
-    Left = 620
-    Top = 184
+    Left = 600
+    Top = 88
     Width = 831
-    Height = 356
-    ActivePage = TabDamperGrid
+    Height = 374
+    ActivePage = TabDamperCombined
+    TabOrder = 7
     OnChange = DamperLayoutTabsChange
-    TabOrder = 20
     object TabDamperGrid: TTabSheet
       Caption = 'Grid'
       object DamperFLPaintBox: TPaintBox
@@ -132,23 +104,20 @@
     object TabDamperCombined: TTabSheet
       Caption = 'Combined'
       object DamperCombinedPaintBox: TPaintBox
+        Left = 0
+        Top = 0
+        Width = 823
+        Height = 344
         Align = alClient
         OnPaint = DamperCombinedPaintBoxPaint
+        ExplicitLeft = 3
+        ExplicitHeight = 326
       end
     end
   end
-  object AccentLine: TPanel
-    Left = 0
-    Top = 82
-    Width = 1113
-    Height = 3
-    BevelOuter = bvNone
-    Color = 4426560
-    TabOrder = 8
-  end
   object ButtonLoad: TButton
-    Left = 958
-    Top = 44
+    Left = 190
+    Top = 804
     Width = 120
     Height = 32
     Caption = 'Load MoTeC CSV'
@@ -157,11 +126,11 @@
     OnClick = ButtonLoadClick
   end
   object PageControlReport: TPageControl
-    Left = 36
-    Top = 516
+    Left = 8
+    Top = 468
     Width = 1069
     Height = 317
-    ActivePage = TabSummary
+    ActivePage = TabHandling
     TabOrder = 1
     object TabSummary: TTabSheet
       Caption = 'Summary'
@@ -318,10 +287,12 @@
         Text = 'V5.2.1'
         Width = 50
       end>
+    ExplicitLeft = -16
+    ExplicitTop = 1074
   end
   object Button1: TButton
-    Left = 935
-    Top = 104
+    Left = 939
+    Top = 24
     Width = 170
     Height = 34
     Caption = 'Import Motec Data'
@@ -329,24 +300,24 @@
     OnClick = Button1Click
   end
   object ButtonSettings: TButton
-    Left = 759
-    Top = 104
+    Left = 1279
+    Top = 20
     Width = 170
     Height = 34
     Caption = 'Settings'
-    TabOrder = 9
+    TabOrder = 8
     OnClick = ButtonSettingsClick
   end
   object ProgressBarExport: TProgressBar
-    Left = 20
-    Top = 144
+    Left = 36
+    Top = 64
     Width = 1073
     Height = 18
     TabOrder = 3
   end
   object LanguageCombo: TComboBox
-    Left = 255
-    Top = 105
+    Left = 239
+    Top = 25
     Width = 130
     Height = 23
     Style = csDropDownList
@@ -354,8 +325,8 @@
     OnChange = LanguageComboChange
   end
   object ChannelProfileCombo: TComboBox
-    Left = 63
-    Top = 105
+    Left = 47
+    Top = 25
     Width = 110
     Height = 23
     Style = csDropDownList
@@ -363,8 +334,8 @@
     OnChange = ChannelProfileComboChange
   end
   object LiveCaptureCheckBox: TCheckBox
-    Left = 418
-    Top = 91
+    Left = 402
+    Top = 27
     Width = 120
     Height = 19
     Caption = 'Live Capture'
@@ -372,31 +343,35 @@
     OnClick = LiveCaptureCheckBoxClick
   end
   object AutoDetectTrackCheckBox: TCheckBox
-    Left = 544
-    Top = 107
-    Width = 57
+    Left = 684
+    Top = 27
+    Width = 89
     Height = 19
-    Caption = 'Auto'
-    TabOrder = 10
+    Caption = 'Auto session'
+    TabOrder = 9
     OnClick = AutoDetectTrackCheckBoxClick
   end
   object ButtonResetSession: TButton
-    Left = 595
-    Top = 104
+    Left = 779
+    Top = 24
     Width = 110
     Height = 34
-    Caption = 'Reset'
+    Caption = 'Reset session'
     Enabled = False
-    TabOrder = 11
+    TabOrder = 10
     OnClick = ButtonResetSessionClick
   end
   object LiveTimer: TTimer
     Enabled = False
     Interval = 16
     OnTimer = LiveTimerTimer
+    Left = 112
+    Top = 800
   end
   object LiveConnectTimer: TTimer
     Enabled = False
     OnTimer = LiveConnectTimerTimer
+    Left = 24
+    Top = 792
   end
 end
