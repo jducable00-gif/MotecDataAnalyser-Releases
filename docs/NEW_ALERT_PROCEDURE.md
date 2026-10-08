@@ -47,6 +47,8 @@ Before writing logic, ensure the telemetry channels required for your rule are a
 
 So if Profile X has the sensor but Profile Y doesn't, you add one raw entry for X and optionally one virtual derivation (from other available aliases) to cover Y transparently.
 
+**To a rule, both sources are invisible.** A rule always calls `provider.getValue(alias)` and receives a plain number — it never knows or cares whether that value came from a direct LD/shared-memory read (raw mapping) or was computed by the DataProvider via virtual derivation. The alias *is* the sole entry point for all logic and recommendations; there is no second path, no type-checking on origin, no branching between raw and virtual in rule code.
+
 ### Step 2: Add an `AnalysisAlias` Enum Value (if needed)
 If no existing alias covers your channel:
 
