@@ -1420,8 +1420,8 @@ inline bool hasDamperIssue(const VelocityHistogram& h) {
 // Human-readable damper recommendation for one corner (localized).
 // cornerIndex: 0=LF, 1=RF, 2=LR, 3=RR. Empty string if not enough samples.
 inline std::string getDamperRecommendation(const VelocityHistogram& h, int cornerIndex, ReportLanguage language) {
-    static const char* enLabels[4] = { "LF", "RF", "LR", "RR" };
-    static const char* frLabels[4] = { "AV-G", "AD-G", "AR-G", "AR-D" };
+    static const char* enLabels[4] = { "FL", "FR", "RL", "RR" };
+    static const char* frLabels[4] = { "FL", "FR", "RL", "RR" }; // same codes as the graph, both languages
     if (cornerIndex < 0 || cornerIndex > 3) return std::string();
     DamperZoneReport report = detail::evaluateDamperZones(h, language);
     if (!report.hasData) return std::string();

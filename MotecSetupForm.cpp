@@ -182,12 +182,22 @@ void SaveChannelProfileSetting(ChannelProfile profile)
 	}
 }
 
-bool ReadAutoDetectTrackSetting()
+// Damper histogram layout: 0=Grid, 1=Combined. Persisted as [General] HistogramLayout.
+int ReadHistogramLayoutSetting()
 {
 	TIniFile* settings = new TIniFile(SettingsFilePath());
 	try {
-		// Default: checked (1)
-		return settings->ReadInteger("General", "AutoDetectTrack", 1) != 0;
+		return settings->ReadInteger("General", "HistogramLayout", 0);
+	} __finally {
+		delete settings;
+	}
+}
+
+void SaveHistogramLayoutSetting(int index)
+{
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		settings->WriteInteger("General", "HistogramLayout", index);
 	} __finally {
 		delete settings;
 	}
@@ -198,6 +208,16 @@ void SaveAutoDetectTrackSetting(bool enabled)
 	TIniFile* settings = new TIniFile(SettingsFilePath());
 	try {
 		settings->WriteInteger("General", "AutoDetectTrack", enabled ? 1 : 0);
+	} __finally {
+		delete settings;
+	}
+}
+
+bool ReadAutoDetectTrackSetting()
+{
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		return settings->ReadInteger("General", "AutoDetectTrack", 0) != 0;
 	} __finally {
 		delete settings;
 	}
@@ -654,6 +674,14 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
 		ChannelProfileCombo->ItemIndex = (int)ReadChannelProfileSetting();
 		ChannelProfileCombo->OnChange = ChannelProfileComboChange;
     }
+	if (DamperLayoutTabs != NULL) {
+		int layoutIndex = ReadHistogramLayoutSetting();
+		const int kTabCount = 2; // Grid, Combined — matches DFM tab count
+		if (layoutIndex < 0 || layoutIndex >= kTabCount)
+			layoutIndex = 0;
+		DamperLayoutTabs->ActivePageIndex = layoutIndex;
+	}
+
 	if (AutoDetectTrackCheckBox != NULL)
 		AutoDetectTrackCheckBox->Checked = ReadAutoDetectTrackSetting();
 
@@ -801,63 +829,90 @@ void __fastcall TFormMotecSetup::FormResize(TObject *Sender)
         int chartWidth = (availableDamperWidth - gap) / 2;
         int chartHeight = (tireBoxHeight - gap) / 2;
 
-        if (DamperFLPaintBox != NULL && DamperFRPaintBox != NULL && DamperRLPaintBox != NULL && DamperRRPaintBox != NULL) {
-            int areaTopDampers = top;
+        // The four grid paintboxes live inside TabDamperGrid (a child of
+        // DamperLayoutTabs). Position the tab control in form coordinates and the boxes
+        // relative to it so they stay visible when the window resizes.
+        if (DamperLayoutTabs != NULL) {
+            const int damperTabsAnchor =
+                (BrakeTempPaintBox != NULL) ? damperAreaLeft : tireBoxWidth + 30;
+            const int tabsTopY = top - 4;              // align with the DFM design (184 vs ~178)
+            DamperLayoutTabs->Left = damperTabsAnchor; // right of the brake temp box
+            DamperLayoutTabs->Top = tabsTopY;
+            DamperLayoutTabs->Width = ClientWidth - damperTabsAnchor - 20;
+            // Two chart rows + gap, plus headroom for the VCL tab strip so nothing clips.
+            const int kTabHeaderH = 46;                // generous: covers tab strip + label padding
+            DamperLayoutTabs->Height = 2 * chartHeight + gap + kTabHeaderH;
+        }
 
-            DamperFLPaintBox->Left = damperAreaLeft;
-            DamperFLPaintBox->Top = areaTopDampers;
+        if (DamperFLPaintBox != NULL && DamperFRPaintBox != NULL && DamperRLPaintBox != NULL && DamperRRPaintBox != NULL) {
+            int areaTopDampers = top - 4;
+            // Convert form-space coordinates to tab-sheet-relative ones.
+            const int tabsLeftPx = (DamperLayoutTabs != NULL) ? DamperLayoutTabs->Left : tireBoxWidth + 30;
+            const int tabsTopPx = (DamperLayoutTabs != NULL) ? DamperLayoutTabs->Top : top - 4;
+
+            DamperFLPaintBox->Left = 0; // tab control is anchored at the grid's form-space origin
+            DamperFLPaintBox->Top = areaTopDampers - tabsTopPx;
             DamperFLPaintBox->Width = chartWidth;
             DamperFLPaintBox->Height = chartHeight;
 
-            DamperFRPaintBox->Left = damperAreaLeft + chartWidth + gap;
-            DamperFRPaintBox->Top = areaTopDampers;
+            DamperFRPaintBox->Left = chartWidth + gap;
+            DamperFRPaintBox->Top = areaTopDampers - tabsTopPx;
             DamperFRPaintBox->Width = chartWidth;
             DamperFRPaintBox->Height = chartHeight;
 
-            DamperRLPaintBox->Left = damperAreaLeft;
-            DamperRLPaintBox->Top = areaTopDampers + chartHeight + gap;
+            DamperRLPaintBox->Left = 0; // tab control is anchored at the grid's form-space origin
+            DamperRLPaintBox->Top = areaTopDampers - tabsTopPx + chartHeight + gap;
             DamperRLPaintBox->Width = chartWidth;
             DamperRLPaintBox->Height = chartHeight;
 
-            DamperRRPaintBox->Left = damperAreaLeft + chartWidth + gap;
-            DamperRRPaintBox->Top = areaTopDampers + chartHeight + gap;
+            DamperRRPaintBox->Left = chartWidth + gap;
+            DamperRRPaintBox->Top = areaTopDampers - tabsTopPx + chartHeight + gap;
             DamperRRPaintBox->Width = chartWidth;
             DamperRRPaintBox->Height = chartHeight;
         }
     } else {
         // Fallback if BrakeTempPaintBox is missing: use original layout
         if (DamperFLPaintBox != NULL && DamperFRPaintBox != NULL && DamperRLPaintBox != NULL && DamperRRPaintBox != NULL) {
+            const int tabsLeftPx = (DamperLayoutTabs != NULL) ? DamperLayoutTabs->Left : tireBoxWidth + 30;
+            const int tabsTopPx = (DamperLayoutTabs != NULL) ? DamperLayoutTabs->Top : top - 4;
             int areaLeft = tireBoxWidth + 30;
             int areaTop = top;
             int availableWidth = ClientWidth - areaLeft - 20;
             int chartWidth = (availableWidth - gap) / 2;
             int chartHeight = (tireBoxHeight - gap) / 2;
 
-            DamperFLPaintBox->Left = areaLeft;
-            DamperFLPaintBox->Top = areaTop;
+            DamperFLPaintBox->Left = areaLeft - tabsLeftPx;
+            DamperFLPaintBox->Top = areaTop - tabsTopPx;
             DamperFLPaintBox->Width = chartWidth;
             DamperFLPaintBox->Height = chartHeight;
 
-            DamperFRPaintBox->Left = areaLeft + chartWidth + gap;
-            DamperFRPaintBox->Top = areaTop;
+            DamperFRPaintBox->Left = areaLeft - tabsLeftPx + chartWidth + gap;
+            DamperFRPaintBox->Top = areaTop - tabsTopPx;
             DamperFRPaintBox->Width = chartWidth;
             DamperFRPaintBox->Height = chartHeight;
 
-            DamperRLPaintBox->Left = areaLeft;
-            DamperRLPaintBox->Top = areaTop + chartHeight + gap;
+            DamperRLPaintBox->Left = areaLeft - tabsLeftPx;
+            DamperRLPaintBox->Top = areaTop - tabsTopPx + chartHeight + gap;
             DamperRLPaintBox->Width = chartWidth;
             DamperRLPaintBox->Height = chartHeight;
 
-            DamperRRPaintBox->Left = areaLeft + chartWidth + gap;
-            DamperRRPaintBox->Top = areaTop + chartHeight + gap;
+            DamperRRPaintBox->Left = areaLeft - tabsLeftPx + chartWidth + gap;
+            DamperRRPaintBox->Top = areaTop - tabsTopPx + chartHeight + gap;
             DamperRRPaintBox->Width = chartWidth;
             DamperRRPaintBox->Height = chartHeight;
         }
     }
 
-    // 3. Report Area - Positioned Below the Panels, spanning full width
+    // 3. Report Area - Positioned Below the Panels, spanning full width.
+    // Start below whichever is taller: the temp boxes or the damper tab control.
+    int reportTopY = top + tireBoxHeight + 20;
+    if (DamperLayoutTabs != NULL) {
+        const int tabsBottomY = DamperLayoutTabs->Top + DamperLayoutTabs->Height + 14;
+        if (tabsBottomY > reportTopY)
+            reportTopY = tabsBottomY;
+    }
     PageControlReport->Left = 20;
-    PageControlReport->Top = top + tireBoxHeight + 20;
+    PageControlReport->Top = reportTopY;
     PageControlReport->Width = ClientWidth - 40;
     PageControlReport->Height = ClientHeight - PageControlReport->Top - 40;
 }
@@ -1222,6 +1277,350 @@ void __fastcall TFormMotecSetup::DamperRRPaintBoxPaint(TObject *Sender) {
     DrawModernHistogram(pb->Canvas, pb->Left, pb->Top, pb->Width, pb->Height, suspensionData[3], "Rear Right");
 }
 
+// --- Combined damper chart: all four corners overlaid on a single axis set. ---
+
+namespace {
+struct CornerVelStats {
+    double reboundSidePct = -1;   // total % of all samples on the rebound side
+    double reboundHiPct = -1;     // % of samples with |v| > slowRange (rebound side) — fast
+    double reboundLoPct = -1;     // % of samples with |v| <= slowRange (rebound side) — slow
+    double bumpSidePct  = -1;     // total % of all samples on the bump side
+    double bumpHiPct    = -1;     // % of samples with v  > slowRange (bump side) — fast
+    double bumpLoPct    = -1;     // % of samples with |v| <= slowRange (bump side) — slow
+    double avgReboundMs = -1e308; // mean velocity on rebound side, mm/s (-inf if no data)
+    double avgBumpMs    = -1e308; // mean velocity on bump side,   mm/s (-inf if no data)
+
+    bool hasAny() const { return reboundHiPct >= 0 || bumpHiPct >= 0; }
+};
+
+// Per-corner stats reconstructed from the normalized bins[] (41 fractions).
+CornerVelStats computeCombinedCornerStats(const TFormMotecSetup::SuspensionCornerData& corner, double slowRange) {
+    CornerVelStats s;
+    if (!corner.valid || corner.totalCount == 0) return s; // all fields stay sentinel
+
+    const int kBin = VelocityHistogram::kBinCount;
+    double rebHiF = 0.0, rebLoF = 0.0, bumpHiF = 0.0, bumpLoF = 0.0;
+    double rebSideF = 0.0, bumpSideF = 0.0, rebWV = 0.0, bumpWV = 0.0;
+
+    for (int i = 0; i < kBin; ++i) {
+        const double f = corner.bins[i]; // normalized fraction (~sums to 1 across all bins)
+        if (f <= 0.0) continue;
+        double binCenter = -VelocityHistogram::rangeMax() + (i + 0.5) * VelocityHistogram::binWidth();
+
+        bool slow = std::abs(binCenter) <= slowRange + 1e-9;
+
+        if (binCenter < 0.0) {           // rebound side
+            rebSideF += f;
+            rebWV    += f * binCenter;   // weighted velocity for per-side average
+            if (!slow)      rebHiF += f;
+            else            rebLoF += f;
+        } else if (binCenter > 0.0) {    // bump side
+            bumpSideF += f;
+            bumpWV    += f * binCenter;
+            if (!slow)      bumpHiF += f;
+            else            bumpLoF += f;
+        }
+    }
+
+    s.reboundSidePct = rebSideF  * 100.0;
+    s.bumpSidePct    = bumpSideF * 100.0;
+    s.reboundHiPct   = rebHiF  * 100.0;
+    s.reboundLoPct   = rebLoF  * 100.0;
+    s.bumpHiPct      = bumpHiF * 100.0;
+    s.bumpLoPct      = bumpLoF * 100.0;
+    if (rebSideF > 1e-9)  s.avgReboundMs = rebWV / rebSideF;
+    if (bumpSideF > 1e-9) s.avgBumpMs    = bumpWV / bumpSideF;
+
+    return s;
+}
+} // namespace
+
+// Step 9: paint handler for the combined chart tab.
+void __fastcall TFormMotecSetup::DamperCombinedPaintBoxPaint(TObject *Sender) {
+    TPaintBox* pb = (TPaintBox*)Sender;
+    Gdiplus::Graphics graphics(pb->Canvas->Handle);
+    graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    DrawCombinedDamperChart(graphics, pb->Width, pb->Height);
+}
+
+void __fastcall TFormMotecSetup::DrawCombinedDamperChart(Gdiplus::Graphics& graphics, int width, int height) {
+    if (width < 80 || height < 120) return; // too small to be meaningful
+
+    const bool isFr = ReadReportLanguageSetting() == ReportLanguage::French;
+
+    // --- Step 8a: background + layout zones ---------------------------------
+    Gdiplus::SolidBrush bg(Gdiplus::Color(255, 30, 30, 34));
+    graphics.FillRectangle(&bg, 0, 0, width, height);
+
+    const int marginLeft = 46;
+    const int marginRight = 12;
+    // Thin top band: the corner legend is now drawn as an overlay on top of the plot,
+    // so most vertical space goes to the Y axis / curves.
+    const int headerHeight = 30;
+    const int xAxisHeight = 22;
+    const float chartLeft   = (float)marginLeft;
+    const float chartRight  = (float)(width - marginRight);
+    const float chartTop    = (float)headerHeight;
+    const float chartBottom = (float)(height - xAxisHeight);
+    const float chartWidth  = chartRight - chartLeft;
+    const float chartHeight = chartBottom - chartTop;
+
+    // --- Step 8c: per-corner stats ------------------------------------------
+    CornerVelStats corner[4];
+    for (int i = 0; i < 4; ++i)
+        corner[i] = computeCombinedCornerStats(suspensionData[i], g_thresholds.damperSlowSpeedRange);
+
+    // --- Step 8b: header / legend block -------------------------------------
+    Gdiplus::Font fontReg(L"Segoe UI", 9.0f, Gdiplus::FontStyleRegular);
+    Gdiplus::Font fontBold(L"Segoe UI", 9.0f, Gdiplus::FontStyleBold);
+
+    const float colLabelX = chartLeft;                 // corner name column (left-aligned)
+    {
+        // Legend overlay: drawn as a translucent strip across the TOP of the plot area so it sits
+        // "over" the chart (curves show through faintly) and leaves full vertical room for Y axis.
+        const int   kValCols  = 6;
+        const float cellW     = std::max(52.0f, (chartRight - colLabelX) / (kValCols * 3));
+                                                         // uniform spacing inside AND between groups
+        const float labelW    = 136.0f;                 // "Damper Vel FL" caption width (kept clear of values)
+        const float valStartX = colLabelX + labelW;     // rebound group: as far LEFT as possible after names
+        const float bumpStartX = chartRight - 3.0f * cellW; // bump group: as far RIGHT as possible
+
+        std::size_t totalSamples = 0;
+        for (int i = 0; i < 4; ++i) if (suspensionData[i].valid) totalSamples += suspensionData[i].totalCount;
+
+        const float panelTop   = chartTop + 6.0f;                  // top of overlay strip
+        const float rowStep    = 17.0f;                            // vertical spacing between rows
+        const float samplesY   = panelTop;                         // "<N> samples" line
+        const float groupHdrY  = panelTop + rowStep * 1.35f;       // "Rebound"/"Bump" bold headers
+        const float subCapY    = panelTop + rowStep * 2.60f;       // Total/Slow/Fast captions line
+        const float firstRowY  = panelTop + rowStep * 4.10f;       // top of first corner data row
+
+        Gdiplus::SolidBrush overlayBg(Gdiplus::Color(208, 24, 24, 28)); // mostly-opaque dark
+        const float panelH = (firstRowY - chartTop) + 3.9f * rowStep;   // cover all lines above + 4 rows
+        graphics.FillRectangle(&overlayBg, (int)chartLeft, (int)(panelTop - 5),
+                               (int)(chartRight - chartLeft), (int)panelH);
+
+        Gdiplus::SolidBrush greyText(Gdiplus::Color(255, 176, 178, 184));
+        wchar_t sampleBuf[32];
+        swprintf(sampleBuf, 32, L"%llu %ls", (unsigned long long)totalSamples, isFr ? L"\u00e9chantillons" : L"samples");
+        graphics.DrawString(sampleBuf, -1, &fontReg, Gdiplus::PointF(colLabelX + 4.0f, samplesY), &greyText);
+
+        // Group headers centered over their three value columns each.
+        Gdiplus::SolidBrush whiteText(Gdiplus::Color(255, 240, 240, 244));
+        {
+            const wchar_t* grpReb = isFr ? L"R\u00e9action (rebound)" : L"Rebound";
+            Gdiplus::RectF gb; graphics.MeasureString(grpReb, -1, &fontBold, Gdiplus::PointF(0, 0), &gb);
+            float rebCenter = valStartX + 1.5f * cellW;
+            graphics.DrawString(grpReb, -1, &fontBold, Gdiplus::PointF(rebCenter - gb.Width / 2.0f, groupHdrY), &whiteText);
+
+            const wchar_t* grpBump = isFr ? L"But\u00e9e (bump)" : L"Bump";
+
+            Gdiplus::RectF bb; graphics.MeasureString(grpBump, -1, &fontBold, Gdiplus::PointF(0, 0), &bb);
+            float bumpCenter = bumpStartX + 1.5f * cellW;
+            graphics.DrawString(grpBump, -1, &fontBold, Gdiplus::PointF(bumpCenter - bb.Width / 2.0f, groupHdrY), &whiteText);
+        }
+
+        // Sub-captions per side: rebound = Total/Fast/Slow; bump = Slow/Fast/Total.
+        {
+            const wchar_t* capsReb[3]  = { L"Total %", isFr ? L"Rapide %" : L"Fast %",
+                                           isFr ? L"Lent %" : L"Slow %" };
+            const wchar_t* capsBump[3] = { isFr ? L"Lent %" : L"Slow %", isFr ? L"Rapide %" : L"Fast %",
+                                           L"Total %" };
+
+            for (int c = 0; c < 3; ++c) {
+                Gdiplus::RectF cb; graphics.MeasureString(capsReb[c], -1, &fontReg, Gdiplus::PointF(0, 0), &cb);
+                float cx = valStartX + (float)c * cellW;
+                graphics.DrawString(capsReb[c], -1, &fontReg,
+                    Gdiplus::PointF(cx + (cellW - cb.Width) / 2.0f, subCapY), &greyText);
+            }
+
+            for (int c = 0; c < 3; ++c) {
+                Gdiplus::RectF cb; graphics.MeasureString(capsBump[c], -1, &fontReg, Gdiplus::PointF(0, 0), &cb);
+                float cx = bumpStartX + (float)c * cellW;
+                graphics.DrawString(capsBump[c], -1, &fontReg,
+                    Gdiplus::PointF(cx + (cellW - cb.Width) / 2.0f, subCapY), &greyText);
+            }
+        }
+
+        // Four data rows: colored corner label + six % values; "--" when invalid.
+        const wchar_t* cornerNames[4] = { L"Damper Vel FL", L"Damper Vel FR", L"Damper Vel RL", L"Damper Vel RR" };
+        Gdiplus::Color colors[4] = {
+            Gdiplus::Color(255, 237, 64, 59),   // LF — red
+            Gdiplus::Color(255, 86, 84, 244),   // FR — indigo
+            Gdiplus::Color(255, 236, 72, 153),  // LR — pink/magenta
+            Gdiplus::Color(255, 0, 190, 230)    // RR — cyan
+        };
+
+        for (int i = 0; i < 4; ++i) {
+            Gdiplus::SolidBrush cb(colors[i]);
+            float y = firstRowY + (float)i * rowStep;
+
+            graphics.DrawString(cornerNames[i], -1, &fontReg, Gdiplus::PointF(colLabelX + 4.0f, y), &cb);
+
+            wchar_t vals[6][16];
+            if (!corner[i].hasAny()) {
+                for (int c = 0; c < kValCols; ++c) wcscpy_s(vals[c], 16, L"--");
+            } else {
+                swprintf(vals[0], 16, L"%.1f%%", corner[i].reboundSidePct); // Reb total % (of all samples)
+                swprintf(vals[1], 16, L"%.1f%%", corner[i].reboundHiPct);   // Reb fast %
+                swprintf(vals[2], 16, L"%.1f%%", corner[i].reboundLoPct);   // Reb slow %
+                swprintf(vals[3], 16, L"%.1f%%", corner[i].bumpLoPct);      // Bump slow %
+                swprintf(vals[4], 16, L"%.1f%%", corner[i].bumpHiPct);      // Bump fast %
+                swprintf(vals[5], 16, L"%.1f%%", corner[i].bumpSidePct);    // Bump total % (of all samples)
+            }
+
+            for (int c = 0; c < kValCols; ++c) {   // centered in each value cell
+                Gdiplus::RectF vb; graphics.MeasureString(vals[c], -1, &fontReg, Gdiplus::PointF(0, 0), &vb);
+                float cx = (c < 3 ? valStartX : bumpStartX) + (float)(c % 3) * cellW;
+                graphics.DrawString(vals[c], -1, &fontReg, Gdiplus::PointF(cx + (cellW - vb.Width) / 2.0f, y), &cb);
+            }
+        }
+    }
+
+    // --- Step 8d: grid + axes -------------------------------------------------
+    double maxBin = suspensionMaxBin;
+    if (!(maxBin > 0.0)) {
+        for (int i = 0; i < 4; ++i)
+            for (int b = 0; b < VelocityHistogram::kBinCount; ++b)
+                if (suspensionData[i].valid && suspensionData[i].bins[b] > maxBin)
+                    maxBin = suspensionData[i].bins[b];
+    }
+
+    double displayMax = 1.0; // fallback: show full scale even with no data
+    bool haveScale = false;
+    if (maxBin > 0.0) {
+        displayMax = maxBin * (1.0 + g_thresholds.histogramYOffset / 100.0);
+        haveScale = true;
+    }
+
+    Gdiplus::Pen gridPen(Gdiplus::Color(60, 70, 70, 70), 1.0f);
+    Gdiplus::SolidBrush axisText(Gdiplus::Color(255, 148, 150, 156));
+
+    if (haveScale) {
+        // Y ticks: ~5 values from 0 to displayMax*100 (%).
+        double maxPct = displayMax * 100.0;
+        int tickCount = 4; // -> 5 lines including zero baseline handled separately below
+        for (int t = 0; t <= tickCount; ++t) {
+            double pctVal = maxPct * ((double)t / (double)tickCount);
+            float yPix = chartBottom - (float)(pctVal / 100.0f) * (chartHeight / displayMax);
+
+            if (t > 0) // skip baseline duplicate at t=0; drawn as x-axis line below
+                graphics.DrawLine(&gridPen, chartLeft, yPix, chartRight, yPix);
+
+            wchar_t lbl[16];
+            swprintf(lbl, 16, L"%.0f%%", pctVal);
+            Gdiplus::RectF lb;
+            graphics.MeasureString(lbl, -1, &fontReg, Gdiplus::PointF(0, 0), &lb);
+            graphics.DrawString(lbl, -1, &fontReg,
+                Gdiplus::PointF(chartLeft - lb.Width - 6.0f, yPix - lb.Height / 2.0f), &axisText);
+        }
+
+        // X ticks: fixed −200 … +200 step 50 mm/s; vertical grid lines at each tick.
+        for (int val = -200; val <= 200; val += 50) {
+            float xPix = chartLeft + ((float)(val + 205) / 410.0f) * chartWidth;
+
+            if (val != 0) // zero line drawn separately, brighter/dashed below
+                graphics.DrawLine(&gridPen, xPix, chartTop, xPix, chartBottom);
+
+            wchar_t xl[8];
+            swprintf(xl, 8, L"%d", val);
+            Gdiplus::RectF xb;
+            graphics.MeasureString(xl, -1, &fontReg, Gdiplus::PointF(0, 0), &xb);
+            float lx = std::max(chartLeft, std::min(xPix - xb.Width / 2.0f, chartRight - xb.Width));
+            graphics.DrawString(xl, -1, &fontReg, Gdiplus::PointF(lx, chartBottom + 4.0f), &axisText);
+        }
+
+        // Zero-velocity line: brighter dashed vertical at x=0.
+        float zeroX = chartLeft + (205.0f / 410.0f) * chartWidth;
+        Gdiplus::Pen zeroPen(Gdiplus::Color(160, 130, 132, 138), 1.0f);
+        const float dashPattern[2] = { 5.0f, 4.0f };
+        zeroPen.SetDashPattern(dashPattern, 2);
+        graphics.DrawLine(&zeroPen, zeroX, chartTop, zeroX, chartBottom);
+
+        // Baseline (y=0) axis line across the bottom of the plot area.
+        Gdiplus::Pen basePen(Gdiplus::Color(140, 96, 98, 104), 1.0f);
+        graphics.DrawLine(&basePen, chartLeft, chartBottom, chartRight, chartBottom);
+
+        // --- Step 8e: slow-speed band shading ---------------------------------
+        double slowRange = g_thresholds.damperSlowSpeedRange;
+        if (slowRange > 0) {
+            float xLo = chartLeft + ((float)((int)-slowRange + 205) / 410.0f) * chartWidth;
+            float xHi = chartLeft + ((float)((int)+slowRange + 205) / 410.0f) * chartWidth;
+            if (xLo < chartLeft) xLo = chartLeft;
+            if (xHi > chartRight) xHi = chartRight;
+            Gdiplus::SolidBrush slowBand(Gdiplus::Color(50, 120, 140, 255)); // light blue tint
+            graphics.FillRectangle(&slowBand, xLo, chartTop, std::max(0.0f, xHi - xLo), chartHeight);
+        }
+
+        // --- Step 8f: per-corner curves (area fill + polyline) -----------------
+        const Gdiplus::Color colors[4] = {
+            Gdiplus::Color(255, 237, 64, 59),   // LF — red
+            Gdiplus::Color(255, 86, 84, 244),   // FR — indigo
+            Gdiplus::Color(255, 236, 72, 153),  // LR — pink/magenta
+            Gdiplus::Color(255, 0, 190, 230)    // RR — cyan
+        };
+
+        for (int i = 0; i < 4; ++i) {
+            if (!suspensionData[i].valid) continue;
+
+            const int kBin = VelocityHistogram::kBinCount;
+            Gdiplus::PointF pts[kBin];
+            float scaleY = (float)(chartHeight / displayMax); // fraction -> pixels
+
+            for (int b = 0; b < kBin; ++b) {
+                double binCenter = -VelocityHistogram::rangeMax() + (b + 0.5) * VelocityHistogram::binWidth();
+                float xPix = chartLeft + ((float)(binCenter + 205.0f) / 410.0f) * chartWidth;
+                float yPix = chartBottom - (float)suspensionData[i].bins[b] * scaleY;
+                pts[b].X = xPix;
+                pts[b].Y = std::max(chartTop, yPix); // clamp to plot area top
+            }
+
+            Gdiplus::Color fillColor(50, colors[i].GetR(), colors[i].GetG(), colors[i].GetB());
+            Gdiplus::SolidBrush fill(fillColor);  // translucent area under curve (alpha=50)
+            {
+                Gdiplus::PointF poly[kBin + 2];
+                for (int b = 0; b < kBin; ++b) poly[b] = pts[b];
+                poly[kBin].X   = pts[kBin - 1].X;     // close along baseline to bottom-right corner
+                poly[kBin].Y   = chartBottom;
+                poly[kBin + 1].X = pts[0].X;          // back up the left edge
+                poly[kBin + 1].Y = chartBottom;
+                graphics.FillPolygon(&fill, poly, kBin + 2);
+            }
+
+            Gdiplus::Pen line(colors[i], 2.0f);       // full-opacity curve on top
+            graphics.DrawLines(&line, pts, kBin);
+        }
+    } else {
+        // No data at all: draw a minimal axis frame so the tab doesn't look broken/empty-black.
+        Gdiplus::Pen basePen(Gdiplus::Color(140, 96, 98, 104), 1.0f);
+        graphics.DrawLine(&basePen, chartLeft, chartBottom, chartRight, chartBottom);
+
+        for (int val = -200; val <= 200; val += 50) {
+            float xPix = chartLeft + ((float)(val + 205) / 410.0f) * chartWidth;
+            wchar_t xl[8];
+            swprintf(xl, 8, L"%d", val);
+            Gdiplus::RectF xb;
+            graphics.MeasureString(xl, -1, &fontReg, Gdiplus::PointF(0, 0), &xb);
+            float lx = std::max(chartLeft, std::min(xPix - xb.Width / 2.0f, chartRight - xb.Width));
+            graphics.DrawString(xl, -1, &fontReg, Gdiplus::PointF(lx, chartBottom + 4.0f), &axisText);
+        }
+
+        const wchar_t* noData = isFr ? L"Aucune donn\u00e9e" : L"No data";
+        Gdiplus::RectF nd;
+        graphics.MeasureString(noData, -1, &fontReg, Gdiplus::PointF(0, 0), &nd);
+        graphics.DrawString(noData, -1, &fontReg,
+            Gdiplus::PointF(chartLeft + (chartWidth - nd.Width) / 2.0f, chartTop + (chartHeight - nd.Height) / 2.0f),
+            &axisText);
+    }
+}
+
+// Step 7c: persist the active damper layout tab to [General] HistogramLayout.
+void __fastcall TFormMotecSetup::DamperLayoutTabsChange(TObject *Sender) {
+    (void)Sender;
+    if (DamperLayoutTabs != NULL)
+        SaveHistogramLayoutSetting(DamperLayoutTabs->ActivePageIndex);
+}
+
 void __fastcall TFormMotecSetup::resetAnalysisGraphics()
 {
     for (int i = 0; i < 4; ++i) {
@@ -1236,6 +1635,7 @@ void __fastcall TFormMotecSetup::resetAnalysisGraphics()
         suspensionData[i].bumpstop = 0.0;
         suspensionData[i].issue = false;
         suspensionData[i].valid = false;
+        suspensionData[i].totalCount = 0;
         for (int b = 0; b < VelocityHistogram::kBinCount; ++b)
             suspensionData[i].bins[b] = 0.0;
     }
@@ -1265,6 +1665,8 @@ void __fastcall TFormMotecSetup::resetAnalysisGraphics()
         DamperRLPaintBox->Invalidate();
     if (DamperRRPaintBox != NULL)
         DamperRRPaintBox->Invalidate();
+    if (DamperCombinedPaintBox != NULL)
+        DamperCombinedPaintBox->Invalidate();
 }
 
 void __fastcall TFormMotecSetup::UpdateTireTemps(const std::vector<LapStats>& laps)
@@ -2274,6 +2676,7 @@ void __fastcall TFormMotecSetup::UpdateSuspension(std::vector<LapStats>& laps)
             for (int b = 0; b < VelocityHistogram::kBinCount; b++) {
                 suspensionData[i].bins[b] = static_cast<double>(hist.bins[b]) / static_cast<double>(hist.totalCount);
             }
+            suspensionData[i].totalCount = hist.totalCount;
             suspensionData[i].travel = travels[i]->average();
             suspensionData[i].bumpstop = bumpstops[i]->max;
             suspensionData[i].issue = hasDamperIssue(hist);
@@ -2289,11 +2692,19 @@ void __fastcall TFormMotecSetup::UpdateSuspension(std::vector<LapStats>& laps)
                     suspensionMaxBin = suspensionData[i].bins[b];
         }
 
-    // Repaint the four damper histogram paint boxes so they reflect the new data.
-    if (DamperFLPaintBox != NULL) DamperFLPaintBox->Invalidate();
-    if (DamperFRPaintBox != NULL) DamperFRPaintBox->Invalidate();
-    if (DamperRLPaintBox != NULL) DamperRLPaintBox->Invalidate();
-    if (DamperRRPaintBox != NULL) DamperRRPaintBox->Invalidate();
+    // Repaint only the visible damper view: invalidating a hidden tab's
+    // paint box wastes work during live capture.
+    const bool showCombined =
+        (DamperLayoutTabs != NULL && DamperLayoutTabs->ActivePageIndex == 1);
+    if (showCombined) {
+        if (DamperCombinedPaintBox != NULL)
+            DamperCombinedPaintBox->Invalidate();
+    } else {
+        if (DamperFLPaintBox != NULL) DamperFLPaintBox->Invalidate();
+        if (DamperFRPaintBox != NULL) DamperFRPaintBox->Invalidate();
+        if (DamperRLPaintBox != NULL) DamperRLPaintBox->Invalidate();
+        if (DamperRRPaintBox != NULL) DamperRRPaintBox->Invalidate();
+    }
 }
 
 

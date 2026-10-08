@@ -1,4 +1,4 @@
-object FormMotecSetup: TFormMotecSetup
+﻿object FormMotecSetup: TFormMotecSetup
   Left = 0
   Top = 0
   Caption = 'AC EVO  - MoTeC Setup Analyzer'
@@ -65,7 +65,7 @@ object FormMotecSetup: TFormMotecSetup
   object BrakeTempPaintBox: TPaintBox
     Left = 310
     Top = 180
-    Width = 240
+    Width = 300
     Height = 310
     OnPaint = BrakeTempPaintBoxPaint
   end
@@ -90,33 +90,52 @@ object FormMotecSetup: TFormMotecSetup
     Font.Style = []
     ParentFont = False
   end
-  object DamperFLPaintBox: TPaintBox
-    Left = 330
+  object DamperLayoutTabs: TPageControl
+    Left = 620
     Top = 184
-    Width = 391
-    Height = 153
-    OnPaint = DamperFLPaintBoxPaint
-  end
-  object DamperFRPaintBox: TPaintBox
-    Left = 721
-    Top = 184
-    Width = 392
-    Height = 153
-    OnPaint = DamperFRPaintBoxPaint
-  end
-  object DamperRLPaintBox: TPaintBox
-    Left = 330
-    Top = 337
-    Width = 391
-    Height = 153
-    OnPaint = DamperRLPaintBoxPaint
-  end
-  object DamperRRPaintBox: TPaintBox
-    Left = 721
-    Top = 337
-    Width = 392
-    Height = 153
-    OnPaint = DamperRRPaintBoxPaint
+    Width = 831
+    Height = 356
+    ActivePage = TabDamperGrid
+    OnChange = DamperLayoutTabsChange
+    TabOrder = 20
+    object TabDamperGrid: TTabSheet
+      Caption = 'Grid'
+      object DamperFLPaintBox: TPaintBox
+        Left = 8
+        Top = 4
+        Width = 402
+        Height = 152
+        OnPaint = DamperFLPaintBoxPaint
+      end
+      object DamperFRPaintBox: TPaintBox
+        Left = 419
+        Top = 4
+        Width = 402
+        Height = 152
+        OnPaint = DamperFRPaintBoxPaint
+      end
+      object DamperRLPaintBox: TPaintBox
+        Left = 8
+        Top = 160
+        Width = 402
+        Height = 152
+        OnPaint = DamperRLPaintBoxPaint
+      end
+      object DamperRRPaintBox: TPaintBox
+        Left = 419
+        Top = 160
+        Width = 402
+        Height = 152
+        OnPaint = DamperRRPaintBoxPaint
+      end
+    end
+    object TabDamperCombined: TTabSheet
+      Caption = 'Combined'
+      object DamperCombinedPaintBox: TPaintBox
+        Align = alClient
+        OnPaint = DamperCombinedPaintBoxPaint
+      end
+    end
   end
   object AccentLine: TPanel
     Left = 0

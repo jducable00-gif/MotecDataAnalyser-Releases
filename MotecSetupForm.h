@@ -17,6 +17,7 @@
 #include <Vcl.Graphics.hpp>
 
 #include "MotecSetupAnalyzer.h"
+#include <gdiplus.h>   // Gdiplus::Graphics used by DrawCombinedDamperChart signature
 #include <Vcl.ComCtrls.hpp>
 #include <Vcl.WinXCtrls.hpp>
 #include <Vcl.ExtCtrls.hpp>
@@ -57,10 +58,14 @@ __published:
     TLabel *LabelProfile;
     TLabel *LabelLanguage;
     TPaintBox *TireTempPaintBox;
+    TPageControl *DamperLayoutTabs;
+    TTabSheet *TabDamperGrid;
+    TTabSheet *TabDamperCombined;
     TPaintBox *DamperFLPaintBox;
     TPaintBox *DamperFRPaintBox;
     TPaintBox *DamperRLPaintBox;
     TPaintBox *DamperRRPaintBox;
+    TPaintBox *DamperCombinedPaintBox;
     TCheckBox *LiveCaptureCheckBox;
     TLabel *LabelLiveStatus;
     TShape *LiveLed;
@@ -82,6 +87,8 @@ __published:
     void __fastcall DamperFRPaintBoxPaint(TObject *Sender);
     void __fastcall DamperRLPaintBoxPaint(TObject *Sender);
     void __fastcall DamperRRPaintBoxPaint(TObject *Sender);
+    void __fastcall DamperCombinedPaintBoxPaint(TObject *Sender);
+    void __fastcall DamperLayoutTabsChange(TObject *Sender);
     void __fastcall BrakeTempPaintBoxPaint(TObject *Sender);
     void __fastcall LiveCaptureCheckBoxClick(TObject *Sender);
     void __fastcall LiveTimerTimer(TObject *Sender);
@@ -96,6 +103,7 @@ __published:
 public:
     struct SuspensionCornerData {
         double bins[41] = {0}; // normalized 0-1 damper velocity distribution
+        std::size_t totalCount = 0; // total sample count for this corner (for avg computation)
         double travel = 0.0;   // average suspension travel (mm)
         double bumpstop = 0.0; // max bumpstop engagement (mm)
         bool issue = false;    // damper evaluation issue
@@ -115,6 +123,7 @@ public:
     void __fastcall generateLiveReport();
     void __fastcall UpdateReportTabs(const ReportResult& result);
     void __fastcall DrawModernHistogram(TCanvas* canvas, int x, int y, int width, int height, const SuspensionCornerData& stats, const String& label);
+    void __fastcall DrawCombinedDamperChart(Gdiplus::Graphics& graphics, int width, int height);
 
     // Internal update helpers (NOT VCL event handlers — must stay out of __published).
     void __fastcall UpdateTireTemps(const std::vector<LapStats>& laps);
