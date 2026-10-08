@@ -34,6 +34,19 @@ Before writing logic, ensure the telemetry channels required for your rule are a
 3.  If they don't exist, add a new mapping entry.
 4.  **Note**: If you are using existing aliases (like `TYRE_TEMP_FL_INNER`), skip this step.
 
+**Two mapping types — know which to use:**
+
+| Type | When to use | Profile field? | Example in JSON |
+|------|------------|----------------|-----------------|
+| **Raw** (`"type":"raw"` or omitted) | The simulator exposes the value directly (LD file channel or shared-memory). One entry per profile + source. | Yes: `"profile":"AMS2"` / `"EVOM1"` and `"source":"MOTEC"` / `"LIVE"` | `{"alias":"Yaw_Rate","profile":"AMS2","source":"LIVE","channel":"mAngularVelocity[1]",...}` |
+| **Virtual** (`"type":"virtual"`) | The value is *derived* from other aliases (e.g., a simulator doesn't expose it directly). Defined once globally — no profile needed because its inputs are themselves resolved per-profile. | No | `{"type":"virtual","alias":"Rake","operation":"difference_of_averages","positiveInputs":["Ride_Height_FL",...],...}` |
+
+**Resolution order in `DataProvider`:** When a rule calls `getValue(alias)`, the provider first checks if a raw value was populated for that alias (from LD file or shared memory). If not found, it falls back to virtual channel computation. This means:
+- A profile with direct data uses its raw mapping automatically — no extra work needed.
+- A profile lacking that data can still be served by a global virtual definition as fallback.
+
+So if Profile X has the sensor but Profile Y doesn't, you add one raw entry for X and optionally one virtual derivation (from other available aliases) to cover Y transparently.
+
 ### Step 2: Add an `AnalysisAlias` Enum Value (if needed)
 If no existing alias covers your channel:
 
