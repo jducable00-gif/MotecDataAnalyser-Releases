@@ -176,7 +176,6 @@ Inline in the core analyzer header (previously `RecommendationEngine.h/.cpp`, no
 
 | Document | Purpose |
 |----------|---------|
-| [`docs/RETHINK_ANALYSIS_PLAN.md`](./docs/RETHINK_ANALYSIS_PLAN.md) | Development plan & progress tracker (cleanup, mapping abstraction, rule engine, analysis catalog) |
 | [`docs/DATA_MAPPING_SPEC.md`](./docs/DATA_MAPPING_SPEC.md) | Technical specification of the mapping layer and data flow |
 | [`docs/NEW_ALERT_PROCEDURE.md`](./docs/NEW_ALERT_PROCEDURE.md) | Step-by-step guide for creating new diagnostic rules |
 | [`docs/TUNING_RECOMMENDATIONS.md`](./docs/TUNING_RECOMMENDATIONS.md) | Telemetry-based setup checks & warnings (decision aid, not universal values) |
