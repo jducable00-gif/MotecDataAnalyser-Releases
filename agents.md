@@ -176,8 +176,9 @@ Inline in the core analyzer header (previously `RecommendationEngine.h/.cpp`, no
 
 | Document | Purpose |
 |----------|---------|
-| [`RETHINK_ANALYSIS_PLAN.md`](./RETHINK_ANALYSIS_PLAN.md) | Development plan & progress tracker (cleanup, mapping abstraction, rule engine, analysis catalog) |
-| [`DATA_MAPPING_SPEC.md`](./DATA_MAPPING_SPEC.md) | Technical specification of the mapping layer and data flow |
-| [`NEW_ALERT_PROCEDURE.md`](./NEW_ALERT_PROCEDURE.md) | Step-by-step guide for creating new diagnostic rules |
-| [`Channel_Correspondence.md`](./Channel_Correspondence.md) | Cross-reference table AC EVO <-> AMS2 channel names |
+| [`docs/RETHINK_ANALYSIS_PLAN.md`](./docs/RETHINK_ANALYSIS_PLAN.md) | Development plan & progress tracker (cleanup, mapping abstraction, rule engine, analysis catalog) |
+| [`docs/DATA_MAPPING_SPEC.md`](./docs/DATA_MAPPING_SPEC.md) | Technical specification of the mapping layer and data flow |
+| [`docs/NEW_ALERT_PROCEDURE.md`](./docs/NEW_ALERT_PROCEDURE.md) | Step-by-step guide for creating new diagnostic rules |
+| [`docs/TUNING_RECOMMENDATIONS.md`](./docs/TUNING_RECOMMENDATIONS.md) | Telemetry-based setup checks & warnings (decision aid, not universal values) |
+| [`docs/channels/Channel_Correspondence.md`](./docs/channels/Channel_Correspondence.md) | Cross-reference table AC EVO <-> AMS2 channel names (+ per-sim channel inventories in the same folder) |
 | [`.ai/skills/AGENTS.md`](./.ai/skills/AGENTS.md) | Toolchain, build & debug reference |

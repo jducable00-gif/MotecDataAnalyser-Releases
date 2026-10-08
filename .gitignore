@@ -2,6 +2,8 @@
 Win32/
 __history/
 __recovery/
+*.obj
+build_log.txt
 
 # IDE / project local files
 *.tds
@@ -18,3 +20,6 @@ data/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Python
+__pycache__/

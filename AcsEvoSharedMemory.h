@@ -1,6 +1,6 @@
 /*************************************************************************************************
   AcsEvoSharedMemory.h — Local copy of the AC EVO (Assetto Corsa EVO) shared memory structures.
-  Source: data/AC_EVO/solution/SharedMemoryACS/ConsoleApplication1/SharedFileOut.h
+  Source: data/reference/AC_EVO/solution/SharedMemoryACS/ConsoleApplication1/SharedFileOut.h
 
   Three shared memory objects are exposed by AC EVO (session-scoped, "Local\" prefix):
     - Local\acevo_pmf_physics  -> SPageFilePhysics

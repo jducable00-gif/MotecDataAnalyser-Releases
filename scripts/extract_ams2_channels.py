@@ -26,7 +26,8 @@ def extract_channels_from_json(json_path, output_md_path):
             f.write(f"{i}. **{channel['name']}** - {channel['unit']}\n")
 
 if __name__ == "__main__":
-    json_path = Path("c:/Users/Raymond/Documents/MotecDataAnalyser/data/_channel_extract.json")
-    output_md_path = Path("c:/Users/Raymond/Documents/MotecDataAnalyser/AMS2_channels.md")
+    project_root = Path(__file__).resolve().parent.parent
+    json_path = project_root / "data" / "working" / "_channel_extract.json"
+    output_md_path = project_root / "docs" / "channels" / "AMS2_channels.md"
     extract_channels_from_json(json_path, output_md_path)
     print(f"Fichier MD généré avec succès: {output_md_path}")

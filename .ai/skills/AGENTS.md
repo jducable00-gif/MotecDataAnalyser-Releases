@@ -40,14 +40,14 @@ Outputs:
 
 From the IDE: open `Project1.cbproj`, target **Win32**, configuration **Debug**, then Build / Compile.
 
-### Quick start with `build.ps1`
+### Quick start with `scripts\build.ps1`
 
-A wrapper script in the repo root performs the same build and prints a clear verdict:
+The `scripts` folder contains a wrapper that performs the same build and prints a clear verdict (works from any working directory):
 
 ```powershell
-.\build.ps1                 # incremental Debug/Win32 build
-.\build.ps1 -Clean          # delete Win32\Debug first, then rebuild
-.\build.ps1 -Config Release # also supports -Platform Win64
+.\scripts\build.ps1                 # incremental Debug/Win32 build
+.\scripts\build.ps1 -Clean          # delete Win32\Debug first, then rebuild
+.\scripts\build.ps1 -Config Release # also supports -Platform Win64
 ```
 
 - Full MSBuild output is written to `build_log.txt` (repo root) and echoed.
@@ -64,7 +64,7 @@ Gotchas already handled by the script (do not regress):
 Builds a ready-to-share folder after a successful build:
 
 ```powershell
-.\build.ps1                              # first, produce Win32\Debug\Project1.exe
+.\scripts\build.ps1                      # first, produce Win32\Debug\Project1.exe
 .\scripts\package.ps1                    # -> MotecDataAnalyser_Portable\  (Debug/Win32)
 .\scripts\package.ps1 -Config Release -Platform Win64
 .\scripts\package.ps1 -SkipData          # skip the ~58 MB data\ samples for a quick package
@@ -74,7 +74,7 @@ Layout produced: `MotecDataAnalyser.exe` + 5 runtime `.bpl` beside it, plus `run
 
 - The app links the dynamic packages `rtl vcl vclwinx vclimg bindengine`; their redistributables are `<name>290.bpl` in `Studio\23.0\Redist\win32|win64` (~18.9 MB for the 5, vs ~89 MB for all 93).
 - The `.bpl` MUST sit next to the exe: Windows DLL search checks the exe dir first and never a `runtime\` subfolder automatically. On this dev machine the app runs from `Win32\Debug` (no .bpl there) only because C++ Builder registers its package path; on a clean target box without C++ Builder, the shipped `.bpl` are what make it start.
-- Keep `package.ps1` pure ASCII too (same PS 5.1 rule as build.ps1).
+- Keep both scripts in `scripts\` pure ASCII (PS 5.1 reads BOM-less `.ps1` files as ANSI/cp1252, so accents or em-dashes break parsing — "string missing terminator").
 
 ## Debug / compile notes
 
@@ -96,7 +96,7 @@ When investigating logic (not compile errors):
 
 - CSV path: `MotecSetupForm.cpp` -> `AnalyzeSelectedFile` -> `parseMotecCsv`
 - LD path: `AnalyzeSelectedLdFile` -> `parseMotecLd` -> `DecodeMotecLd`
-- Binary LD layout notes: `data/ld-file-format.md`
+- Binary LD layout notes: `data/reference/ld-file-format.md`
 
 Project `IncludePath` / `ILINK_LibraryPath` still reference `..\..\..\form test\` (legacy). Prefer local files in this repo.
 

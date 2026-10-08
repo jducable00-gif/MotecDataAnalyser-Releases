@@ -27,8 +27,9 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # --- Resolve paths -----------------------------------------------------------
-$ProjectDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-if (-not (Test-Path $ProjectDir)) { throw "Cannot determine the project directory." }
+$ScriptDir  = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+if (-not (Test-Path $ScriptDir)) { throw "Cannot determine the scripts directory." }
+$ProjectDir = Split-Path -Parent $ScriptDir   # this script lives in <root>\scripts\
 
 $StudioRoot  = 'C:\Program Files (x86)\Embarcadero\Studio\23.0'
 $redistSub   = if ($Platform -eq 'Win64') { 'win64' } else { 'win32' }
@@ -42,7 +43,7 @@ $outRoot     = Join-Path $ProjectDir 'MotecDataAnalyser_Portable'
 
 # --- Pre-flight checks -------------------------------------------------------
 if (-not (Test-Path $exeSource)) {
-    throw "Build output not found: $exeSource`nRun .\build.ps1 -Config $Config first."
+    throw "Build output not found: $exeSource`nRun .\scripts\build.ps1 -Config $Config first."
 }
 if (-not (Test-Path $RedistDir)) {
     throw "Runtime package folder not found: $RedistDir"
@@ -89,8 +90,8 @@ if ($SkipData) {
     Write-Host "    data    : SKIPPED (-SkipData)" -ForegroundColor Yellow
 } else {
     $dataSrc = Join-Path $ProjectDir 'data'
-    # Copy everything except dev-scratch files.
-    Get-ChildItem $dataSrc | Where-Object { $_.Name -ne '_channel_extract.json' -and $_.Name -ne '_dump_channels.py' } | ForEach-Object {
+    # Copy everything except the working/ scratch folder (dev artifacts).
+    Get-ChildItem $dataSrc | Where-Object { $_.Name -ne 'working' } | ForEach-Object {
         if ($_.PSIsContainer) {
             Copy-Item $_.FullName (Join-Path $dirData $_.Name) -Recurse -Force
         } else {

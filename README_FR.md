@@ -164,9 +164,9 @@ Copiez-le dans l'un de ces emplacements et renommez-le sans `.example`. Si aucun
 ## Compilation depuis les sources (développeurs)
 
 ```powershell
-.\build.ps1                 # build incrémental Debug/Win32 -> BUILD OK en cas de succès
-.\build.ps1 -Clean          # efface Win32\Debug d'abord, puis reconstruit
-.\package.ps1               # produit MotecDataAnalyser_Portable\ après un build réussi
+.\scripts\build.ps1         # build incrémental Debug/Win32 -> BUILD OK en cas de succès
+.\scripts\build.ps1 -Clean  # efface Win32\Debug d'abord, puis reconstruit
+.\scripts\package.ps1       # produit MotecDataAnalyser_Portable\ après un build réussi
 ```
 
 Consultez `AGENTS.md` pour la chaîne d'outils complète (Embarcadero C++ Builder 12 / Clang VCL), les détails de compilation en ligne de commande et les notes sur le packaging. Ne retargetez pas vers MSVC/MinGW/g++.

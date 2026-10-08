@@ -4,12 +4,12 @@
             "approve": true,
             "matchCommandLine": true
         },
-        ".\\build.ps1": true,
-        "/^powershell -ExecutionPolicy Bypass -File \\.\\\\build\\.ps1 -Clean$/": {
+        ".\\scripts\\build.ps1": true,
+        "/^powershell -ExecutionPolicy Bypass -File \\.\\\\scripts\\\\build\\.ps1 -Clean$/": {
             "approve": true,
             "matchCommandLine": true
         },
-        "/^powershell -NoProfile -ExecutionPolicy Bypass -File \\.\\\\build\\.ps1$/": {
+        "/^powershell -NoProfile -ExecutionPolicy Bypass -File \\.\\\\scripts\\\\build\\.ps1$/": {
             "approve": true,
             "matchCommandLine": true
         }

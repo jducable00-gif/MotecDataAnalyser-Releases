@@ -153,7 +153,7 @@ bool Ams2IsInPits(const Ams2SharedMemory& frame)
 // Ams2FeedLap — feed one frame into LapStats accumulators
 // ---------------------------------------------------------------------------
 //
-// Unit conversions (from plan_ams2.md):
+// Unit conversions (from data/reference/plan_ams2.md):
 //   mSpeed: m/s → ×3.6 → km/h
 //   mRpm: direct
 //   mThrottle: 0-1 → ×100 → %

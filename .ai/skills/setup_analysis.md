@@ -7,7 +7,7 @@ This skill provides expertise in analyzing vehicle setup and performance for Aut
 To perform accurate diagnostics, always correlate data across these three layers:
 
 1.  **Layer 1: Theoretical Setup (The CDF Layer)**
-    *   **Source**: `.cdf` files parsed into `vehicles_db.json`.
+    *   **Source**: `.cdf` files parsed into `data/reference/ams2_vehicles_db.json`.
     *   **Purpose**: Defines the "Rules of the Game". Provides physical limits (`min`, `max`), resolution (`step`), and default values.
     *   **Usage**: Use this to validate if a recommendation is physically possible and follows manufacturer increments.
 

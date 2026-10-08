@@ -5,8 +5,8 @@ import json
 # =============================================================================
 # CONFIGURATION (Paths are relative to the project root)
 # =============================================================================
-SOURCE_DIR = r'data/AMS2_CDFs'
-OUTPUT_FILE = r'data/vehicles_db.json'
+SOURCE_DIR = r'data/cdfs'
+OUTPUT_FILE = r'data/reference/ams2_vehicles_db.json'
 # =============================================================================
 
 def parse_cdf(file_path):

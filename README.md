@@ -164,9 +164,9 @@ Copy it to one of those locations and rename without `.example`. If no rules fil
 ## Building from source (developers)
 
 ```powershell
-.\build.ps1                 # incremental Debug/Win32 build -> BUILD OK on success
-.\build.ps1 -Clean          # wipe Win32\Debug first, then rebuild
-.\package.ps1               # produce MotecDataAnalyser_Portable\ after a successful build
+.\scripts\build.ps1         # incremental Debug/Win32 build -> BUILD OK on success
+.\scripts\build.ps1 -Clean  # wipe Win32\Debug first, then rebuild
+.\scripts\package.ps1       # produce MotecDataAnalyser_Portable\ after a successful build
 ```
 
 See `AGENTS.md` for the full toolchain (Embarcadero C++ Builder 12 / Clang VCL), command-line build details, and packaging notes. Do **not** retarget to MSVC/MinGW/g++.
