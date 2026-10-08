@@ -18,7 +18,7 @@ object FormMotecSettings: TFormMotecSettings
     Top = 8
     Width = 584
     Height = 430
-    ActivePage = TabTyre
+    ActivePage = TabSuspension
     TabHeight = 25
     TabOrder = 0
     TabWidth = 80
@@ -38,7 +38,6 @@ object FormMotecSettings: TFormMotecSettings
           Height = 15
           Caption = 'Min Damper Samples:'
         end
-
         object EditMinDamperSamples: TEdit
           Left = 212
           Top = 30
@@ -47,7 +46,6 @@ object FormMotecSettings: TFormMotecSettings
           TabOrder = 0
           Text = '20'
         end
-
       end
       object GroupLapValidity: TGroupBox
         Left = 21
@@ -139,7 +137,7 @@ object FormMotecSettings: TFormMotecSettings
           Top = 28
           Width = 60
           Height = 23
-          TabOrder = 3
+          TabOrder = 2
           Text = '2.0'
         end
       end
@@ -281,7 +279,6 @@ object FormMotecSettings: TFormMotecSettings
     end
     object TabSuspension: TTabSheet
       Caption = 'Suspension'
-
       object GroupDamperZones: TGroupBox
         Left = 16
         Top = 16
@@ -292,70 +289,70 @@ object FormMotecSettings: TFormMotecSettings
         object LblHscTargetMin: TLabel
           Left = 16
           Top = 32
-          Width = 100
+          Width = 75
           Height = 15
           Caption = 'Hi Comp Min:'
         end
         object LblHscTargetMax: TLabel
           Left = 300
           Top = 32
-          Width = 100
+          Width = 77
           Height = 15
           Caption = 'Hi Comp Max:'
         end
         object LblLscTargetMin: TLabel
           Left = 16
           Top = 64
-          Width = 100
+          Width = 76
           Height = 15
           Caption = 'Lo Comp Min:'
         end
         object LblLscTargetMax: TLabel
           Left = 300
           Top = 64
-          Width = 100
+          Width = 78
           Height = 15
           Caption = 'Lo Comp Max:'
         end
         object LblLsrTargetMin: TLabel
           Left = 16
           Top = 96
-          Width = 100
+          Width = 91
           Height = 15
           Caption = 'Lo Rebound Min:'
         end
         object LblLsrTargetMax: TLabel
           Left = 300
           Top = 96
-          Width = 100
+          Width = 93
           Height = 15
           Caption = 'Lo Rebound Max:'
         end
         object LblHsrTargetMin: TLabel
           Left = 16
           Top = 128
-          Width = 100
+          Width = 90
           Height = 15
           Caption = 'Hi Rebound Min:'
         end
         object LblHsrTargetMax: TLabel
           Left = 300
           Top = 128
-          Width = 100
+          Width = 92
           Height = 15
           Caption = 'Hi Rebound Max:'
         end
         object LblZoneModerateBand: TLabel
           Left = 16
           Top = 160
-          Width = 110
+          Width = 111
           Height = 15
           Caption = 'Moderate Band (pts):'
         end
         object LblDamperSlowSpeedRange: TLabel
           Left = 300
           Top = 160
-          Width = 140
+          Width = 142
           Height = 15
           Caption = 'Slow Speed Range (mm/s):'
         end
@@ -440,9 +437,7 @@ object FormMotecSettings: TFormMotecSettings
           Text = '25.0'
         end
       end
-
     end
-
   end
   object ButtonSave: TButton
     Left = 384

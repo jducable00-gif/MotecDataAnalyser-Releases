@@ -1,4 +1,4 @@
-﻿//---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 // analyze_motec_setup.cpp — Cœur de l'analyse de la télémétrie MoTeC.
 //
 // Ce fichier contient :
@@ -203,11 +203,8 @@ enum ChannelDispatch {
 };
 
 static ChannelDispatch dispatchForChannel(const std::string& key, ChannelProfile profile) {
-    std::string lookupKey = key;
-    std::string resolvedAlias;
-    if (RuleConfig::instance().resolveRawToAlias(profile, MappingSource::MotecFile, key, resolvedAlias)) {
-        lookupKey = resolvedAlias;
-    }
+    // Check standard raw channel names first (Motec LD / EVO / AMS2 native names).
+    const std::string& lookupKey = key;
 
     if (lookupKey == "ROTY") return CH_ROTY;
     if (lookupKey == "LAT_G") return CH_LAT_G;
@@ -642,8 +639,8 @@ bool parseMotecLd(const std::string& path,
             }
             break;
         }
-    }
 
+    }
     return true;
 }
 

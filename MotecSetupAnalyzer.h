@@ -184,7 +184,7 @@ struct Thresholds {
     double confidenceHigh = 0.85;
     int minLapsForReproducibility = 3;
     double histogramYOffset = 5.0; // Percentage offset for Y-axis max (e.g., 5% above highest bin)
-    double damperSlowSpeedRange = 25.0; // Symmetrical range around 0 to highlight slow damper section
+	double damperSlowSpeedRange = 25.0; // Symmetrical range around 0 to highlight slow damper section
 
     // Per-profile accessors
     double pressureLow(ChannelProfile) const {
