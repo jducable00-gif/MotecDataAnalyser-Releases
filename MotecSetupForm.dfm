@@ -49,7 +49,7 @@ object FormMotecSetup: TFormMotecSetup
     Caption = 'Profile:'
   end
   object LabelLanguage: TLabel
-    Left = 210
+    Left = 194
     Top = 108
     Width = 55
     Height = 15
@@ -70,16 +70,16 @@ object FormMotecSetup: TFormMotecSetup
     OnPaint = BrakeTempPaintBoxPaint
   end
   object LiveLed: TShape
-    Left = 642
-    Top = 109
+    Left = 418
+    Top = 116
     Width = 14
-    Height = 14
+    Height = 15
     Brush.Color = clRed
     Shape = stCircle
   end
   object LabelLiveStatus: TLabel
-    Left = 662
-    Top = 108
+    Left = 438
+    Top = 116
     Width = 72
     Height = 15
     Caption = 'Disconnected'
@@ -326,7 +326,7 @@ object FormMotecSetup: TFormMotecSetup
     TabOrder = 3
   end
   object LanguageCombo: TComboBox
-    Left = 282
+    Left = 255
     Top = 105
     Width = 130
     Height = 23
@@ -335,7 +335,7 @@ object FormMotecSetup: TFormMotecSetup
     OnChange = LanguageComboChange
   end
   object ChannelProfileCombo: TComboBox
-    Left = 84
+    Left = 63
     Top = 105
     Width = 110
     Height = 23
@@ -344,13 +344,32 @@ object FormMotecSetup: TFormMotecSetup
     OnChange = ChannelProfileComboChange
   end
   object LiveCaptureCheckBox: TCheckBox
-    Left = 548
-    Top = 107
+    Left = 418
+    Top = 91
     Width = 120
     Height = 19
     Caption = 'Live Capture'
     TabOrder = 6
     OnClick = LiveCaptureCheckBoxClick
+  end
+  object AutoDetectTrackCheckBox: TCheckBox
+    Left = 544
+    Top = 107
+    Width = 57
+    Height = 19
+    Caption = 'Auto'
+    TabOrder = 10
+    OnClick = AutoDetectTrackCheckBoxClick
+  end
+  object ButtonResetSession: TButton
+    Left = 595
+    Top = 104
+    Width = 110
+    Height = 34
+    Caption = 'Reset'
+    Enabled = False
+    TabOrder = 11
+    OnClick = ButtonResetSessionClick
   end
   object LiveTimer: TTimer
     Enabled = False

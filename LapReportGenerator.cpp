@@ -466,11 +466,11 @@ ReportResult LapReportGenerator::generateAverageLaps(const std::vector<LapStats>
                                                       ReportLanguage language,
                                                       ChannelProfile profile) {
     const LapSelectionResult sel = selectValidLaps(laps);
-    if (sel.valid.size() < 2) {
+    if (sel.valid.size() < 3) {
         ReportResult result;
         result[ReportSection::Summary].content = language == ReportLanguage::French
-            ? "Au moins deux tours valides sont nécessaires pour une analyse moyenne."
-            : "At least two valid laps are required for an average analysis.";
+            ? "Au moins trois tours valides sont nécessaires pour une analyse moyenne."
+            : "At least three valid laps are required for an average analysis.";
         return result;
     }
 

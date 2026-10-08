@@ -68,6 +68,8 @@ __published:
     TTimer *LiveConnectTimer;
     TPaintBox *BrakeTempPaintBox;
     TComboBox *LanguageCombo;
+    TCheckBox *AutoDetectTrackCheckBox;
+    TButton *ButtonResetSession;
 
     void __fastcall ButtonLoadClick(TObject *Sender);
 	void __fastcall Button1Click(TObject *Sender);
@@ -84,7 +86,12 @@ __published:
     void __fastcall LiveCaptureCheckBoxClick(TObject *Sender);
     void __fastcall LiveTimerTimer(TObject *Sender);
     void __fastcall LiveConnectTimerTimer(TObject *Sender);
+    void __fastcall ButtonResetSessionClick(TObject *Sender);
+    void __fastcall AutoDetectTrackCheckBoxClick(TObject *Sender);
+    void __fastcall resetLiveSession();
+    void __fastcall updateResetButtonState();
     void __fastcall TranslateUI();
+
 
 public:
     struct SuspensionCornerData {

@@ -212,7 +212,6 @@ struct TyreThresholds {
     double camberMaxSpread = 6.5;
     double innerOuterSpreadC = 5.0;
     double sideImbalanceMaxC = 8.0;
-    double pressureSideDiffPsiMax = 1.5;
     double pressureFrontRearDiffPsiMax = 2.0;
 };
 
@@ -616,29 +615,7 @@ public:
         if (!hasFl || !hasFr || !hasRl || !hasRr)
             return results;
 
-        if (std::abs(fl - fr) > settings.tyres.pressureSideDiffPsiMax) {
-            AnalysisResult result;
-            result.severity = AnalysisSeverity::Warning;
-            result.category = "Tyres";
-            result.title = tr("Front pressure imbalance", "Déséquilibre de pression avant");
-            result.description = tr("Front left/right pressures differ too much for a balanced setup.",
-                                    "Les pressions avant gauche/droite diffèrent trop pour un équilibre correct.");
-            result.recommendation = tr("Correct the front pressure split and re-check tyre temperatures.",
-                                       "Corriger l'écart de pression avant et revérifier les températures des pneus.");
-            results.push_back(result);
-        }
-
-        if (std::abs(rl - rr) > settings.tyres.pressureSideDiffPsiMax) {
-            AnalysisResult result;
-            result.severity = AnalysisSeverity::Warning;
-            result.category = "Tyres";
-            result.title = tr("Rear pressure imbalance", "Déséquilibre de pression arrière");
-            result.description = tr("Rear left/right pressures differ too much for a balanced setup.",
-                                    "Les pressions arrière gauche/droite diffèrent trop pour un équilibre correct.");
-            result.recommendation = tr("Balance the rear pressure split to reduce asymmetry.",
-                                       "Équilibrer l'écart de pression arrière pour réduire l'asymétrie.");
-            results.push_back(result);
-        }
+        // L/R pressure split is intentionally used to compensate contact patch vs camber — no imbalance warning.
 
         const double frontAvg = (fl + fr) * 0.5;
         const double rearAvg = (rl + rr) * 0.5;
@@ -1178,7 +1155,6 @@ inline AnalysisSettings buildDefaultAnalysisSettings() {
     settings.tyres.camberMaxSpread = g_thresholds.camberMaxSpread;
     settings.tyres.innerOuterSpreadC = g_thresholds.camberMaxSpread;
     settings.tyres.sideImbalanceMaxC = g_thresholds.tyreCentreTempLrDiffMax;
-    settings.tyres.pressureSideDiffPsiMax = g_thresholds.pressureSideDiffMax;
     settings.tyres.pressureFrontRearDiffPsiMax = g_thresholds.pressureFrontRearDiffMax;
     settings.engine.waterTempWarnC = g_thresholds.waterTempMax;
     settings.engine.oilTempWarnC = g_thresholds.oilTempMax;

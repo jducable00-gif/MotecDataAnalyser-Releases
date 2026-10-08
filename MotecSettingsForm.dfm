@@ -38,27 +38,7 @@ object FormMotecSettings: TFormMotecSettings
           Height = 15
           Caption = 'Min Damper Samples:'
         end
-        object LblMinHandlingSamples: TLabel
-          Left = 16
-          Top = 64
-          Width = 123
-          Height = 15
-          Caption = 'Min Handling Samples:'
-        end
-        object LblMinSteerYawSamples: TLabel
-          Left = 16
-          Top = 96
-          Width = 126
-          Height = 15
-          Caption = 'Min Steer/Yaw Samples:'
-        end
-        object LblHandlingConfidenceSamples: TLabel
-          Left = 16
-          Top = 128
-          Width = 182
-          Height = 15
-          Caption = 'Min Samples for High Confidence:'
-        end
+
         object EditMinDamperSamples: TEdit
           Left = 212
           Top = 30
@@ -67,30 +47,7 @@ object FormMotecSettings: TFormMotecSettings
           TabOrder = 0
           Text = '20'
         end
-        object EditMinHandlingSamples: TEdit
-          Left = 212
-          Top = 61
-          Width = 60
-          Height = 23
-          TabOrder = 1
-          Text = '8'
-        end
-        object EditMinSteerYawSamples: TEdit
-          Left = 212
-          Top = 93
-          Width = 60
-          Height = 23
-          TabOrder = 2
-          Text = '20'
-        end
-        object EditHandlingConfidenceSamples: TEdit
-          Left = 212
-          Top = 125
-          Width = 60
-          Height = 23
-          TabOrder = 3
-          Text = '30'
-        end
+
       end
       object GroupLapValidity: TGroupBox
         Left = 21
@@ -154,13 +111,6 @@ object FormMotecSettings: TFormMotecSettings
           Height = 15
           Caption = 'High:'
         end
-        object LblPressSideDiffMax: TLabel
-          Left = 220
-          Top = 68
-          Width = 151
-          Height = 15
-          Caption = 'Max Left/Right Pressure Diff:'
-        end
         object LblPressFrontRearDiffMax: TLabel
           Left = 220
           Top = 32
@@ -183,14 +133,6 @@ object FormMotecSettings: TFormMotecSettings
           Height = 23
           TabOrder = 1
           Text = '33.0'
-        end
-        object EditPressSideDiffMax: TEdit
-          Left = 386
-          Top = 60
-          Width = 60
-          Height = 23
-          TabOrder = 2
-          Text = '1.5'
         end
         object EditPressFrontRearDiffMax: TEdit
           Left = 386
@@ -339,81 +281,14 @@ object FormMotecSettings: TFormMotecSettings
     end
     object TabSuspension: TTabSheet
       Caption = 'Suspension'
-      object GroupDamper: TGroupBox
+
+      object GroupDamperZones: TGroupBox
         Left = 16
         Top = 16
         Width = 552
-        Height = 178
-        Caption = 'Damper Velocity'
-        TabOrder = 0
-        object LblDamperLowSpeedThreshold: TLabel
-          Left = 16
-          Top = 32
-          Width = 115
-          Height = 15
-          Caption = 'Low Speed Threshold:'
-        end
-        object LblDamperAsymmetryThreshold: TLabel
-          Left = 16
-          Top = 64
-          Width = 119
-          Height = 15
-          Caption = 'Asymmetry Threshold:'
-        end
-        object LblDamperHighSpeedShareMax: TLabel
-          Left = 16
-          Top = 96
-          Width = 122
-          Height = 15
-          Caption = 'High Speed Share Max:'
-        end
-        object LblDamperLowSpeedShareMin: TLabel
-          Left = 16
-          Top = 128
-          Width = 116
-          Height = 15
-          Caption = 'Low Speed Share Min:'
-        end
-        object EditDamperLowSpeedThreshold: TEdit
-          Left = 170
-          Top = 28
-          Width = 60
-          Height = 23
-          TabOrder = 0
-          Text = '50.0'
-        end
-        object EditDamperAsymmetryThreshold: TEdit
-          Left = 170
-          Top = 60
-          Width = 60
-          Height = 23
-          TabOrder = 1
-          Text = '8.0'
-        end
-        object EditDamperHighSpeedShareMax: TEdit
-          Left = 170
-          Top = 92
-          Width = 60
-          Height = 23
-          TabOrder = 2
-          Text = '25.0'
-        end
-        object EditDamperLowSpeedShareMin: TEdit
-          Left = 170
-          Top = 124
-          Width = 60
-          Height = 23
-          TabOrder = 3
-          Text = '92.0'
-        end
-      end
-      object GroupDamperZones: TGroupBox
-        Left = 16
-        Top = 200
-        Width = 552
-        Height = 190
+        Height = 230
         Caption = 'Damper 4-Zone Targets (%)'
-        TabOrder = 1
+        TabOrder = 0
         object LblHscTargetMin: TLabel
           Left = 16
           Top = 32
@@ -476,6 +351,13 @@ object FormMotecSettings: TFormMotecSettings
           Width = 110
           Height = 15
           Caption = 'Moderate Band (pts):'
+        end
+        object LblDamperSlowSpeedRange: TLabel
+          Left = 300
+          Top = 160
+          Width = 140
+          Height = 15
+          Caption = 'Slow Speed Range (mm/s):'
         end
         object EditHscTargetMin: TEdit
           Left = 130
@@ -549,252 +431,18 @@ object FormMotecSettings: TFormMotecSettings
           TabOrder = 8
           Text = '5.0'
         end
-      end
-      object GroupSuspension: TGroupBox
-        Left = 16
-        Top = 396
-        Width = 552
-        Height = 192
-        Caption = 'Suspension Geometry'
-        TabOrder = 2
-        object LblSuspTravelMax: TLabel
-          Left = 16
-          Top = 32
-          Width = 92
-          Height = 15
-          Caption = 'Max Travel (mm):'
-        end
-        object LblRideHeightDiffMax: TLabel
-          Left = 16
-          Top = 64
-          Width = 142
-          Height = 15
-          Caption = 'Max Ride Height Diff (L/R):'
-        end
-        object LblSuspVelocityMax: TLabel
-          Left = 16
-          Top = 96
-          Width = 113
-          Height = 15
-          Caption = 'Max Velocity (mm/s):'
-        end
-        object LblSuspAvgFrontMax: TLabel
-          Left = 16
-          Top = 128
-          Width = 114
-          Height = 15
-          Caption = 'Max Avg Front Travel:'
-        end
-        object LblSuspAvgRearMax: TLabel
-          Left = 16
-          Top = 160
-          Width = 109
-          Height = 15
-          Caption = 'Max Avg Rear Travel:'
-        end
-        object EditSuspTravelMax: TEdit
-          Left = 170
-          Top = 28
-          Width = 60
-          Height = 23
-          TabOrder = 0
-          Text = '8.0'
-        end
-        object EditRideHeightDiffMax: TEdit
-          Left = 170
-          Top = 60
-          Width = 60
-          Height = 23
-          TabOrder = 1
-          Text = '4.0'
-        end
-        object EditSuspVelocityMax: TEdit
-          Left = 170
-          Top = 92
-          Width = 60
-          Height = 23
-          TabOrder = 2
-          Text = '5.0'
-        end
-        object EditSuspAvgFrontMax: TEdit
-          Left = 170
-          Top = 124
-          Width = 60
-          Height = 23
-          TabOrder = 3
-          Text = '50.0'
-        end
-        object EditSuspAvgRearMax: TEdit
-          Left = 170
+        object EditDamperSlowSpeedRange: TEdit
+          Left = 420
           Top = 156
           Width = 60
           Height = 23
-          TabOrder = 4
-          Text = '50.0'
-        end
-      end
-    end
-    object TabBrake: TTabSheet
-      Caption = 'Brake'
-      object GroupBrake: TGroupBox
-        Left = 16
-        Top = 16
-        Width = 552
-        Height = 384
-        Caption = 'Brake Thresholds'
-        TabOrder = 0
-        object LblBrakeTempDiffMax: TLabel
-          Left = 16
-          Top = 32
-          Width = 112
-          Height = 15
-          Caption = 'Brake Temp Diff Max:'
-        end
-        object LblBrakeBiasMax: TLabel
-          Left = 16
-          Top = 64
-          Width = 150
-          Height = 15
-          Caption = 'Max Allowed Brake Bias Diff:'
-        end
-        object LblBrakeBiasFrontMin: TLabel
-          Left = 16
-          Top = 96
-          Width = 135
-          Height = 15
-          Caption = 'Min Avg Front Brake Bias:'
-        end
-        object LblBrakeTorqueMin: TLabel
-          Left = 16
-          Top = 128
-          Width = 95
-          Height = 15
-          Caption = 'Brake Torque Min:'
-        end
-        object LblBrakeChannelMismatchMax: TLabel
-          Left = 16
-          Top = 160
-          Width = 176
-          Height = 15
-          Caption = 'Front/Rear Temp Swap Detection:'
-        end
-        object LblBrakeTorqueFrontShareMax: TLabel
-          Left = 16
-          Top = 192
-          Width = 149
-          Height = 15
-          Caption = 'Front Brake Torque % (Max):'
-        end
-        object LblBrakeTorqueFrontShareMin: TLabel
-          Left = 16
-          Top = 224
-          Width = 147
-          Height = 15
-          Caption = 'Front Brake Torque % (Min):'
-        end
-        object LblBrakeTorqueLrDiffRatio: TLabel
-          Left = 16
-          Top = 256
-          Width = 183
-          Height = 15
-          Caption = 'Left/Right Torque Imbalance Ratio:'
-        end
-        object LblBrakeBiasSettingFrontMax: TLabel
-          Left = 16
-          Top = 288
-          Width = 153
-          Height = 15
-          Caption = 'Brake Bias Setting Front Max:'
-        end
-        object LblBrakeBiasSettingRearMin: TLabel
-          Left = 16
-          Top = 320
-          Width = 146
-          Height = 15
-          Caption = 'Brake Bias Setting Rear Min:'
-        end
-        object EditBrakeTempDiffMax: TEdit
-          Left = 218
-          Top = 29
-          Width = 60
-          Height = 23
-          TabOrder = 0
+          TabOrder = 9
           Text = '25.0'
         end
-        object EditBrakeBiasMax: TEdit
-          Left = 218
-          Top = 61
-          Width = 60
-          Height = 23
-          TabOrder = 1
-          Text = '18.0'
-        end
-        object EditBrakeBiasFrontMin: TEdit
-          Left = 218
-          Top = 93
-          Width = 60
-          Height = 23
-          TabOrder = 2
-          Text = '90.0'
-        end
-        object EditBrakeTorqueMin: TEdit
-          Left = 218
-          Top = 125
-          Width = 60
-          Height = 23
-          TabOrder = 3
-          Text = '1.0'
-        end
-        object EditBrakeChannelMismatchMax: TEdit
-          Left = 218
-          Top = 157
-          Width = 60
-          Height = 23
-          TabOrder = 4
-          Text = '100.0'
-        end
-        object EditBrakeTorqueFrontShareMax: TEdit
-          Left = 218
-          Top = 189
-          Width = 60
-          Height = 23
-          TabOrder = 5
-          Text = '65.0'
-        end
-        object EditBrakeTorqueFrontShareMin: TEdit
-          Left = 218
-          Top = 221
-          Width = 60
-          Height = 23
-          TabOrder = 6
-          Text = '40.0'
-        end
-        object EditBrakeTorqueLrDiffRatio: TEdit
-          Left = 218
-          Top = 253
-          Width = 60
-          Height = 23
-          TabOrder = 7
-          Text = '0.15'
-        end
-        object EditBrakeBiasSettingFrontMax: TEdit
-          Left = 218
-          Top = 285
-          Width = 60
-          Height = 23
-          TabOrder = 8
-          Text = '60.0'
-        end
-        object EditBrakeBiasSettingRearMin: TEdit
-          Left = 218
-          Top = 317
-          Width = 60
-          Height = 23
-          TabOrder = 9
-          Text = '40.0'
-        end
       end
+
     end
+
   end
   object ButtonSave: TButton
     Left = 384

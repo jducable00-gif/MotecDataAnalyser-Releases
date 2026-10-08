@@ -181,6 +181,48 @@ void SaveChannelProfileSetting(ChannelProfile profile)
 		delete settings;
 	}
 }
+
+bool ReadAutoDetectTrackSetting()
+{
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		// Default: checked (1)
+		return settings->ReadInteger("General", "AutoDetectTrack", 1) != 0;
+	} __finally {
+		delete settings;
+	}
+}
+
+void SaveAutoDetectTrackSetting(bool enabled)
+{
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		settings->WriteInteger("General", "AutoDetectTrack", enabled ? 1 : 0);
+	} __finally {
+		delete settings;
+	}
+}
+
+bool ReadLiveCaptureSetting()
+{
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		// Default: off (0) — do not auto-start capture on launch unless previously enabled
+		return settings->ReadInteger("General", "LiveCapture", 0) != 0;
+	} __finally {
+		delete settings;
+	}
+}
+
+void SaveLiveCaptureSetting(bool enabled)
+{
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		settings->WriteInteger("General", "LiveCapture", enabled ? 1 : 0);
+	} __finally {
+		delete settings;
+	}
+}
 // ===============================
 // Thresholds configuration
 // ===============================
@@ -612,7 +654,17 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
 		ChannelProfileCombo->ItemIndex = (int)ReadChannelProfileSetting();
 		ChannelProfileCombo->OnChange = ChannelProfileComboChange;
     }
+	if (AutoDetectTrackCheckBox != NULL)
+		AutoDetectTrackCheckBox->Checked = ReadAutoDetectTrackSetting();
+
+	if (LiveCaptureCheckBox != NULL && ReadLiveCaptureSetting()) {
+		// Restore previous state and run the normal start path (timers, connection search)
+		LiveCaptureCheckBox->Checked = true;
+		LiveCaptureCheckBoxClick(this);
+	}
+
 	TranslateUI();
+	updateResetButtonState();
 }
 
 void __fastcall TFormMotecSetup::TranslateUI()
@@ -629,6 +681,8 @@ void __fastcall TFormMotecSetup::TranslateUI()
     Button1->Caption = isFr ? "Importer Données Motec" : "Import Motec Data";
     ButtonSettings->Caption = isFr ? "Réglages" : "Settings";
     LiveCaptureCheckBox->Caption = isFr ? "Capture Live" : "Live Capture";
+    ButtonResetSession->Caption = isFr ? "Réinitialiser" : "Reset";
+    AutoDetectTrackCheckBox->Caption = isFr ? "Auto" : "Auto";
 
     TabSummary->Caption = isFr ? "Résumé" : "Summary";
     TabGeneral->Caption = isFr ? "Général" : "General";
@@ -697,14 +751,7 @@ void __fastcall TFormMotecSetup::ChannelProfileComboChange(TObject *Sender)
     if (LiveCaptureCheckBox != NULL && LiveCaptureCheckBox->Checked) {
         liveActive = true;
         liveConnected = false;
-        liveInPit = true;
-        liveLapInProgress = false;
-        liveLaps.clear();
-        liveLapNumber = 0;
-        sessionLapCounter = 0;
-        lastCompletedLaps = 0;
-        liveCurrentLap = LapStats();
-        liveWasOnTrack = false;
+        resetLiveSession();
 
         // Update mode based on the newly selected profile
         liveMode = (profile == ChannelProfile::EvoM1) ? LIVE_EVO : LIVE_AMS2;
@@ -1210,6 +1257,14 @@ void __fastcall TFormMotecSetup::resetAnalysisGraphics()
         TireTempPaintBox->Invalidate();
     if (BrakeTempPaintBox != NULL)
         BrakeTempPaintBox->Invalidate();
+    if (DamperFLPaintBox != NULL)
+        DamperFLPaintBox->Invalidate();
+    if (DamperFRPaintBox != NULL)
+        DamperFRPaintBox->Invalidate();
+    if (DamperRLPaintBox != NULL)
+        DamperRLPaintBox->Invalidate();
+    if (DamperRRPaintBox != NULL)
+        DamperRRPaintBox->Invalidate();
 }
 
 void __fastcall TFormMotecSetup::UpdateTireTemps(const std::vector<LapStats>& laps)
@@ -1678,8 +1733,50 @@ void __fastcall TFormMotecSetup::Button1Click(TObject *Sender)
 // Live capture from AMS2 shared memory
 //---------------------------------------------------------------------------
 
+void __fastcall TFormMotecSetup::resetLiveSession()
+{
+	liveInPit = true;
+	liveLapInProgress = false;
+	liveLaps.clear();
+	liveLapNumber = 0;
+	sessionLapCounter = 0;
+	lastCompletedLaps = 0;
+	liveCurrentLap = LapStats();
+	liveWasOnTrack = false;
+	firstLapStarted = false;
+	previous_mCurrentTime = 0.0f;
+	lastPitMode = -1;
+
+	// Clear all displayed data (tyre temps, brake temps, suspension/damper histograms)
+	resetAnalysisGraphics();
+}
+
+void __fastcall TFormMotecSetup::updateResetButtonState()
+{
+	if (ButtonResetSession == NULL) return;
+	bool autoChecked = (AutoDetectTrackCheckBox != NULL && AutoDetectTrackCheckBox->Checked);
+	ButtonResetSession->Enabled = liveActive && !autoChecked;
+}
+
+void __fastcall TFormMotecSetup::ButtonResetSessionClick(TObject *Sender)
+{
+	if (!liveActive) return;
+	resetLiveSession();
+	MemoSummary->Lines->Clear();
+	MemoSummary->Lines->Add("Session reset — ready for new collection.");
+}
+
+void __fastcall TFormMotecSetup::AutoDetectTrackCheckBoxClick(TObject *Sender)
+{
+	if (AutoDetectTrackCheckBox != NULL)
+		SaveAutoDetectTrackSetting(AutoDetectTrackCheckBox->Checked);
+	updateResetButtonState();
+}
+
 void __fastcall TFormMotecSetup::LiveCaptureCheckBoxClick(TObject *Sender)
 {
+	SaveLiveCaptureSetting(LiveCaptureCheckBox != NULL && LiveCaptureCheckBox->Checked);
+
 	if (LiveCaptureCheckBox->Checked) {
 		liveActive = true;
 		liveConnected = false;
@@ -1695,14 +1792,7 @@ void __fastcall TFormMotecSetup::LiveCaptureCheckBoxClick(TObject *Sender)
         MemoSummary->Lines->Add("Live capture enabled. Searching for source...");
 
 		// Reset state for reconnection
-		liveInPit = true;
-		liveLapInProgress = false;
-		liveLaps.clear();
-		liveLapNumber = 0;
-		sessionLapCounter = 0;
-		lastCompletedLaps = 0;
-		liveCurrentLap = LapStats();
-		liveWasOnTrack = false;
+		resetLiveSession();
 
 		// LED red = not connected yet (reconnecting)
 		LiveLed->Brush->Color = clRed;
@@ -1710,8 +1800,10 @@ void __fastcall TFormMotecSetup::LiveCaptureCheckBoxClick(TObject *Sender)
 
 		// Start the connection timer to begin looking for shared memory/process
 		LiveConnectTimer->Enabled = true;
+		updateResetButtonState();
 	} else {
 		stopLiveCapture();
+		updateResetButtonState();
 	}
 }
 
@@ -1825,6 +1917,7 @@ void __fastcall TFormMotecSetup::stopLiveCapture()
             MemoSummary->Lines->Add("Live capture stopped. No laps captured.");
 		//StatusBar1->SimpleText = "Live capture stopped";
         }
+        updateResetButtonState();
     }
 }
 
@@ -1881,6 +1974,12 @@ void __fastcall TFormMotecSetup::processLiveFrame(const Ams2SharedMemory& frame)
 	bool inPits = Ams2IsInPits(frame);
 
     // --- Event Detection based on transitions (AMS2_on_track_detection.md) ---
+
+	// Auto-detect: if back on track after a completed session, reset for a fresh start
+	if (onTrack && !liveWasOnTrack && AutoDetectTrackCheckBox != NULL && AutoDetectTrackCheckBox->Checked && !liveLaps.empty()) {
+		resetLiveSession();
+		MemoSummary->Lines->Add("Auto: new session started.");
+	}
 
 	// 0. Detect pit → track transition: start a new lap if none is currently in progress
 	if (onTrack && !liveWasOnTrack && !liveLapInProgress && sessionLapCounter == 0) {
@@ -1963,6 +2062,12 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
 {
     bool onTrack = AcsEvoIsOnTrack(gfx);
 	bool inPits = AcsEvoIsInPits(gfx);
+
+	// Auto-detect: if back on track after a completed session, reset for a fresh start
+	if (onTrack && !liveWasOnTrack && AutoDetectTrackCheckBox != NULL && AutoDetectTrackCheckBox->Checked && !liveLaps.empty()) {
+		resetLiveSession();
+		MemoSummary->Lines->Add("Auto: new session started.");
+	}
 
     // Detect pit → track transition: start a new lap
     if (onTrack && !liveWasOnTrack)
@@ -2190,5 +2295,6 @@ void __fastcall TFormMotecSetup::UpdateSuspension(std::vector<LapStats>& laps)
     if (DamperRLPaintBox != NULL) DamperRLPaintBox->Invalidate();
     if (DamperRRPaintBox != NULL) DamperRRPaintBox->Invalidate();
 }
+
 
 
