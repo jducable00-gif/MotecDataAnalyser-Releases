@@ -8,6 +8,15 @@ The system follows an **Alias → DataProvider → AnalysisRule → AnalysisResu
 
 ## Overview of the Architecture
 
+### Core Design Constraint: Rules Are Profile-Agnostic via Aliases
+
+> ⚠️ **NEVER reference a raw channel name (e.g., `C_SURF_TEMP_LF`, `S_TYRE_P_FL`) inside rule logic.**
+> Rules interact exclusively with `AnalysisAlias` enum values through `DataProvider::getValue()`. The alias layer is what makes rules simulator-agnostic: the same rule works identically for AMS2, AC EVO, EvoM1, or any future profile without modification. All profile-specific knowledge lives in `mapping.json`, not in C++ code.
+
+This separation means adding a new simulator only requires a new mapping entry — zero changes to existing rules.
+
+### Data Flow Layers
+
 1.  **Channel Aliasing (`RuleConfig` + `mapping.json`)**: Raw telemetry channels (e.g., `C_SURF_TEMP_LF`) are mapped to semantic aliases (e.g., `TYRE_TEMP_FL_INNER`). This allows rules to work regardless of whether the data comes from AMS2, EvoM1, or other simulators.
 2.  **DataProvider**: A gateway that resolves `AnalysisAlias` enum values to concrete numeric values from a `LapStats` object, including virtual channels (e.g., `Rake`).
 3.  **AnalysisRule (in `MotecSetupAnalyzer.h`)**: Each rule is a class implementing `requiredInputs()` and `evaluate(provider, settings)`. Rules are registered in `buildDefaultAnalysisRegistry()`.
@@ -87,6 +96,7 @@ public:
 ```
 
 **Key conventions:**
+- **Profile-agnostic**: Only access data via `AnalysisAlias` enum values through `provider.getValue(alias, out)`. Never hardcode raw channel names — the alias layer (`mapping.json`) handles all simulator-specific mapping transparently.
 - `evaluate()` returns a **vector**, not a single result. Return `{}` (empty) when there's nothing to report — the registry filters these out automatically.
 - The local `tr` lambda is defined at the top of every rule's `evaluate()`. It selects English/French based on `settings.language`. Always use it for user-facing strings.
 - `provider.getValue(alias, out)` returns **bool** + output reference. Never assume a value exists just because it was in `requiredInputs()`; live data can be sparse even after the registry pre-checks.
