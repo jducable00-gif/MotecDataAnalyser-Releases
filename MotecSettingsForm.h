@@ -52,26 +52,28 @@ __published:
 
     // Damper 4-Zone Targets Tab
     TGroupBox *GroupDamperZones;
-    TLabel *LblHscTargetMin;
-    TEdit *EditHscTargetMin;
-    TLabel *LblHscTargetMax;
-    TEdit *EditHscTargetMax;
-    TLabel *LblLscTargetMin;
-    TEdit *EditLscTargetMin;
-    TLabel *LblLscTargetMax;
-    TEdit *EditLscTargetMax;
-    TLabel *LblLsrTargetMin;
-    TEdit *EditLsrTargetMin;
-    TLabel *LblLsrTargetMax;
-    TEdit *EditLsrTargetMax;
-    TLabel *LblHsrTargetMin;
-    TEdit *EditHsrTargetMin;
-    TLabel *LblHsrTargetMax;
-    TEdit *EditHsrTargetMax;
-    TLabel *LblZoneModerateBand;
-    TEdit *EditZoneModerateBand;
+    TLabel *LblHscTarget;
+    TEdit *EditHscTarget;
+    TLabel *LblLscTarget;
+    TEdit *EditLscTarget;
+    TLabel *LblLsrTarget;
+    TEdit *EditLsrTarget;
+    TLabel *LblHsrTarget;
+    TEdit *EditHsrTarget;
+    TLabel *LblZoneToleranceHsc;
+    TEdit *EditZoneToleranceHsc;
+    TLabel *LblZoneToleranceLsc;
+    TEdit *EditZoneToleranceLsc;
+    TLabel *LblZoneToleranceLsr;
+    TEdit *EditZoneToleranceLsr;
+    TLabel *LblZoneToleranceHsr;
+    TEdit *EditZoneToleranceHsr;
     TLabel *LblDamperSlowSpeedRange;
     TEdit *EditDamperSlowSpeedRange;
+    TLabel *LblHistogramYOffset;
+    TEdit *EditHistogramYOffset;
+    TLabel *LblHistogramMinYPct;
+    TEdit *EditHistogramMinYPct;
 
     // Handling Tab
     TGroupBox *GroupHandling;

@@ -1,4 +1,4 @@
-//---------------------------------------------------------------------------
+﻿//---------------------------------------------------------------------------
 // Ams2LiveCapture.h — AMS2 live capture from shared memory.
 //
 // Provides functions to open/read/close the AMS2 shared memory object

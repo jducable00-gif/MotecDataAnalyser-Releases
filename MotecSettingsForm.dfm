@@ -283,158 +283,173 @@ object FormMotecSettings: TFormMotecSettings
         Left = 16
         Top = 16
         Width = 552
-        Height = 230
+        Height = 306
         Caption = 'Damper 4-Zone Targets (%)'
         TabOrder = 0
-        object LblHscTargetMin: TLabel
+        object LblHscTarget: TLabel
           Left = 16
           Top = 32
-          Width = 75
+          Width = 70
           Height = 15
-          Caption = 'Hi Comp Min:'
+          Caption = 'Hi Comp:'
         end
-        object LblHscTargetMax: TLabel
-          Left = 300
-          Top = 32
-          Width = 77
-          Height = 15
-          Caption = 'Hi Comp Max:'
-        end
-        object LblLscTargetMin: TLabel
+        object LblLscTarget: TLabel
           Left = 16
           Top = 64
-          Width = 76
+          Width = 70
           Height = 15
-          Caption = 'Lo Comp Min:'
+          Caption = 'Lo Comp:'
         end
-        object LblLscTargetMax: TLabel
-          Left = 300
-          Top = 64
-          Width = 78
-          Height = 15
-          Caption = 'Lo Comp Max:'
-        end
-        object LblLsrTargetMin: TLabel
+        object LblLsrTarget: TLabel
           Left = 16
           Top = 96
-          Width = 91
+          Width = 82
           Height = 15
-          Caption = 'Lo Rebound Min:'
+          Caption = 'Lo Rebound:'
         end
-        object LblLsrTargetMax: TLabel
-          Left = 300
-          Top = 96
-          Width = 93
-          Height = 15
-          Caption = 'Lo Rebound Max:'
-        end
-        object LblHsrTargetMin: TLabel
+        object LblHsrTarget: TLabel
           Left = 16
           Top = 128
-          Width = 90
+          Width = 84
           Height = 15
-          Caption = 'Hi Rebound Min:'
+          Caption = 'Hi Rebound:'
         end
-        object LblHsrTargetMax: TLabel
-          Left = 300
-          Top = 128
-          Width = 92
-          Height = 15
-          Caption = 'Hi Rebound Max:'
-        end
-        object LblZoneModerateBand: TLabel
+        object LblZoneToleranceHsc: TLabel
           Left = 16
           Top = 160
-          Width = 111
+          Width = 82
           Height = 15
-          Caption = 'Moderate Band (pts):'
+          Caption = 'HSC Tol. (%):'
+        end
+        object LblZoneToleranceLsr: TLabel
+          Left = 300
+          Top = 160
+          Width = 79
+          Height = 15
+          Caption = 'LSR Tol. (%):'
+        end
+        object LblZoneToleranceLsc: TLabel
+          Left = 16
+          Top = 192
+          Width = 84
+          Height = 15
+          Caption = 'LSC Tol. (%):'
+        end
+        object LblZoneToleranceHsr: TLabel
+          Left = 300
+          Top = 192
+          Width = 76
+          Height = 15
+          Caption = 'HSR Tol. (%):'
         end
         object LblDamperSlowSpeedRange: TLabel
           Left = 300
-          Top = 160
+          Top = 224
           Width = 142
           Height = 15
           Caption = 'Slow Speed Range (mm/s):'
         end
-        object EditHscTargetMin: TEdit
+        object LblHistogramYOffset: TLabel
+          Left = 16
+          Top = 256
+          Width = 210
+          Height = 15
+          Caption = 'Histogram Y-axis headroom (%):'
+        end
+        object LblHistogramMinYPct: TLabel
+          Left = 300
+          Top = 256
+          Width = 148
+          Height = 15
+          Caption = 'Minimum Y-axis range (%):'
+        end
+        object EditHscTarget: TEdit
           Left = 130
           Top = 28
           Width = 60
           Height = 23
           TabOrder = 0
-          Text = '10.0'
+          Text = '15.0'
         end
-        object EditHscTargetMax: TEdit
-          Left = 420
-          Top = 28
+        object EditLscTarget: TEdit
+          Left = 130
+          Top = 60
           Width = 60
           Height = 23
           TabOrder = 1
-          Text = '20.0'
+          Text = '35.0'
         end
-        object EditLscTargetMin: TEdit
+        object EditLsrTarget: TEdit
           Left = 130
-          Top = 60
+          Top = 92
           Width = 60
           Height = 23
           TabOrder = 2
-          Text = '30.0'
+          Text = '35.0'
         end
-        object EditLscTargetMax: TEdit
-          Left = 420
-          Top = 60
+        object EditHsrTarget: TEdit
+          Left = 130
+          Top = 124
           Width = 60
           Height = 23
           TabOrder = 3
-          Text = '40.0'
+          Text = '15.0'
         end
-        object EditLsrTargetMin: TEdit
-          Left = 130
-          Top = 92
-          Width = 60
-          Height = 23
-          TabOrder = 4
-          Text = '30.0'
-        end
-        object EditLsrTargetMax: TEdit
-          Left = 420
-          Top = 92
-          Width = 60
-          Height = 23
-          TabOrder = 5
-          Text = '40.0'
-        end
-        object EditHsrTargetMin: TEdit
-          Left = 130
-          Top = 124
-          Width = 60
-          Height = 23
-          TabOrder = 6
-          Text = '10.0'
-        end
-        object EditHsrTargetMax: TEdit
-          Left = 420
-          Top = 124
-          Width = 60
-          Height = 23
-          TabOrder = 7
-          Text = '20.0'
-        end
-        object EditZoneModerateBand: TEdit
+        object EditZoneToleranceHsc: TEdit
           Left = 130
           Top = 156
           Width = 60
           Height = 23
-          TabOrder = 8
+          TabOrder = 4
+          Text = '5.0'
+        end
+        object EditZoneToleranceLsr: TEdit
+          Left = 420
+          Top = 156
+          Width = 60
+          Height = 23
+          TabOrder = 5
+          Text = '5.0'
+        end
+        object EditZoneToleranceLsc: TEdit
+          Left = 130
+          Top = 188
+          Width = 60
+          Height = 23
+          TabOrder = 6
+          Text = '5.0'
+        end
+        object EditZoneToleranceHsr: TEdit
+          Left = 420
+          Top = 188
+          Width = 60
+          Height = 23
+          TabOrder = 7
           Text = '5.0'
         end
         object EditDamperSlowSpeedRange: TEdit
           Left = 420
-          Top = 156
+          Top = 220
+          Width = 60
+          Height = 23
+          TabOrder = 8
+          Text = '25.0'
+        end
+        object EditHistogramYOffset: TEdit
+          Left = 230
+          Top = 252
           Width = 60
           Height = 23
           TabOrder = 9
-          Text = '25.0'
+          Text = '20.0'
+        end
+        object EditHistogramMinYPct: TEdit
+          Left = 460
+          Top = 252
+          Width = 60
+          Height = 23
+          TabOrder = 10
+          Text = '10.0'
         end
       end
     end

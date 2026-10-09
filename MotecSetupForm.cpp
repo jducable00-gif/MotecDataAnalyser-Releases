@@ -340,6 +340,7 @@ void saveDefaultThresholds()
 		ini->WriteFloat("Damper", "LowSpeedShareMin", g_thresholds.damperLowSpeedShareMin);
 		ini->WriteFloat("Damper", "LowSpeedStdDevMax", g_thresholds.damperLowSpeedStdDevMax);
 		ini->WriteFloat("Damper", "HistogramYOffset", g_thresholds.histogramYOffset);
+		ini->WriteFloat("Damper", "HistogramMinYPct", g_thresholds.histogramMinYPct);
 
 		// Handling
 		ini->WriteFloat("Handling", "BrakePedalMin", g_thresholds.brakePedalMin);
@@ -480,18 +481,29 @@ void loadThresholdsPart1(TIniFile* ini)
 	g_thresholds.damperLowSpeedShareMin = ini->ReadFloat("Damper", "LowSpeedShareMin", g_thresholds.damperLowSpeedShareMin);
 	g_thresholds.damperLowSpeedStdDevMax = ini->ReadFloat("Damper", "LowSpeedStdDevMax", g_thresholds.damperLowSpeedStdDevMax);
 	g_thresholds.histogramYOffset = ini->ReadFloat("Damper", "HistogramYOffset", g_thresholds.histogramYOffset);
+	g_thresholds.histogramMinYPct   = ini->ReadFloat("Damper", "HistogramMinYPct", g_thresholds.histogramMinYPct);
 	g_thresholds.damperSlowSpeedRange = ini->ReadFloat("Damper", "SlowSpeedRange", g_thresholds.damperSlowSpeedRange);
 
-	// Damper 4-zone targets (%)
-	g_thresholds.damperHscTargetMin = ini->ReadFloat("DamperZones", "HscTargetMin", g_thresholds.damperHscTargetMin);
-	g_thresholds.damperHscTargetMax = ini->ReadFloat("DamperZones", "HscTargetMax", g_thresholds.damperHscTargetMax);
-	g_thresholds.damperLscTargetMin = ini->ReadFloat("DamperZones", "LscTargetMin", g_thresholds.damperLscTargetMin);
-	g_thresholds.damperLscTargetMax = ini->ReadFloat("DamperZones", "LscTargetMax", g_thresholds.damperLscTargetMax);
-	g_thresholds.damperLsrTargetMin = ini->ReadFloat("DamperZones", "LsrTargetMin", g_thresholds.damperLsrTargetMin);
-	g_thresholds.damperLsrTargetMax = ini->ReadFloat("DamperZones", "LsrTargetMax", g_thresholds.damperLsrTargetMax);
-	g_thresholds.damperHsrTargetMin = ini->ReadFloat("DamperZones", "HsrTargetMin", g_thresholds.damperHsrTargetMin);
-	g_thresholds.damperHsrTargetMax = ini->ReadFloat("DamperZones", "HsrTargetMax", g_thresholds.damperHsrTargetMax);
-	g_thresholds.damperZoneModerateBand = ini->ReadFloat("DamperZones", "ModerateBand", g_thresholds.damperZoneModerateBand);
+    // Damper 4-zone targets (%): single target per zone (band = target +/- tolerance).
+    // Migrate from legacy Min/Max keys by taking their midpoint when the new key is absent.
+    auto readZoneTarget = [&](const char* key, const char* minKey, const char* maxKey, double& field) {
+        if (!ini->ValueExists("DamperZones", key)) {
+            double mn = ini->ReadFloat("DamperZones", minKey, -1.0);
+            double mx = ini->ReadFloat("DamperZones", maxKey, -1.0);
+            field = (mn >= 0.0 && mx > mn) ? (mn + mx) / 2.0 : field;
+        } else {
+            field = ini->ReadFloat("DamperZones", key, field);
+        }
+    };
+    readZoneTarget("HscTarget", "HscTargetMin", "HscTargetMax", g_thresholds.damperHscTarget);
+    readZoneTarget("LscTarget", "LscTargetMin", "LscTargetMax", g_thresholds.damperLscTarget);
+    readZoneTarget("LsrTarget", "LsrTargetMin", "LsrTargetMax", g_thresholds.damperLsrTarget);
+    readZoneTarget("HsrTarget", "HsrTargetMin", "HsrTargetMax", g_thresholds.damperHsrTarget);
+        // Per-zone tolerances (fallback to legacy ModerateBand for backward compat)
+        g_thresholds.damperZoneToleranceHsc = ini->ValueExists("DamperZones", "ToleranceHsc") ? ini->ReadFloat("DamperZones", "ToleranceHsc", 5.0) : ini->ReadFloat("DamperZones", "ModerateBand", g_thresholds.damperZoneToleranceHsc);
+        g_thresholds.damperZoneToleranceLsc = ini->ValueExists("DamperZones", "ToleranceLsc") ? ini->ReadFloat("DamperZones", "ToleranceLsc", 5.0) : ini->ReadFloat("DamperZones", "ModerateBand", g_thresholds.damperZoneToleranceLsc);
+        g_thresholds.damperZoneToleranceLsr = ini->ValueExists("DamperZones", "ToleranceLsr") ? ini->ReadFloat("DamperZones", "ToleranceLsr", 5.0) : ini->ReadFloat("DamperZones", "ModerateBand", g_thresholds.damperZoneToleranceLsr);
+        g_thresholds.damperZoneToleranceHsr = ini->ValueExists("DamperZones", "ToleranceHsr") ? ini->ReadFloat("DamperZones", "ToleranceHsr", 5.0) : ini->ReadFloat("DamperZones", "ModerateBand", g_thresholds.damperZoneToleranceHsr);
 
 	// Handling
 	g_thresholds.brakePedalMin = ini->ReadFloat("Handling", "BrakePedalMin", g_thresholds.brakePedalMin);
@@ -1196,14 +1208,12 @@ void __fastcall TFormMotecSetup::DrawModernHistogram(TCanvas* canvas, int x, int
 
     // 3. Draw Bars
     // Use the shared Y-axis maximum so all four histograms share the same scale.
+    // Apply a configurable floor so small data sets aren't stretched to fill the full chart height.
     double maxBin = suspensionMaxBin;
+    double displayMax = std::max(maxBin * (1.0 + g_thresholds.histogramYOffset / 100.0),
+                                 g_thresholds.histogramMinYPct / 100.0);
 
     if (maxBin > 0) {
-        // Apply user-defined Y offset as a PERCENTAGE headroom above the tallest bin.
-        // histogramYOffset is stored in percent units (e.g., 5 => +5%), so scale it by maxBin;
-        // adding it absolutely would dwarf fractional bin values and make every bar ~invisible.
-        double displayMax = maxBin * (1.0 + g_thresholds.histogramYOffset / 100.0);
-
         // Gradient for bars: Electric Blue to Darker Blue
         Gdiplus::LinearGradientBrush barBrush(
             Gdiplus::Rect(0, 0, width, height),
@@ -1239,7 +1249,7 @@ void __fastcall TFormMotecSetup::DrawModernHistogram(TCanvas* canvas, int x, int
         
         for (int i = 1; i < 4; ++i) {
             int gy = (chartHeight * i) / 4;
-            double val = maxBin * (1.0 - (i / 4.0)) * 100.0; // bins are fractions -> percent
+            double val = displayMax * (1.0 - (i / 4.0)) * 100.0; // bins are fractions -> percent
             swprintf(labelBuf, 32, L"%.1f%%", val);
             graphics.DrawString(labelBuf, -1, &font, Gdiplus::PointF(5, gy - 7), &textBrush);
         }
@@ -1289,8 +1299,10 @@ struct CornerVelStats {
     double bumpSidePct  = -1;     // total % of all samples on the bump side
     double bumpHiPct    = -1;     // % of samples with v  > slowRange (bump side) — fast
     double bumpLoPct    = -1;     // % of samples with |v| <= slowRange (bump side) — slow
-    double avgReboundMs = -1e308; // mean velocity on rebound side, mm/s (-inf if no data)
-    double avgBumpMs    = -1e308; // mean velocity on bump side,   mm/s (-inf if no data)
+    double avgReboundMs = -1e308;  // mean velocity on rebound side, mm/s (unused in legend)
+    double avgBumpMs    = -1e308;  // mean velocity on bump side,   mm/s (unused in legend)
+    double reboundAvgPct = -1.0; // (Fast % + Slow %) / 2 on the rebound side
+    double bumpAvgPct    = -1.0; // (Slow % + Fast %) / 2 on the bump side
 
     bool hasAny() const { return reboundHiPct >= 0 || bumpHiPct >= 0; }
 };
@@ -1332,6 +1344,9 @@ CornerVelStats computeCombinedCornerStats(const TFormMotecSetup::SuspensionCorne
     s.bumpLoPct      = bumpLoF * 100.0;
     if (rebSideF > 1e-9)  s.avgReboundMs = rebWV / rebSideF;
     if (bumpSideF > 1e-9) s.avgBumpMs    = bumpWV / bumpSideF;
+    // Average % per side: simple mean of the Fast and Slow percentages.
+    if (rebHiF + rebLoF  > 1e-9) s.reboundAvgPct = (rebHiF  + rebLoF)  * 50.0;
+    if (bumpHiF + bumpLoF > 1e-9) s.bumpAvgPct   = (bumpHiF + bumpLoF) * 50.0;
 
     return s;
 }
@@ -1424,10 +1439,11 @@ void __fastcall TFormMotecSetup::DrawCombinedDamperChart(Gdiplus::Graphics& grap
 
         // Sub-captions per side: rebound = Total/Fast/Slow; bump = Slow/Fast/Total.
         {
-            const wchar_t* capsReb[3]  = { L"Total %", isFr ? L"Rapide %" : L"Fast %",
+            const wchar_t* avgCap  = isFr ? L"Moyenne %" : L"Average %";
+            const wchar_t* capsReb[3]  = { avgCap, isFr ? L"Rapide %" : L"Fast %",
                                            isFr ? L"Lent %" : L"Slow %" };
             const wchar_t* capsBump[3] = { isFr ? L"Lent %" : L"Slow %", isFr ? L"Rapide %" : L"Fast %",
-                                           L"Total %" };
+                                           avgCap };
 
             for (int c = 0; c < 3; ++c) {
                 Gdiplus::RectF cb; graphics.MeasureString(capsReb[c], -1, &fontReg, Gdiplus::PointF(0, 0), &cb);
@@ -1463,12 +1479,16 @@ void __fastcall TFormMotecSetup::DrawCombinedDamperChart(Gdiplus::Graphics& grap
             if (!corner[i].hasAny()) {
                 for (int c = 0; c < kValCols; ++c) wcscpy_s(vals[c], 16, L"--");
             } else {
-                swprintf(vals[0], 16, L"%.1f%%", corner[i].reboundSidePct); // Reb total % (of all samples)
-                swprintf(vals[1], 16, L"%.1f%%", corner[i].reboundHiPct);   // Reb fast %
-                swprintf(vals[2], 16, L"%.1f%%", corner[i].reboundLoPct);   // Reb slow %
-                swprintf(vals[3], 16, L"%.1f%%", corner[i].bumpLoPct);      // Bump slow %
-                swprintf(vals[4], 16, L"%.1f%%", corner[i].bumpHiPct);      // Bump fast %
-                swprintf(vals[5], 16, L"%.1f%%", corner[i].bumpSidePct);    // Bump total % (of all samples)
+                if (corner[i].reboundAvgPct >= 0.0)
+                    swprintf(vals[0], 16, L"%.1f%%", corner[i].reboundAvgPct); // Reb avg % = (Fast+Slow)/2
+                else wcscpy_s(vals[0], 16, L"--");
+                swprintf(vals[1], 16, L"%.1f%%", corner[i].reboundHiPct);     // Reb fast %
+                swprintf(vals[2], 16, L"%.1f%%", corner[i].reboundLoPct);     // Reb slow %
+                swprintf(vals[3], 16, L"%.1f%%", corner[i].bumpLoPct);        // Bump slow %
+                swprintf(vals[4], 16, L"%.1f%%", corner[i].bumpHiPct);        // Bump fast %
+                if (corner[i].bumpAvgPct >= 0.0)
+                    swprintf(vals[5], 16, L"%.1f%%", corner[i].bumpAvgPct);    // Bump avg % = (Slow+Fast)/2
+                else wcscpy_s(vals[5], 16, L"--");
             }
 
             for (int c = 0; c < kValCols; ++c) {   // centered in each value cell
@@ -1488,10 +1508,12 @@ void __fastcall TFormMotecSetup::DrawCombinedDamperChart(Gdiplus::Graphics& grap
                     maxBin = suspensionData[i].bins[b];
     }
 
-    double displayMax = 1.0; // fallback: show full scale even with no data
+    double minFloorPct = std::max(g_thresholds.histogramMinYPct, 1.0) / 100.0; // floor even with no data
+    double displayMax = minFloorPct;
     bool haveScale = false;
     if (maxBin > 0.0) {
-        displayMax = maxBin * (1.0 + g_thresholds.histogramYOffset / 100.0);
+        displayMax = std::max(maxBin * (1.0 + g_thresholds.histogramYOffset / 100.0),
+                              g_thresholds.histogramMinYPct / 100.0);
         haveScale = true;
     }
 
@@ -2708,6 +2730,5 @@ void __fastcall TFormMotecSetup::UpdateSuspension(std::vector<LapStats>& laps)
         if (DamperRRPaintBox != NULL) DamperRRPaintBox->Invalidate();
     }
 }
-
 
 

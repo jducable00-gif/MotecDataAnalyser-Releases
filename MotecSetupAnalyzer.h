@@ -1,13 +1,13 @@
-//---------------------------------------------------------------------------
-// MotecSetupAnalyzer.h — Types et API d'analyse de la télémétrie MoTeC.
+ï»¿//---------------------------------------------------------------------------
+// MotecSetupAnalyzer.h â€” Types et API d'analyse de la tÃ©lÃ©mÃ©trie MoTeC.
 //
-// Définit les structures de données (LapStats, histogrammes de butées,
+// DÃ©finit les structures de donnÃ©es (LapStats, histogrammes de butÃ©es,
 // statistiques de comportement), les enums (ChannelProfile, ReportLanguage),
-// la structure Thresholds (seuils configurables) et déclare les fonctions
-// d'analyse (parseMotecCsv / parseMotecLd) et de génération de rapport
+// la structure Thresholds (seuils configurables) et dÃ©clare les fonctions
+// d'analyse (parseMotecCsv / parseMotecLd) et de gÃ©nÃ©ration de rapport
 // (buildLapReport / buildBestThreeLapReport).
 //
-// Les implémentations se trouvent dans analyze_motec_setup.cpp.
+// Les implÃ©mentations se trouvent dans analyze_motec_setup.cpp.
 //---------------------------------------------------------------------------
 
 #pragma once
@@ -75,17 +75,16 @@ struct Thresholds {
     double damperLowSpeedShareMin = 92.0;
     double damperLowSpeedStdDevMax = 25.0;
 
-    // Damper 4-zone targets (%) — HSC/LSC/LSR/HSR
-    double damperHscTargetMin = 10.0;
-    double damperHscTargetMax = 20.0;
-    double damperLscTargetMin = 30.0;
-    double damperLscTargetMax = 40.0;
-    double damperLsrTargetMin = 30.0;
-    double damperLsrTargetMax = 40.0;
-    double damperHsrTargetMin = 10.0;
-    double damperHsrTargetMax = 20.0;
-    // Severity band: points outside target before escalating NORMAL?MODERATE?IMPORTANT
-    double damperZoneModerateBand = 5.0;
+    // Damper 4-zone targets (%): single target per zone, band = [target - tol, target + tol]
+    double damperHscTarget = 15.0;   // Hi Comp (high-speed compression)
+    double damperLscTarget = 35.0;   // Lo Comp (low-speed compression)
+    double damperLsrTarget = 35.0;   // Lo Rebound (low-speed rebound)
+    double damperHsrTarget = 15.0;   // Hi Rebound (high-speed rebound)
+    // Per-zone tolerance: points outside target before escalating NORMAL?MODERATE?IMPORTANT
+    double damperZoneToleranceHsc = 5.0;   // Hi Comp (high-speed compression)
+    double damperZoneToleranceLsc = 5.0;   // Lo Comp (low-speed compression)
+    double damperZoneToleranceLsr = 5.0;   // Lo Rebound (low-speed rebound)
+    double damperZoneToleranceHsr = 5.0;   // Hi Rebound (high-speed rebound)
 
     // Handling detection
     double brakePedalMin = 10.0;
@@ -183,7 +182,8 @@ struct Thresholds {
     double confidenceMedium = 0.60;
     double confidenceHigh = 0.85;
     int minLapsForReproducibility = 3;
-    double histogramYOffset = 5.0; // Percentage offset for Y-axis max (e.g., 5% above highest bin)
+    double histogramYOffset = 20.0;   // Percentage headroom above the tallest histogram bin
+    double histogramMinYPct = 20.0;   // Minimum displayed Y-axis range (%) â€” floor so small data isn't stretched to full scale
 	double damperSlowSpeedRange = 25.0; // Symmetrical range around 0 to highlight slow damper section
 
     // Per-profile accessors
@@ -463,9 +463,9 @@ public:
                 AnalysisResult result;
                 result.severity = AnalysisSeverity::Critical;
                 result.category = "Engine";
-                result.title = tr("Water temperature high", "Température d'eau élevée");
-                result.description = tr("Water temperature exceeds the warning threshold.", "La température de l'eau dépasse le seuil d'alerte.");
-                result.recommendation = tr("Check radiator flow, coolant level and fan operation.", "Vérifier le flux du radiateur, le niveau de liquide de refroidissement et le fonctionnement du ventilateur.");
+                result.title = tr("Water temperature high", "TempÃ©rature d'eau Ã©levÃ©e");
+                result.description = tr("Water temperature exceeds the warning threshold.", "La tempÃ©rature de l'eau dÃ©passe le seuil d'alerte.");
+                result.recommendation = tr("Check radiator flow, coolant level and fan operation.", "VÃ©rifier le flux du radiateur, le niveau de liquide de refroidissement et le fonctionnement du ventilateur.");
                 results.push_back(result);
             }
 
@@ -474,9 +474,9 @@ public:
                 AnalysisResult result;
                 result.severity = AnalysisSeverity::Critical;
                 result.category = "Engine";
-                result.title = tr("Oil temperature high", "Température d'huile élevée");
-                result.description = tr("Oil temperature exceeds the warning threshold.", "La température de l'huile dépasse le seuil d'alerte.");
-                result.recommendation = tr("Verify oil cooling and reduce sustained load.", "Vérifier le refroidissement de l'huile et réduire la charge soutenue.");
+                result.title = tr("Oil temperature high", "TempÃ©rature d'huile Ã©levÃ©e");
+                result.description = tr("Oil temperature exceeds the warning threshold.", "La tempÃ©rature de l'huile dÃ©passe le seuil d'alerte.");
+                result.recommendation = tr("Verify oil cooling and reduce sustained load.", "VÃ©rifier le refroidissement de l'huile et rÃ©duire la charge soutenue.");
                 results.push_back(result);
             }
         }
@@ -536,9 +536,9 @@ public:
 					AnalysisResult result;
 					result.severity = AnalysisSeverity::Warning;
 					result.category = "Tyres";
-					result.title = pos + tr(" insufficient negative camber", " carrossage négatif insuffisant");
+					result.title = pos + tr(" insufficient negative camber", " carrossage nÃ©gatif insuffisant");
 					result.description = pos + tr(" tyre inner band is not hotter than the outer band.", " pneu : la bande interne n'est pas plus chaude que la bande externe.");
-					result.recommendation = tr("Increase negative camber slightly and re-check the same corner on comparable laps.", "Augmenter légèrement le carrossage négatif et revérifier le même virage sur des tours comparables.");
+					result.recommendation = tr("Increase negative camber slightly and re-check the same corner on comparable laps.", "Augmenter lÃ©gÃ¨rement le carrossage nÃ©gatif et revÃ©rifier le mÃªme virage sur des tours comparables.");
 					results.push_back(result);
 				}
 			}
@@ -548,9 +548,9 @@ public:
 					AnalysisResult result;
 					result.severity = AnalysisSeverity::Warning;
 					result.category = "Tyres";
-					result.title = pos + tr(" too much negative camber", " carrossage négatif insuffisant");
-					result.description = pos + tr(" tyre inner band is too much hotter than the outer band.", " pneu : la bande interne est trop chaude par rapport à la bande externe.");
-					result.recommendation = tr("decrease negative camber slightly and re-check the same corner on comparable laps.", "Diminuer légèrement le carrossage négatif et revérifier le même virage sur des tours comparables.");
+					result.title = pos + tr(" too much negative camber", " carrossage nÃ©gatif insuffisant");
+					result.description = pos + tr(" tyre inner band is too much hotter than the outer band.", " pneu : la bande interne est trop chaude par rapport Ã  la bande externe.");
+					result.recommendation = tr("decrease negative camber slightly and re-check the same corner on comparable laps.", "Diminuer lÃ©gÃ¨rement le carrossage nÃ©gatif et revÃ©rifier le mÃªme virage sur des tours comparables.");
 					results.push_back(result);
 				}
 			}
@@ -563,17 +563,17 @@ public:
                     AnalysisResult result;
                     result.severity = AnalysisSeverity::Warning;
                     result.category = "Tyres";
-                    result.title = pos + tr(" center band below shoulders", " bande centrale sous les épaules");
-                    result.description = pos + tr(" tyre center band is not strictly between the inner and outer bands; both shoulders are as hot or hotter.", " pneu : la bande centrale n'est pas strictement entre les bandes interne et externe ; les deux épaules sont aussi chaudes ou plus chaudes.");
-                    result.recommendation = tr("Raise the starting pressure slightly and re-check the hot tyre pressure and temperature profile.", "Augmenter légèrement la pression de départ et revérifier la pression et le profil de température du pneu à chaud.");
+                    result.title = pos + tr(" center band below shoulders", " bande centrale sous les Ã©paules");
+                    result.description = pos + tr(" tyre center band is not strictly between the inner and outer bands; both shoulders are as hot or hotter.", " pneu : la bande centrale n'est pas strictement entre les bandes interne et externe ; les deux Ã©paules sont aussi chaudes ou plus chaudes.");
+                    result.recommendation = tr("Raise the starting pressure slightly and re-check the hot tyre pressure and temperature profile.", "Augmenter lÃ©gÃ¨rement la pression de dÃ©part et revÃ©rifier la pression et le profil de tempÃ©rature du pneu Ã  chaud.");
                     results.push_back(result);
                 } else if (middle >= shoulderMax) {
                     AnalysisResult result;
                     result.severity = AnalysisSeverity::Warning;
                     result.category = "Tyres";
-                    result.title = pos + tr(" center band above shoulders", " bande centrale au-dessus des épaules");
+                    result.title = pos + tr(" center band above shoulders", " bande centrale au-dessus des Ã©paules");
                     result.description = pos + tr(" tyre center band is not strictly between the inner and outer bands; the center is as hot or hotter.", " pneu : la bande centrale n'est pas strictement entre les bandes interne et externe ; le centre est aussi chaud ou plus chaud.");
-                    result.recommendation = tr("Reduce the starting pressure slightly and re-check the hot tyre pressure and temperature profile.", "Réduire légèrement la pression de départ et revérifier la pression et le profil de température du pneu à chaud.");
+                    result.recommendation = tr("Reduce the starting pressure slightly and re-check the hot tyre pressure and temperature profile.", "RÃ©duire lÃ©gÃ¨rement la pression de dÃ©part et revÃ©rifier la pression et le profil de tempÃ©rature du pneu Ã  chaud.");
                     results.push_back(result);
                 }
             }
@@ -615,7 +615,7 @@ public:
         if (!hasFl || !hasFr || !hasRl || !hasRr)
             return results;
 
-        // L/R pressure split is intentionally used to compensate contact patch vs camber — no imbalance warning.
+        // L/R pressure split is intentionally used to compensate contact patch vs camber â€” no imbalance warning.
 
         const double frontAvg = (fl + fr) * 0.5;
         const double rearAvg = (rl + rr) * 0.5;
@@ -623,11 +623,11 @@ public:
             AnalysisResult result;
             result.severity = AnalysisSeverity::Warning;
             result.category = "Tyres";
-            result.title = tr("Front/rear pressure mismatch", "Désaccord de pression avant/arrière");
+            result.title = tr("Front/rear pressure mismatch", "DÃ©saccord de pression avant/arriÃ¨re");
             result.description = tr("Front and rear axle pressures are unevenly distributed.",
-                                    "Les pressions des essieux avant et arrière sont inégalement réparties.");
+                                    "Les pressions des essieux avant et arriÃ¨re sont inÃ©galement rÃ©parties.");
             result.recommendation = tr("Reduce the axle pressure difference to improve balance.",
-                                       "Réduire l'écart de pression entre les essieux pour améliorer l'équilibre.");
+                                       "RÃ©duire l'Ã©cart de pression entre les essieux pour amÃ©liorer l'Ã©quilibre.");
             results.push_back(result);
         }
 
@@ -666,11 +666,11 @@ public:
             AnalysisResult result;
             result.severity = AnalysisSeverity::Warning;
             result.category = "Handling";
-            result.title = tr("Rear wheel slip high", "Patinage des roues arrière élevé");
+            result.title = tr("Rear wheel slip high", "Patinage des roues arriÃ¨re Ã©levÃ©");
             result.description = tr("Rear wheels are spending too much time slipping compared to the handling baseline.",
-                                    "Les roues arrière patinent trop par rapport à la référence de comportement.");
+                                    "Les roues arriÃ¨re patinent trop par rapport Ã  la rÃ©fÃ©rence de comportement.");
             result.recommendation = tr("Reduce rear slip with more rear grip, a softer differential setup or better traction.",
-                                       "Réduire le patinage arrière avec plus d'adhérence arrière, un différentiel plus souple ou une meilleure traction.");
+                                       "RÃ©duire le patinage arriÃ¨re avec plus d'adhÃ©rence arriÃ¨re, un diffÃ©rentiel plus souple ou une meilleure traction.");
             results.push_back(result);
         }
 
@@ -678,11 +678,11 @@ public:
             AnalysisResult result;
             result.severity = AnalysisSeverity::Warning;
             result.category = "Handling";
-            result.title = tr("Front wheel slip high", "Patinage des roues avant élevé");
+            result.title = tr("Front wheel slip high", "Patinage des roues avant Ã©levÃ©");
             result.description = tr("Front wheels are slipping more than expected under cornering or braking.",
-                                    "Les roues avant patinent plus que prévu en virage ou au freinage.");
+                                    "Les roues avant patinent plus que prÃ©vu en virage ou au freinage.");
             result.recommendation = tr("Check brake bias, front tyre load and front grip balance.",
-                                       "Vérifier le répartiteur de freinage, la charge des pneus avant et l'équilibre d'adhérence avant.");
+                                       "VÃ©rifier le rÃ©partiteur de freinage, la charge des pneus avant et l'Ã©quilibre d'adhÃ©rence avant.");
             results.push_back(result);
         }
 
@@ -693,9 +693,9 @@ public:
                 result.category = "Handling";
                 result.title = tr("Potential understeer", "Sous-virage potentiel");
                 result.description = tr("Steering input is present while yaw response remains low, suggesting understeer.",
-                                        "Une sollicitation du volant est présente tandis que la réponse en lacet reste faible, suggérant un sous-virage.");
+                                        "Une sollicitation du volant est prÃ©sente tandis que la rÃ©ponse en lacet reste faible, suggÃ©rant un sous-virage.");
                 result.recommendation = tr("Increase front load or reduce front grip imbalance to improve turn-in.",
-                                           "Augmenter la charge avant ou réduire le déséquilibre d'adhérence avant pour améliorer l'entrée en virage.");
+                                           "Augmenter la charge avant ou rÃ©duire le dÃ©sÃ©quilibre d'adhÃ©rence avant pour amÃ©liorer l'entrÃ©e en virage.");
                 results.push_back(result);
             }
 
@@ -705,9 +705,9 @@ public:
                 result.category = "Handling";
                 result.title = tr("Potential oversteer", "Survirage potentiel");
                 result.description = tr("The car is rotating faster than expected for the steering input.",
-                                        "La voiture tourne plus vite que prévu pour la sollicitation du volant.");
+                                        "La voiture tourne plus vite que prÃ©vu pour la sollicitation du volant.");
                 result.recommendation = tr("Reduce rear slip or add rear grip to improve stability.",
-                                           "Réduire le patinage arrière ou ajouter de l'adhérence arrière pour améliorer la stabilité.");
+                                           "RÃ©duire le patinage arriÃ¨re ou ajouter de l'adhÃ©rence arriÃ¨re pour amÃ©liorer la stabilitÃ©.");
                 results.push_back(result);
             }
         }
@@ -722,7 +722,7 @@ public:
 // ===============================
 struct CauseEntry {
     std::string cause;        // e.g. "rear_rebound_too_high"
-    double weight;            // 0.0 – 1.0 (relative probability)
+    double weight;            // 0.0 â€” 1.0 (relative probability)
     std::string adjustment;   // e.g. "reduce_rear_rebound"
     std::string direction;    // e.g. "softer", "stiffer", "reduce", "increase"
 };
@@ -735,7 +735,7 @@ struct Recommendation {
     std::string symptom;              // e.g. "rear_traction_loss_on_exit"
     std::string text;                 // display text (localized)
     bool issue = false;               // true = problem detected
-    double confidence = 0.0;          // 0.0 – 1.0
+    double confidence = 0.0;          // 0.0 â€” 1.0
     std::string dataQuality;          // "HIGH" / "MEDIUM" / "LOW" / "INSUFFICIENT"
     std::vector<std::string> evidence;   // e.g. ["rear wheel slip +14%", "rebound velocity 320 mm/s"]
     std::vector<CauseEntry> possibleCauses;
@@ -860,7 +860,7 @@ struct DamperCornerStats {
 
 // ===============================
 // Damper 4-zone analysis (HSC/LSC/LSR/HSR)
-// Zone split at ±damperSlowSpeedRange mm/s:
+// Zone split at â€”damperSlowSpeedRange mm/s:
 //   v < -B = HSC, -B <= v < 0 = LSC, 0 <= v <= B = LSR, v > B = HSR
 // ===============================
 enum class DamperZoneSeverity { Normal, Moderate, Important };
@@ -887,6 +887,7 @@ struct DamperZoneReport {
     std::string text;                    // localized recommendation (empty if all normal)
 
     bool anyIssue() const {
+        // Any zone outside its tolerance band (Moderate or Important) is an issue.
         return hsc.severity != DamperZoneSeverity::Normal ||
                lsc.severity != DamperZoneSeverity::Normal ||
                lsr.severity != DamperZoneSeverity::Normal ||
@@ -1304,16 +1305,22 @@ inline DamperFinding evaluateDamperCorner(const DamperCornerStats& stats,
     return finding;
 }
 
-// Classify a single zone percentage against its target range.
-inline DamperZoneResult classifyDamperZone(double pct, double targetMin, double targetMax) {
+// Classify a single zone percentage against its target value.
+// The per-zone tolerance defines the acceptable band [target - tol, target + tol];
+// values inside are Normal. Beyond that: deviation <= 2*tol -> Moderate,
+// otherwise Important (deviation measured from the nearest band edge).
+inline DamperZoneResult classifyDamperZone(double pct, double target, double tolerance) {
+    // Values inside [target - tol, target + tol] are Normal (no recommendation).
+    // Only a deviation beyond that widened band is flagged.
     DamperZoneResult r;
     r.pct = pct;
-    if (pct >= targetMin && pct <= targetMax) {
+    if (pct >= target - tolerance && pct <= target + tolerance) {
         r.severity = DamperZoneSeverity::Normal;
     } else {
-        double deviation = (pct > targetMax) ? (pct - targetMax) : (targetMin - pct);
-        r.aboveTarget = (pct > targetMax);
-        r.severity = (deviation <= g_thresholds.damperZoneModerateBand)
+        double deviation = (pct > target + tolerance)
+            ? (pct - (target + tolerance)) : ((target - tolerance) - pct);
+        r.aboveTarget = (pct > target);
+        r.severity = (deviation <= tolerance * 2.0)
             ? DamperZoneSeverity::Moderate
             : DamperZoneSeverity::Important;
     }
@@ -1332,7 +1339,7 @@ inline DamperZoneReport evaluateDamperZones(const VelocityHistogram& h, ReportLa
 
     report.hasData = true;
 
-    // Zone boundaries: ±damperSlowSpeedRange mm/s
+    // Zone boundaries: â€”damperSlowSpeedRange mm/s
     // Sign convention: positive velocity = compression, negative = rebound
     const double B = g_thresholds.damperSlowSpeedRange;
     const double rMax = VelocityHistogram::rangeMax();
@@ -1343,11 +1350,11 @@ inline DamperZoneReport evaluateDamperZones(const VelocityHistogram& h, ReportLa
     double lsrPct = h.percentInRange(-B - 1.0, 0.0);          // -B <= v < 0 (low-speed rebound)
     double hsrPct = h.percentInRange(-rMax - 1.0, -B);        // v < -B (high-speed rebound)
 
-    // Classify each zone
-    report.hsc = classifyDamperZone(hscPct, g_thresholds.damperHscTargetMin, g_thresholds.damperHscTargetMax);
-    report.lsc = classifyDamperZone(lscPct, g_thresholds.damperLscTargetMin, g_thresholds.damperLscTargetMax);
-    report.lsr = classifyDamperZone(lsrPct, g_thresholds.damperLsrTargetMin, g_thresholds.damperLsrTargetMax);
-    report.hsr = classifyDamperZone(hsrPct, g_thresholds.damperHsrTargetMin, g_thresholds.damperHsrTargetMax);
+    // Classify each zone (single target + per-zone tolerance band)
+    report.hsc = classifyDamperZone(hscPct, g_thresholds.damperHscTarget, g_thresholds.damperZoneToleranceHsc);
+    report.lsc = classifyDamperZone(lscPct, g_thresholds.damperLscTarget, g_thresholds.damperZoneToleranceLsc);
+    report.lsr = classifyDamperZone(lsrPct, g_thresholds.damperLsrTarget, g_thresholds.damperZoneToleranceLsr);
+    report.hsr = classifyDamperZone(hsrPct, g_thresholds.damperHsrTarget, g_thresholds.damperZoneToleranceHsr);
 
     // Global balances
     report.compressionPct = hscPct + lscPct;
@@ -1368,19 +1375,22 @@ inline DamperZoneReport evaluateDamperZones(const VelocityHistogram& h, ReportLa
     ZoneInfo zones[4] = {
         { "Hi Comp",  "Comp. Haute",  report.hsc },
         { "Lo Comp",  "Comp. Basse",  report.lsc },
-        { "Lo Rebound", "Détente Basse", report.lsr },
-        { "Hi Rebound", "Détente Haute", report.hsr }
+        { "Lo Rebound", "DÃ©tente Basse", report.lsr },
+        { "Hi Rebound", "DÃ©tente Haute", report.hsr }
     };
 
     // Build description of out-of-target zones + suggested action
     const char* descEn[4] = { "high-speed compression", "low-speed compression",
                               "low-speed rebound", "high-speed rebound" };
     const char* descFr[4] = { "la compression haute vitesse", "la compression basse vitesse",
-                              "la détente basse vitesse", "la détente haute vitesse" };
-    double tMin[4] = { g_thresholds.damperHscTargetMin, g_thresholds.damperLscTargetMin,
-                       g_thresholds.damperLsrTargetMin, g_thresholds.damperHsrTargetMin };
-    double tMax[4] = { g_thresholds.damperHscTargetMax, g_thresholds.damperLscTargetMax,
-                       g_thresholds.damperLsrTargetMax, g_thresholds.damperHsrTargetMax };
+                              "la dÃ©tente basse vitesse", "la dÃ©tente haute vitesse" };
+    double tTgt[4] = { g_thresholds.damperHscTarget, g_thresholds.damperLscTarget,
+                      g_thresholds.damperLsrTarget, g_thresholds.damperHsrTarget };
+    double tTol[4] = { g_thresholds.damperZoneToleranceHsc, g_thresholds.damperZoneToleranceLsc,
+                       g_thresholds.damperZoneToleranceLsr, g_thresholds.damperZoneToleranceHsr };
+    auto fmtPct1 = [](double v) -> std::string {
+        char buf[32]; snprintf(buf, sizeof(buf), "%.1f", v); return std::string(buf);
+    };
 
     std::string parts;
     for (int i = 0; i < 4; ++i) {
@@ -1388,16 +1398,18 @@ inline DamperZoneReport evaluateDamperZones(const VelocityHistogram& h, ReportLa
         const char* name = (language == ReportLanguage::French) ? zones[i].fr : zones[i].en;
         const char* desc = (language == ReportLanguage::French) ? descFr[i] : descEn[i];
 
-        std::string pctStr   = std::to_string(static_cast<int>(zones[i].r.pct + 0.5));
-        std::string targetStr = std::to_string(static_cast<int>(tMin[i] + 0.5)) + "-" +
-                                std::to_string(static_cast<int>(tMax[i] + 0.5));
+        std::string pctStr   = fmtPct1(zones[i].r.pct);
+        // Show the tolerance-widened band (target +/- tol) so it is clear which range is accepted.
+        std::string targetStr = fmtPct1(tTgt[i] - tTol[i]) + "-" + fmtPct1(tTgt[i] + tTol[i]);
 
         const char* action = zones[i].r.aboveTarget
             ? (language == ReportLanguage::French ? "raidir " : "stiffen ")
             : (language == ReportLanguage::French ? "adoucir " : "soften ");
 
-        std::string part = std::string(name) + " " + pctStr + "% (target " + targetStr + "%) — " + action + desc;
-        if (!parts.empty()) parts += ", ";
+        // One line per out-of-target zone so each recommendation reads clearly.
+        const char* bandLabel = (language == ReportLanguage::French) ? "(bande toleree " : "(allowed band ";
+        std::string part = std::string("  - ") + name + ": " + pctStr + "% " + bandLabel + targetStr + "%) -> " + action + desc;
+        if (!parts.empty()) parts += "\n";
         parts += part;
     }
 
@@ -1426,7 +1438,7 @@ inline std::string getDamperRecommendation(const VelocityHistogram& h, int corne
     DamperZoneReport report = detail::evaluateDamperZones(h, language);
     if (!report.hasData) return std::string();
     const char* label = (language == ReportLanguage::French) ? frLabels[cornerIndex] : enLabels[cornerIndex];
-    return std::string(label) + " — " + report.text;
+    return std::string(label) + " â€” " + report.text;
 }
 
 // Pick the best velocity histogram for a corner: prefer the direct
@@ -1471,4 +1483,3 @@ bool parseMotecLd(const std::string& path,
 // Returns the averaged LapStats object (all but last lap).
 // Requires at least 2 laps to be valid (returns empty if < 2).
 LapStats buildAverageLapData(const std::vector<LapStats>& laps);
-

@@ -1,4 +1,4 @@
-//---------------------------------------------------------------------------
+﻿//---------------------------------------------------------------------------
 // AcsEvoLiveCapture.h — AC EVO live capture from shared memory.
 //
 // AC EVO exposes three shared memory objects (session-scoped, "Local\" prefix):

@@ -401,8 +401,9 @@ ReportResult LapReportGenerator::generate(const LapStats& lap,
             const std::string rec = getDamperRecommendation(hist, c, language);
             if (!rec.empty()) {
                 SectionData& data = result[ReportSection::Suspension];
+                // Blank line between corners so each corner's zone lines stay grouped.
                 if (!data.content.empty())
-                    data.content += "\n";
+                    data.content += "\n\n";
                 data.content += rec + "\n";
                 data.hasRecommendation = true;
             }

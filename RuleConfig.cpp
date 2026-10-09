@@ -1,4 +1,4 @@
-//---------------------------------------------------------------------------
+﻿//---------------------------------------------------------------------------
 // RuleConfig.cpp — Parseur JSON minimaliste + règles/alias externalisés.
 //
 // Les valeurs par défaut intégrées ci-dessous sont les anciennes tables

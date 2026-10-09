@@ -42,16 +42,18 @@ void TFormMotecSettings::LoadFromThresholds()
     EditCamberMaxSpread->Text = FloatToStr(g_thresholds.camberMaxSpread);
 
     // Damper 4-zone targets (%)
-    EditHscTargetMin->Text = FloatToStr(g_thresholds.damperHscTargetMin);
-    EditHscTargetMax->Text = FloatToStr(g_thresholds.damperHscTargetMax);
-    EditLscTargetMin->Text = FloatToStr(g_thresholds.damperLscTargetMin);
-    EditLscTargetMax->Text = FloatToStr(g_thresholds.damperLscTargetMax);
-    EditLsrTargetMin->Text = FloatToStr(g_thresholds.damperLsrTargetMin);
-    EditLsrTargetMax->Text = FloatToStr(g_thresholds.damperLsrTargetMax);
-    EditHsrTargetMin->Text = FloatToStr(g_thresholds.damperHsrTargetMin);
-    EditHsrTargetMax->Text = FloatToStr(g_thresholds.damperHsrTargetMax);
-    EditZoneModerateBand->Text = FloatToStr(g_thresholds.damperZoneModerateBand);
+    // Damper 4-zone targets (%)
+    EditHscTarget->Text = FloatToStr(g_thresholds.damperHscTarget);
+    EditLscTarget->Text = FloatToStr(g_thresholds.damperLscTarget);
+    EditLsrTarget->Text = FloatToStr(g_thresholds.damperLsrTarget);
+    EditHsrTarget->Text = FloatToStr(g_thresholds.damperHsrTarget);
+    EditZoneToleranceHsc->Text = FloatToStr(g_thresholds.damperZoneToleranceHsc);
+    EditZoneToleranceLsc->Text = FloatToStr(g_thresholds.damperZoneToleranceLsc);
+    EditZoneToleranceLsr->Text = FloatToStr(g_thresholds.damperZoneToleranceLsr);
+    EditZoneToleranceHsr->Text = FloatToStr(g_thresholds.damperZoneToleranceHsr);
     EditDamperSlowSpeedRange->Text = FloatToStr(g_thresholds.damperSlowSpeedRange);
+    EditHistogramYOffset->Text = FloatToStr(g_thresholds.histogramYOffset);
+    EditHistogramMinYPct->Text = FloatToStr(g_thresholds.histogramMinYPct);
 
     // Handling detection
     EditBrakePedalMin->Text = FloatToStr(g_thresholds.brakePedalMin);
@@ -79,16 +81,18 @@ void TFormMotecSettings::SaveToThresholds()
         g_thresholds.camberMaxSpread = StrToFloat(EditCamberMaxSpread->Text);
 
         // Damper 4-zone targets (%)
-        g_thresholds.damperHscTargetMin = StrToFloatDef(EditHscTargetMin->Text, g_thresholds.damperHscTargetMin);
-        g_thresholds.damperHscTargetMax = StrToFloatDef(EditHscTargetMax->Text, g_thresholds.damperHscTargetMax);
-        g_thresholds.damperLscTargetMin = StrToFloatDef(EditLscTargetMin->Text, g_thresholds.damperLscTargetMin);
-        g_thresholds.damperLscTargetMax = StrToFloatDef(EditLscTargetMax->Text, g_thresholds.damperLscTargetMax);
-        g_thresholds.damperLsrTargetMin = StrToFloatDef(EditLsrTargetMin->Text, g_thresholds.damperLsrTargetMin);
-        g_thresholds.damperLsrTargetMax = StrToFloatDef(EditLsrTargetMax->Text, g_thresholds.damperLsrTargetMax);
-        g_thresholds.damperHsrTargetMin = StrToFloatDef(EditHsrTargetMin->Text, g_thresholds.damperHsrTargetMin);
-        g_thresholds.damperHsrTargetMax = StrToFloatDef(EditHsrTargetMax->Text, g_thresholds.damperHsrTargetMax);
-        g_thresholds.damperZoneModerateBand = StrToFloatDef(EditZoneModerateBand->Text, g_thresholds.damperZoneModerateBand);
+        // Damper 4-zone targets (%)
+        g_thresholds.damperHscTarget = StrToFloatDef(EditHscTarget->Text, g_thresholds.damperHscTarget);
+        g_thresholds.damperLscTarget = StrToFloatDef(EditLscTarget->Text, g_thresholds.damperLscTarget);
+        g_thresholds.damperLsrTarget = StrToFloatDef(EditLsrTarget->Text, g_thresholds.damperLsrTarget);
+        g_thresholds.damperHsrTarget = StrToFloatDef(EditHsrTarget->Text, g_thresholds.damperHsrTarget);
+        g_thresholds.damperZoneToleranceHsc = StrToFloatDef(EditZoneToleranceHsc->Text, g_thresholds.damperZoneToleranceHsc);
+        g_thresholds.damperZoneToleranceLsc = StrToFloatDef(EditZoneToleranceLsc->Text, g_thresholds.damperZoneToleranceLsc);
+        g_thresholds.damperZoneToleranceLsr = StrToFloatDef(EditZoneToleranceLsr->Text, g_thresholds.damperZoneToleranceLsr);
+        g_thresholds.damperZoneToleranceHsr = StrToFloatDef(EditZoneToleranceHsr->Text, g_thresholds.damperZoneToleranceHsr);
         g_thresholds.damperSlowSpeedRange = StrToFloatDef(EditDamperSlowSpeedRange->Text, g_thresholds.damperSlowSpeedRange);
+        g_thresholds.histogramYOffset = StrToFloatDef(EditHistogramYOffset->Text, g_thresholds.histogramYOffset);
+        g_thresholds.histogramMinYPct = StrToFloatDef(EditHistogramMinYPct->Text, g_thresholds.histogramMinYPct);
 
         g_thresholds.brakePedalMin = StrToFloat(EditBrakePedalMin->Text);
         g_thresholds.throttleMaxBraking = StrToFloat(EditThrottleMaxBraking->Text);
@@ -122,16 +126,17 @@ void __fastcall TFormMotecSettings::ButtonSaveClick(TObject *Sender)
 
 
 
-            ini->WriteFloat("DamperZones", "HscTargetMin", g_thresholds.damperHscTargetMin);
-            ini->WriteFloat("DamperZones", "HscTargetMax", g_thresholds.damperHscTargetMax);
-            ini->WriteFloat("DamperZones", "LscTargetMin", g_thresholds.damperLscTargetMin);
-            ini->WriteFloat("DamperZones", "LscTargetMax", g_thresholds.damperLscTargetMax);
-            ini->WriteFloat("DamperZones", "LsrTargetMin", g_thresholds.damperLsrTargetMin);
-            ini->WriteFloat("DamperZones", "LsrTargetMax", g_thresholds.damperLsrTargetMax);
-            ini->WriteFloat("DamperZones", "HsrTargetMin", g_thresholds.damperHsrTargetMin);
-            ini->WriteFloat("DamperZones", "HsrTargetMax", g_thresholds.damperHsrTargetMax);
-            ini->WriteFloat("DamperZones", "ModerateBand", g_thresholds.damperZoneModerateBand);
+            ini->WriteFloat("DamperZones", "HscTarget", g_thresholds.damperHscTarget);
+            ini->WriteFloat("DamperZones", "LscTarget", g_thresholds.damperLscTarget);
+            ini->WriteFloat("DamperZones", "LsrTarget", g_thresholds.damperLsrTarget);
+            ini->WriteFloat("DamperZones", "HsrTarget", g_thresholds.damperHsrTarget);
+            ini->WriteFloat("DamperZones", "ToleranceHsc", g_thresholds.damperZoneToleranceHsc);
+            ini->WriteFloat("DamperZones", "ToleranceLsc", g_thresholds.damperZoneToleranceLsc);
+            ini->WriteFloat("DamperZones", "ToleranceLsr", g_thresholds.damperZoneToleranceLsr);
+            ini->WriteFloat("DamperZones", "ToleranceHsr", g_thresholds.damperZoneToleranceHsr);
             ini->WriteFloat("Damper", "SlowSpeedRange", g_thresholds.damperSlowSpeedRange);
+            ini->WriteFloat("Damper", "HistogramYOffset", g_thresholds.histogramYOffset);
+            ini->WriteFloat("Damper", "HistogramMinYPct", g_thresholds.histogramMinYPct);
 
             ini->WriteFloat("Handling", "BrakePedalMin", g_thresholds.brakePedalMin);
             ini->WriteFloat("Handling", "ThrottleMaxBraking", g_thresholds.throttleMaxBraking);
@@ -189,16 +194,17 @@ void TFormMotecSettings::TranslateUI()
     LblCamberMaxSpread->Caption = isFr ? "Écart Intérieur/Extérieur Max :" : "Max Inner/Outer Spread:";
 
     GroupDamperZones->Caption = isFr ? "Cibles 4 Zones Amortisseur (%)" : "Damper 4-Zone Targets (%)";
-    LblHscTargetMin->Caption = isFr ? "Comp. Haute Min :" : "Hi Comp Min:";
-    LblHscTargetMax->Caption = isFr ? "Comp. Haute Max :" : "Hi Comp Max:";
-    LblLscTargetMin->Caption = isFr ? "Comp. Basse Min :" : "Lo Comp Min:";
-    LblLscTargetMax->Caption = isFr ? "Comp. Basse Max :" : "Lo Comp Max:";
-    LblLsrTargetMin->Caption = isFr ? "Détente Basse Min :" : "Lo Rebound Min:";
-    LblLsrTargetMax->Caption = isFr ? "Détente Basse Max :" : "Lo Rebound Max:";
-    LblHsrTargetMin->Caption = isFr ? "Détente Haute Min :" : "Hi Rebound Min:";
-    LblHsrTargetMax->Caption = isFr ? "Détente Haute Max :" : "Hi Rebound Max:";
-    LblZoneModerateBand->Caption = isFr ? "Bande Modérée (pts) :" : "Moderate Band (pts):";
+    LblHscTarget->Caption = isFr ? "Comp. Haute :" : "Hi Comp:";
+    LblLscTarget->Caption = isFr ? "Comp. Basse :" : "Lo Comp:";
+    LblLsrTarget->Caption = isFr ? "D�tente Basse :" : "Lo Rebound:";
+    LblHsrTarget->Caption = isFr ? "D�tente Haute :" : "Hi Rebound:";
+    LblZoneToleranceHsc->Caption = isFr ? "Tol. HSC (%) :" : "HSC Tol. (%):";
+    LblZoneToleranceLsr->Caption = isFr ? "Tol. LSR (%) :" : "LSR Tol. (%):";
+    LblZoneToleranceLsc->Caption = isFr ? "Tol. LSC (%) :" : "LSC Tol. (%):";
+    LblZoneToleranceHsr->Caption = isFr ? "Tol. HSR (%) :" : "HSR Tol. (%):";
     LblDamperSlowSpeedRange->Caption = isFr ? "Largeur Bande Basse Vitesse (mm/s) :" : "Slow Speed Range (mm/s):";
+    LblHistogramYOffset->Caption = isFr ? "Marge axe Y histogramme (%) :" : "Histogram Y-axis headroom (%):";
+    LblHistogramMinYPct->Caption = isFr ? "Plancher axe Y minimum (%) :" : "Minimum Y-axis range (%):";
 
     GroupHandling->Caption = isFr ? "Seuils de Détection" : "Detection Thresholds";
     LblBrakePedalMin->Caption = isFr ? "Pédale Frein Min :" : "Brake Pedal Min:";
@@ -214,5 +220,4 @@ void TFormMotecSettings::TranslateUI()
 }
 
 #pragma package(smart_init)
-
 
