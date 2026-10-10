@@ -6,7 +6,7 @@
 ## 1. Data Flow (end-to-end)
 
 ```
-Source file (CSV / LD-LDX) / Live capture (AMS2, AC EVO)
+Source file (CSV / LD-LDX) / Live capture (AMS2, AC EVO, PMR UDP)
         |
         v
 +------------------------------------------------------+
@@ -14,6 +14,12 @@ Source file (CSV / LD-LDX) / Live capture (AMS2, AC EVO)
 |  parseMotecCsv()   (analyze_motec_setup.cpp)         |
 |  parseMotecLd() -> DecodeMotecLd() (MotecToCSV.cpp)  |
 |  Live: Ams2LiveCapture / AcsEvoLiveCapture           |
+|        PmrLiveCapture (UDP, no file import)          |
+|    each feed = raw dict + table-driven sink:         |
+|      build std::unordered_map<string,double> of     |
+|      RAW values -> LiveChannel::FeedLapFromTable()   |
+|      applies mapping.json LIVE rows                 |
+|      (v = raw*factor+offset) into LapStats          |
 |  Output: std::vector<LapStats>                       |
 +------------------------------------------------------+
         |
@@ -134,13 +140,15 @@ Inline in the core analyzer header (previously `RecommendationEngine.h/.cpp`, no
 | `Project1.cpp` | `WinMain`, creates `TFormMotecSetup` |
 | `MotecSetupForm.h/.cpp/.dfm` | Main VCL form: file dialogs, progress, report tabs, GDI+ paint boxes (tyre temps, suspension/damper), threshold INI load/save, live-capture wiring |
 | `MotecSettingsForm.h/.cpp/.dfm` | Threshold editor dialog (6 tabs: General, Tyre, Handling, Thermal, Suspension, Brake). Reads/writes `g_thresholds` directly |
+| `LiveChannelResolver.h/.cpp` | Table-driven live feed: `ResolvedChannelTable::build(profile)` resolves mapping.json LIVE rows into per-alias value sinks (`FeedLapFromTable(lap, rawDict, table, tSeconds)`); damper dual-write for PMR (springStrain → susTravel + damper addSample) attached at build time |
 | `MotecSetupAnalyzer.h` | Core types: `LapStats`, `DataProvider`, `AnalysisAlias`, `ChannelMapping`, `AnalysisRule`, `AnalysisRegistry`, `AnalysisResult`, `AnalysisSettings`, `Thresholds` + `g_thresholds`, 4 inline rule classes, damper-velocity detection (`evaluateDamperCorner`, `hasDamperIssue`), `CauseEntry`/`Recommendation` (disabled pipeline) |
-| `analyze_motec_setup.cpp` | CSV/LD parsing (`parseMotecCsv`, `parseMotecLd`), `buildDataProviderFromLap`, `evaluateLapWithRules`, `mapAnalysisResultToReportSection`, `saveSymptomWeights`/`loadSymptomWeights` |
+| `analyze_motec_setup.cpp` | CSV/LD parsing (`parseMotecCsv`, `parseMotecLd`), `buildDataProviderFromLap`, `evaluateLapWithRules`, `mapAnalysisResultToReportSection`, `saveSymptomWeights`/`loadSymptomWeights`. File-import path still uses flat alias maps (not migrated — no silent-gap risk, see plan §11 Q6) |
 | `RuleConfig.h/.cpp` | Singleton: symptom registry + channel alias mappings + JSON parser. `buildDefaults()`, `resolveAlias()`, `loadChannelMappings()` |
 | `LapReportGenerator.h/.cpp` | Lap selection/averaging, report section generation (`generate*`), `ReportResult` |
 | `MotecToCSV.h/.cpp` | Binary LD/LDX decoder (`DecodeMotecLd`), Bresenham resampling, beacon markers, session metadata |
-| `Ams2LiveCapture.h/.cpp` | AMS2 shared-memory live capture -> `LapStats` |
-| `AcsEvoLiveCapture.h/.cpp` | AC EVO shared-memory live capture -> `LapStats` |
+| `Ams2LiveCapture.h/.cpp` | AMS2 shared-memory: binary parse + data-quality guards only; raw dict → table feed (`FeedLapFromTable`). `<Sim>GetChannelTableWarning()` surfaces unresolved mapping rows at startup. Tyre-temp L/R swap stays in C++ (non-linear, by design) |
+| `AcsEvoLiveCapture.h/.cpp` | AC EVO shared-memory: same raw-dict + table-feed pattern as AMS2; wheel-speed factor derived from `kWheelRadiusM`, TCS/ABS boolean→% pre-computed into the dict |
+| `PmrLiveCapture.h/.cpp` | PMR UDP live capture (non-blocking socket, decodes RaceInfo/ParticipantState/VehicleTelemetry) -> raw dict → table feed. No file import; uses the `"PMR"` mapping.json profile (`ChannelProfile::Pmr`). Player id tracked from first `isPlayer==true` participant state (`PmrGetPlayerId()`) |
 | `Ams2SharedMemory.h`, `AcsEvoSharedMemory.h` | Shared-memory layout structs |
 | `Project1PCH1.h` | Precompiled header (`vcl.h`, `tchar.h`) |
 | `Unit1.h/.cpp/.dfm` | Leftover default form — not the main UI |

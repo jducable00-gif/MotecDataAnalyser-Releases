@@ -446,6 +446,8 @@ void mergeJsonChannelMapping(std::vector<ChannelMapping>& mappings,
             mapping.profile = ChannelProfile::EvoM1;
         } else if (profile == "AMS2") {
             mapping.profile = ChannelProfile::AMS2;
+        } else if (profile == "PMR") {
+            mapping.profile = ChannelProfile::Pmr;
         } else {
             return;
         }
@@ -615,20 +617,9 @@ bool RuleConfig::resolveAlias(ChannelProfile profile, const std::string& key, st
     return false;
 }
 
-bool RuleConfig::resolveRawToAlias(ChannelProfile profile, MappingSource source,
-                                   const std::string& rawName, std::string& outAlias) const {
-    const std::string normalizedRaw = toUpperCopy(trimCopy(rawName));
-    for (std::size_t i = 0; i < m_channelMappings.size(); ++i) {
-        const ChannelMapping& mapping = m_channelMappings[i];
-        if (mapping.type == ChannelMappingType::Raw &&
-            mapping.profile == profile && mapping.source == source &&
-            toUpperCopy(mapping.channel) == normalizedRaw) {
-            outAlias = mapping.alias;
-            return true;
-        }
-    }
-    return false;
-}
+// Phase 4 cleanup: resolveRawToAlias() removed — dead code superseded by the
+// purpose-built LiveChannelResolver (LiveChannelResolver.h/.cpp), which resolves
+// mapping.json rows directly into per-frame value sinks.
 
 RuleConfig& RuleConfig::instance() {
     static RuleConfig config;

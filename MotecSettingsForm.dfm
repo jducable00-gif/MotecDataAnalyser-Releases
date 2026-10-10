@@ -453,6 +453,57 @@ object FormMotecSettings: TFormMotecSettings
         end
       end
     end
+    object TabPmr: TTabSheet
+      Caption = 'PMR UDP'
+      object GroupPmrNetwork: TGroupBox
+        Left = 16
+        Top = 16
+        Width = 552
+        Height = 140
+        Caption = 'UDP Network Settings'
+        TabOrder = 0
+        object LblPmrBindAddress: TLabel
+          Left = 16
+          Top = 32
+          Width = 90
+          Height = 15
+          Caption = 'Bind Address:'
+        end
+        object EditPmrBindAddress: TEdit
+          Left = 170
+          Top = 28
+          Width = 140
+          Height = 23
+          TabOrder = 0
+          Text = ''
+          OnChange = EditPmrBindAddressChange
+          OnEnter = EditPmrBindAddressEnter
+          OnExit = EditPmrBindAddressLeave
+        end
+        object LblPmrPort: TLabel
+          Left = 16
+          Top = 64
+          Width = 90
+          Height = 15
+          Caption = 'UDP Port:'
+        end
+        object EditPmrPort: TEdit
+          Left = 170
+          Top = 60
+          Width = 80
+          Height = 23
+          TabOrder = 1
+          Text = '7576'
+        end
+        object LblPmrHint: TLabel
+          Left = 16
+          Top = 96
+          Width = 400
+          Height = 15
+          Caption = '(Leave Bind Address empty to listen on all interfaces)'
+        end
+      end
+    end
   end
   object ButtonSave: TButton
     Left = 384

@@ -104,10 +104,6 @@ public:
     // à l'ancien code : generic d'abord, puis le profil spécifique (EvoM1).
     bool resolveAlias(ChannelProfile profile, const std::string& key, std::string& outKey) const;
 
-    // Résout un nom de canal brut (raw) vers son alias canonique via les mappings JSON.
-    bool resolveRawToAlias(ChannelProfile profile, MappingSource source,
-                           const std::string& rawName, std::string& outAlias) const;
-
 private:
     RuleConfig();
     void buildDefaults();   // valeurs par défaut intégrées (ex symptomRules[] / genericAliases / evoAliases)

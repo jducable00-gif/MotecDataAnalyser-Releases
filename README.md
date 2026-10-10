@@ -41,15 +41,16 @@ The analysis engine also reads standard MoTeC CSV exports. The dedicated **"Load
 ### Live capture
 - **Live (AMS2)** — reads AMS2 shared memory in real time; auto-selects the *AMS2* profile.
 - **AC EVO Live** — reads AC Evora M1 live data; auto-selects the *Evo* profile.
+- **PMR UDP** — listens for PMR telemetry datagrams on a local UDP port (default `7576`, configurable in `[PMR] Port` of `MotecDataAnalyser.ini`); no simulator process is required, any PMR-compatible sender can feed it; auto-selects the *Pmr* profile.
 
-The two are mutually exclusive (checking one unchecks the other). The red LED turns green once connected. While a session is active, file import buttons are disabled until you untick the checkbox.
+The three are mutually exclusive (checking one unchecks the others). The red LED turns green once connected — for PMR this means the socket is bound and listening. While a session is active, file import buttons are disabled until you untick the checkbox.
 
 ### Options that persist automatically
 These UI controls save themselves to `MotecDataAnalyser.ini` — no restart needed:
 
 | Control | Values | Effect |
 |---------|--------|--------|
-| **Profile** | Evo / AMS2 | Which channel-name normalization table is used for LD import and reports. |
+| **Profile** | Evo / AMS2 / PMR | Channel profile: *Evo*/*AMS2* select the name-normalization tables for file imports; *Pmr* is live-capture only (PMR UDP). |
 | **Language** | English / Français | Report language (all report strings are localized). |
 | **Full Report** | on/off | Toggles the extended sections of the written-out report. |
 
@@ -170,5 +171,6 @@ Copy it to one of those locations and rename without `.example`. If no rules fil
 ```
 
 See `AGENTS.md` for the full toolchain (Embarcadero C++ Builder 12 / Clang VCL), command-line build details, and packaging notes. Do **not** retarget to MSVC/MinGW/g++.
-#   M o t e c D a t a A n a l y s e r  
+#   M o t e c D a t a A n a l y s e r 
+ 
  

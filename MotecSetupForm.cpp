@@ -126,6 +126,14 @@ String LdSectionForProfile(ChannelProfile profile)
 	return (profile == ChannelProfile::EvoM1) ? "LdImport_Evo" : "LdImport_AMS2";
 }
 
+// Map a channel-profile selection to the matching live-capture backend.
+LiveMode ProfileToLiveMode(ChannelProfile profile)
+{
+	if (profile == ChannelProfile::Pmr)   return LIVE_PMR;
+	if (profile == ChannelProfile::EvoM1) return LIVE_EVO;
+	return LIVE_AMS2; // AMS2 and Generic both use the AMS2 shared-memory backend
+}
+
 void SaveLastFolder(const String& section, const String& folder)
 {
 	TIniFile* settings = new TIniFile(SettingsFilePath());
@@ -166,7 +174,55 @@ ChannelProfile ReadChannelProfileSetting()
 		int value = settings->ReadInteger("General", "ChannelProfile", (int)ChannelProfile::EvoM1);
 		if (value == (int)ChannelProfile::Generic)
 			return ChannelProfile::Generic;
+		if (value == (int)ChannelProfile::Pmr)
+			return ChannelProfile::Pmr;
 		return ChannelProfile::EvoM1;
+	} __finally {
+		delete settings;
+	}
+}
+
+// PMR UDP port: persisted as [PMR] Port, default 7576 (the game's documented default).
+int ReadPmrPortSetting()
+{
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		int value = settings->ReadInteger("PMR", "Port", 7576);
+		if (value < 1 || value > 65535)
+			value = 7576;
+		return value;
+	} __finally {
+		delete settings;
+	}
+}
+
+void SavePmrPortSetting(int port)
+{
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		settings->WriteInteger("PMR", "Port", port);
+	} __finally {
+		delete settings;
+	}
+}
+
+// PMR UDP bind address: persisted as [PMR] BindAddress. Empty string = INADDR_ANY (all interfaces).
+String ReadPmrBindAddressSetting()
+{
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		return settings->ReadString("PMR", "BindAddress", "");
+	} __finally {
+		delete settings;
+	}
+}
+
+void SavePmrBindAddressSetting(const String& addr)
+{
+	String trimmed = addr.Trim();
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		settings->WriteString("PMR", "BindAddress", trimmed);
 	} __finally {
 		delete settings;
 	}
@@ -683,7 +739,11 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
 		ChannelProfileCombo->Items->Clear();
 		ChannelProfileCombo->Items->Add("Evo");
 		ChannelProfileCombo->Items->Add("AMS2");
-		ChannelProfileCombo->ItemIndex = (int)ReadChannelProfileSetting();
+		ChannelProfileCombo->Items->Add("PMR");
+		int profileIndex = (int)ReadChannelProfileSetting();
+		if (profileIndex < 0 || profileIndex > (int)ChannelProfile::Pmr)
+			profileIndex = 0; // guard against stale INI values from older builds
+		ChannelProfileCombo->ItemIndex = profileIndex;
 		ChannelProfileCombo->OnChange = ChannelProfileComboChange;
     }
 	if (DamperLayoutTabs != NULL) {
@@ -783,7 +843,11 @@ void __fastcall TFormMotecSetup::ChannelProfileComboChange(TObject *Sender)
 
 	ChannelProfile profile = (ChannelProfile)ChannelProfileCombo->ItemIndex;
 	SaveChannelProfileSetting(profile);
-	MemoSummary->Lines->Add("Channel profile changed to " + String(profile == ChannelProfile::EvoM1 ? "Evo" : "AMS2") + ".");
+
+	const char* profileName = "AMS2";
+	if (profile == ChannelProfile::EvoM1)      profileName = "Evo";
+	else if (profile == ChannelProfile::Pmr)   profileName = "PMR";
+	MemoSummary->Lines->Add("Channel profile changed to " + String(profileName) + ".");
 
     // Reactive Live Capture logic: If live is active, reconnect to the new profile immediately.
     if (LiveCaptureCheckBox != NULL && LiveCaptureCheckBox->Checked) {
@@ -792,7 +856,7 @@ void __fastcall TFormMotecSetup::ChannelProfileComboChange(TObject *Sender)
         resetLiveSession();
 
         // Update mode based on the newly selected profile
-        liveMode = (profile == ChannelProfile::EvoM1) ? LIVE_EVO : LIVE_AMS2;
+        liveMode = ProfileToLiveMode(profile);
 
         // LED red = not connected yet (reconnecting)
         LiveLed->Brush->Color = clRed;
@@ -2173,6 +2237,8 @@ void __fastcall TFormMotecSetup::resetLiveSession()
 	previous_mCurrentTime = 0.0f;
 	lastPitMode = -1;
 
+	pmrPrevSector = -1;   // PMR: no sector state until the first participant packet arrives
+
 	// Clear all displayed data (tyre temps, brake temps, suspension/damper histograms)
 	resetAnalysisGraphics();
 }
@@ -2212,7 +2278,7 @@ void __fastcall TFormMotecSetup::LiveCaptureCheckBoxClick(TObject *Sender)
 		if (ChannelProfileCombo != NULL) {
 			profile = (ChannelProfile)ChannelProfileCombo->ItemIndex;
 		}
-		liveMode = (profile == ChannelProfile::EvoM1) ? LIVE_EVO : LIVE_AMS2;
+		liveMode = ProfileToLiveMode(profile);
 
         MemoSummary->Lines->Clear();
         MemoSummary->Lines->Add("Live capture enabled. Searching for source...");
@@ -2248,10 +2314,25 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
     std::string err;
     bool ok = false;
 
-    if (liveMode == LIVE_EVO)
+    if (liveMode == LIVE_EVO) {
         ok = AcsEvoOpenSharedMemory(err);
-    else
+    } else if (liveMode == LIVE_PMR) {
+        // PMR: bind the UDP socket. No process check — a successful bind means we are
+        // ready to receive; telemetry arrives only while the game is running.
+        String bindAddrW = ReadPmrBindAddressSetting().Trim();
+        std::string bindAddr;  // empty string → INADDR_ANY (all interfaces)
+        if (!bindAddrW.IsEmpty()) {
+            int len = WideCharToMultiByte(CP_UTF8, 0, bindAddrW.c_str(), -1, nullptr, 0, nullptr, nullptr);
+            if (len > 0) {
+                bindAddr.resize(len - 1);
+                WideCharToMultiByte(CP_UTF8, 0, bindAddrW.c_str(), -1, &bindAddr[0], len, nullptr, nullptr);
+            }
+        }
+        int port = ReadPmrPortSetting();
+        ok = PmrOpenSocket(bindAddr, port, err);
+    } else {
         ok = Ams2OpenSharedMemory(err);
+    }
 
     if (ok)
     {
@@ -2274,6 +2355,14 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
 
             MemoSummary->Lines->Add("Live: connected to AC EVO. Waiting for car to leave pits...");
 			//StatusBar1->SimpleText = "Live: connected (AC EVO) — waiting for track";
+        }
+        else if (liveMode == LIVE_PMR)
+        {
+            liveTrackName.clear(); // refreshed from RaceInfo packets as they arrive
+            String pmrAddr = ReadPmrBindAddressSetting().Trim();
+            String pmrWhere = pmrAddr.IsEmpty() ? "all interfaces" : ("*" + pmrAddr);
+            MemoSummary->Lines->Add("Live: PMR UDP listening on " + pmrWhere + ":" + IntToStr(ReadPmrPortSetting()) + ". Waiting for telemetry...");
+			//StatusBar1->SimpleText = "Live: connected (PMR) — waiting for telemetry";
         }
         else
         {
@@ -2304,6 +2393,8 @@ void __fastcall TFormMotecSetup::stopLiveCapture()
         // Close handles to avoid leaks/conflicts on next attempt
         if (liveMode == LIVE_EVO)
             AcsEvoCloseSharedMemory();
+        else if (liveMode == LIVE_PMR)
+            PmrCloseSocket();
         else
             Ams2CloseSharedMemory();
 
@@ -2333,6 +2424,8 @@ void __fastcall TFormMotecSetup::stopLiveCapture()
 
         if (liveMode == LIVE_EVO)
             AcsEvoCloseSharedMemory();
+        else if (liveMode == LIVE_PMR)
+            PmrCloseSocket();
         else
             Ams2CloseSharedMemory();
 
@@ -2360,7 +2453,10 @@ void __fastcall TFormMotecSetup::LiveTimerTimer(TObject *Sender)
         return;
     }
 
-    if (liveMode == LIVE_EVO)
+    if (liveMode == LIVE_PMR)
+        processLiveFramePmir();
+
+    else if (liveMode == LIVE_EVO)
     {
         SPageFilePhysics phys;
         SPageFileGraphicEvo gfx;
@@ -2531,6 +2627,96 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
     }
 
     liveWasOnTrack = onTrack;
+}
+
+void __fastcall TFormMotecSetup::processLiveFramePmir()
+{
+    // Drain all pending datagrams (non-blocking). Returns the count processed this tick.
+    PmrDrainAllPackets();
+
+    // Refresh track name from RaceInfo if it changed since last time.
+    std::string t = PmrGetTrackName();
+    if (!t.empty() && t != liveTrackName) {
+        liveTrackName = t;
+        MemoSummary->Lines->Add("PMR: track is " + String(t.c_str()));
+    }
+
+    // No player state yet — nothing to do this tick.
+    int playerId = PmrGetPlayerId();
+    if (playerId < 0) return;
+
+    bool inPits   = PmrIsInPits(playerId);
+    int  sector   = PmrGetCurrentSector(playerId);   // -1 when unknown / between laps
+    bool onTrack  = !inPits && sector >= 0;          // "on track" means we have a valid sector reading
+
+    // --- Auto-detect: back on track after a completed session → fresh start ---
+    if (onTrack && !liveWasOnTrack &&
+        AutoDetectTrackCheckBox != NULL && AutoDetectTrackCheckBox->Checked &&
+        !liveLaps.empty()) {
+        resetLiveSession();
+        MemoSummary->Lines->Add("Auto: new PMR session started.");
+        // After reset, pmrPrevSector is -1 again; re-read sector for this tick.
+        sector = PmrGetCurrentSector(playerId);
+    }
+
+    // --- Pit → track transition: start a new lap ---
+    if (onTrack && !liveWasOnTrack) {
+        liveLapInProgress  = true;
+        ++liveLapNumber;
+        liveCurrentLap     = LapStats();
+        liveCurrentLap.lapNumber   = liveLapNumber;
+        liveCurrentLap.startTime   = (double)GetTickCount64() / 1000.0;
+
+        std::string driverName = PmrGetDriverName(playerId);
+        if (!driverName.empty())
+            liveCurrentLap.vehicleName = driverName;
+        liveCurrentLap.trackName  = liveTrackName;
+
+        MemoSummary->Lines->Add("PMR Lap " + IntToStr(liveLapNumber) + " started.");
+    }
+
+    // --- Track → pit transition: finalize the lap and generate report if we have data ---
+    if (inPits && liveWasOnTrack) {
+        if (liveLapInProgress) {
+            liveCurrentLap.endTime = (double)GetTickCount64() / 1000.0;
+            finalizeLiveLap();
+        }
+        // Generate report when we enter pits and have at least one completed lap,
+        // even if the current lap was just finalized above.
+        if (!liveLaps.empty()) {
+            generateLiveReport();
+        }
+    }
+
+    // --- Sector-wrap detection: prevSector >= 3 && cur <= 1 → lap boundary on track ---
+    // This catches laps that complete without a pit stop (sector wraps from S3 back to S1).
+    if (onTrack && liveLapInProgress && pmrPrevSector >= 3 && sector <= 1) {
+        liveCurrentLap.endTime = (double)GetTickCount64() / 1000.0;
+        finalizeLiveLap();
+
+        // Immediately start the next lap so we don't lose data between sectors.
+        ++liveLapNumber;
+        liveCurrentLap     = LapStats();
+        liveCurrentLap.lapNumber   = liveLapNumber;
+        liveCurrentLap.startTime   = (double)GetTickCount64() / 1000.0;
+        liveCurrentLap.vehicleName = PmrGetDriverName(playerId);
+        liveCurrentLap.trackName   = liveTrackName;
+
+        MemoSummary->Lines->Add("PMR Lap " + IntToStr(liveLapNumber) + " started (sector wrap).");
+    }
+
+    // --- Feed telemetry only when on track and a lap is in progress ---
+    if (onTrack && liveLapInProgress) {
+        const PmrVehicleTelemetryPacket* pkt = PmrLastTelemetry();
+        if (pkt != nullptr) {
+            double timeSeconds = (double)GetTickCount64() / 1000.0;
+            PmrFeedLap(liveCurrentLap, *pkt, timeSeconds);
+        }
+    }
+
+    // Update tracking state for next tick.
+    if (sector >= 0) pmrPrevSector = sector;   // only update when we have a valid reading
+    liveWasOnTrack   = onTrack;
 }
 
 void __fastcall TFormMotecSetup::finalizeLiveLap()

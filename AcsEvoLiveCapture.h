@@ -37,10 +37,17 @@ bool AcsEvoReadStatic(SPageFileStaticEvo& out);
 void AcsEvoCloseSharedMemory();
 
 // Feed one shared-memory frame (physics + graphics) into the LapStats
-// accumulators. timeSeconds is the wall-clock time (GetTickCount64()/1000.0)
-// used for damper velocity derivation.
+// accumulators. Unit conversions live in mapping.json EVOM1 LIVE rows: this
+// function only extracts RAW values from the frames and lets the generic
+// table-driven feed apply factor/offset per row; multi-value derived samples
+// (damper velocity, handling sample, steer/yaw) stay post-table by design.
+// timeSeconds is the wall-clock time (GetTickCount64()/1000.0).
 void AcsEvoFeedLap(LapStats& lap, const SPageFilePhysics& phys,
                    const SPageFileGraphicEvo& gfx, double timeSeconds);
+
+// Returns a non-empty warning string if any EVOM1 LIVE mapping row failed to
+// resolve at startup (empty table or missing raw channel names). Empty = OK.
+std::string AcsEvoGetChannelTableWarning();
 
 // Returns true when the car is on track (game live, car on the track).
 bool AcsEvoIsOnTrack(const SPageFileGraphicEvo& gfx);

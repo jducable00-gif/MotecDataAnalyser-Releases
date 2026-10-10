@@ -284,11 +284,9 @@ object FormMotecSetup: TFormMotecSetup
         Width = 50
       end
       item
-        Text = 'V5.2.1'
+        Text = 'V5.2.2'
         Width = 50
       end>
-    ExplicitLeft = -16
-    ExplicitTop = 1074
   end
   object Button1: TButton
     Left = 939

@@ -214,6 +214,13 @@
         <None Include="LapReportGenerator.h">
             <BuildOrder>8</BuildOrder>
         </None>
+        <CppCompile Include="LiveChannelResolver.cpp">
+            <DependentOn>LiveChannelResolver.h</DependentOn>
+            <BuildOrder>19</BuildOrder>
+        </CppCompile>
+        <None Include="LiveChannelResolver.h">
+            <BuildOrder>20</BuildOrder>
+        </None>
         <CppCompile Include="MotecSettingsForm.cpp">
             <Form>MotecSettingsForm</Form>
             <FormType>dfm</FormType>
@@ -239,6 +246,13 @@
             <DependentOn>MotecToCSV.h</DependentOn>
             <BuildOrder>5</BuildOrder>
         </CppCompile>
+        <CppCompile Include="PmrLiveCapture.cpp">
+            <DependentOn>PmrLiveCapture.h</DependentOn>
+            <BuildOrder>17</BuildOrder>
+        </CppCompile>
+        <None Include="PmrLiveCapture.h">
+            <BuildOrder>18</BuildOrder>
+        </None>
         <CppCompile Include="Project1.cpp">
             <BuildOrder>0</BuildOrder>
         </CppCompile>

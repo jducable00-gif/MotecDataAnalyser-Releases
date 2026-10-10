@@ -41,15 +41,16 @@ Le moteur d'analyse lit également les exports CSV standard de MoTeC. Le bouton 
 ### Capture en direct
 - **Live (AMS2)** — lit la mémoire partagée d'AMS2 en temps réel ; sélectionne automatiquement le profil *AMS2*.
 - **AC EVO Live** — lit les données en direct de l'AC Evora M1 ; sélectionne automatiquement le profil *Evo*.
+- **PMR UDP** — écoute des datagrammes télémétrie PMR sur un port UDP local (port par défaut `7576`, configurable dans `[PMR] Port` du fichier `MotecDataAnalyser.ini`) ; aucun processus de simulateur n'est requis, tout émetteur compatible PMR peut alimenter l'application ; sélectionne automatiquement le profil *Pmr*.
 
-Les deux sont mutuellement exclusifs (cocher l'un décoche l'autre). La LED rouge devient verte une fois connecté. Pendant qu'une session est active, les boutons d'importation de fichiers sont désactivés jusqu'à ce que vous décochiez la case.
+Les trois sont mutuellement exclusifs (cocher l'une décoche les autres). La LED rouge passe au vert une fois la connexion établie — pour PMR, cela signifie que le socket est lié et à l'écoute. Pendant qu'une session est active, les boutons d'importation de fichiers sont désactivés jusqu'à ce que vous décochiez la case.
 
 ### Options qui persistent automatiquement
 Ces contrôles UI s'enregistrent eux-mêmes dans `MotecDataAnalyser.ini` — aucun redémarrage nécessaire :
 
 | Contrôle | Valeurs | Effet |
 |---------|--------|--------|
-| **Profile** | Evo / AMS2 | Table de normalisation des noms de canaux utilisée pour l'import LD et les rapports. |
+| **Profile** | Evo / AMS2 / PMR | Profil de canal : *Evo*/*AMS2* sélectionnent la table de normalisation des noms de canaux pour l'import ; *Pmr* est réservé à la capture en direct (PMR UDP). |
 | **Language** | English / Français | Langue du rapport (toutes les chaînes de caractères sont localisées). |
 | **Full Report** | on/off | Active ou désactive les sections étendues du rapport écrit. |
 

@@ -24,9 +24,16 @@ bool Ams2ReadFrame(Ams2SharedMemory& out);
 void Ams2CloseSharedMemory();
 
 // Feed one shared-memory frame into the LapStats accumulators.
+// Per-channel unit conversions come from mapping.json (AMS2 LIVE rows) via a
+// resolved channel table; this function only extracts raw values and feeds
+// them through LiveChannel::FeedLapFromTable().
 // timeSeconds is the wall-clock time (GetTickCount64()/1000.0) used for
 // damper velocity derivation.
 void Ams2FeedLap(LapStats& lap, const Ams2SharedMemory& frame, double timeSeconds);
+
+// Returns a human-readable warning string if any AMS2 LIVE mapping rows failed to
+// resolve (empty table or aliases without a LapStats sink). Empty when healthy.
+std::string Ams2GetChannelTableWarning();
 
 // Returns true when the car is on track (not in pits, game is playing).
 bool Ams2IsOnTrack(const Ams2SharedMemory& frame);

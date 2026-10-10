@@ -10,6 +10,11 @@
 #include "MotecSetupForm.h"
 #include <IniFiles.hpp>
 
+// PMR INI helpers (defined in MotecSetupForm.cpp)
+extern String ReadPmrBindAddressSetting();
+extern void   SavePmrBindAddressSetting(const String& addr);
+extern int     ReadPmrPortSetting();
+
 // Access to global thresholds and helper functions from other units
 extern Thresholds g_thresholds;
 extern String ThresholdsFilePath(); 
@@ -63,6 +68,48 @@ void TFormMotecSettings::LoadFromThresholds()
     // Thermal
     EditWaterTempMax->Text = FloatToStr(g_thresholds.waterTempMax);
     EditOilTempMax->Text = FloatToStr(g_thresholds.oilTempMax);
+
+    // PMR UDP network settings (from INI, not g_thresholds).
+    // Empty stored value → show a grayed-out hint; empty still means "all interfaces".
+    String pmrAddrStored = ReadPmrBindAddressSetting().Trim();
+    if (pmrAddrStored.IsEmpty()) {
+        EditPmrBindAddress->Text = "127.0.0.1";
+        EditPmrBindAddress->Font->Color = clGray;
+        pmrAddrShowingPlaceholder = true;
+    } else {
+        EditPmrBindAddress->Text = pmrAddrStored;
+        EditPmrBindAddress->Font->Color = clWindowText;
+        pmrAddrShowingPlaceholder = false;
+    }
+    EditPmrPort->Text = IntToStr(ReadPmrPortSetting());
+}
+
+// Grayed-out "127.0.0.1" hint for the Bind Address field (this VCL has no PlaceholderText).
+// Focus does NOT erase anything: it just selects all text in black so typing replaces it,
+// exactly like editing a normal pre-filled value.
+void __fastcall TFormMotecSettings::EditPmrBindAddressEnter(TObject *Sender)
+{
+    pmrAddrEditedOnFocus = false;
+    if (pmrAddrShowingPlaceholder) {
+        EditPmrBindAddress->Font->Color = clWindowText;  // hint becomes editable black text
+        EditPmrBindAddress->SelectAll();
+    }
+}
+
+void __fastcall TFormMotecSettings::EditPmrBindAddressChange(TObject *Sender)
+{
+    pmrAddrEditedOnFocus = true;
+}
+
+void __fastcall TFormMotecSettings::EditPmrBindAddressLeave(TObject *Sender)
+{
+    if (pmrAddrShowingPlaceholder && !pmrAddrEditedOnFocus) {
+        // Focused but never typed → back to the gray hint (= empty value).
+        EditPmrBindAddress->Font->Color = clGray;
+    } else {
+        pmrAddrShowingPlaceholder = false;  // real content, even if it was cleared on purpose
+        EditPmrBindAddress->Font->Color = clWindowText;
+    }
 }
 
 void TFormMotecSettings::SaveToThresholds()
@@ -147,7 +194,24 @@ void __fastcall TFormMotecSettings::ButtonSaveClick(TObject *Sender)
         } __finally {
             delete ini;
         }
-        
+
+        // PMR network settings → MotecDataAnalyser.ini [PMR] section (separate file).
+        // If the gray hint is showing, treat it as empty (= all interfaces), never persist "127.0.0.1".
+        String pmrAddrOut = pmrAddrShowingPlaceholder ? "" : EditPmrBindAddress->Text.Trim();
+        SavePmrBindAddressSetting(pmrAddrOut);
+        int pmrPort = StrToIntDef(EditPmrPort->Text, 7576);
+        if (pmrPort < 1 || pmrPort > 65535) {
+            ShowMessage("PMR port must be between 1 and 65535.");
+            return;
+        }
+
+        TIniFile* iniMain = new TIniFile(ExtractFilePath(Application->ExeName) + "MotecDataAnalyser.ini");
+        try {
+            iniMain->WriteInteger("PMR", "Port", pmrPort);
+        } __finally {
+            delete iniMain;
+        }
+
         ModalResult = mrOk;
     } catch (...) {
         // Error message already shown in SaveToThresholds
@@ -177,6 +241,7 @@ void TFormMotecSettings::TranslateUI()
     TabHandling->Caption = isFr ? "Comportement" : "Handling";
     TabThermal->Caption = isFr ? "Thermique" : "Thermal";
     TabSuspension->Caption = isFr ? "Suspension" : "Suspension";
+    TabPmr->Caption = isFr ? "PMR UDP" : "PMR UDP";
 
     GroupGeneral->Caption = isFr ? "Échantillonnage et Confiance" : "Sampling & Confidence";
     LblMinDamperSamples->Caption = isFr ? "Nb min échantillons amortisseurs :" : "Min Damper Samples:";
@@ -196,8 +261,8 @@ void TFormMotecSettings::TranslateUI()
     GroupDamperZones->Caption = isFr ? "Cibles 4 Zones Amortisseur (%)" : "Damper 4-Zone Targets (%)";
     LblHscTarget->Caption = isFr ? "Comp. Haute :" : "Hi Comp:";
     LblLscTarget->Caption = isFr ? "Comp. Basse :" : "Lo Comp:";
-    LblLsrTarget->Caption = isFr ? "D�tente Basse :" : "Lo Rebound:";
-    LblHsrTarget->Caption = isFr ? "D�tente Haute :" : "Hi Rebound:";
+    LblLsrTarget->Caption = isFr ? "D�tente Basse :" : "Lo Rebound:";
+    LblHsrTarget->Caption = isFr ? "D�tente Haute :" : "Hi Rebound:";
     LblZoneToleranceHsc->Caption = isFr ? "Tol. HSC (%) :" : "HSC Tol. (%):";
     LblZoneToleranceLsr->Caption = isFr ? "Tol. LSR (%) :" : "LSR Tol. (%):";
     LblZoneToleranceLsc->Caption = isFr ? "Tol. LSC (%) :" : "LSC Tol. (%):";
@@ -214,6 +279,11 @@ void TFormMotecSettings::TranslateUI()
     GroupThermal->Caption = isFr ? "Seuils Thermiques Moteur" : "Engine Thermal Thresholds";
     LblWaterTempMax->Caption = isFr ? "Temp Eau Max :" : "Max Water Temp:";
     LblOilTempMax->Caption = isFr ? "Temp Huile Max :" : "Max Oil Temp:";
+
+    GroupPmrNetwork->Caption = isFr ? "Réglages Réseau UDP" : "UDP Network Settings";
+    LblPmrBindAddress->Caption = isFr ? "Adresse de liaison (IP) :" : "Bind Address:";
+    LblPmrPort->Caption = isFr ? "Port UDP :" : "UDP Port:";
+    LblPmrHint->Caption = isFr ? "(Laisser vide pour écouter sur toutes les interfaces)" : "(Leave Bind Address empty to listen on all interfaces)";
 
     ButtonSave->Caption = isFr ? "Enregistrer" : "Save";
     ButtonCancel->Caption = isFr ? "Annuler" : "Cancel";

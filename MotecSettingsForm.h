@@ -91,6 +91,15 @@ __published:
     TLabel *LblOilTempMax;
     TEdit *EditOilTempMax;
 
+    // PMR UDP Tab
+    TTabSheet *TabPmr;
+    TGroupBox *GroupPmrNetwork;
+    TLabel *LblPmrBindAddress;
+    TEdit *EditPmrBindAddress;
+    TLabel *LblPmrPort;
+    TEdit *EditPmrPort;
+    TLabel *LblPmrHint;
+
     // Buttons
     TButton *ButtonSave;
     TButton *ButtonCancel;
@@ -98,6 +107,14 @@ __published:
     void __fastcall ButtonSaveClick(TObject *Sender);
     void __fastcall ButtonCancelClick(TObject *Sender);
     void __fastcall FormShow(TObject *Sender);
+    // DFM-referenced handlers must stay in __published so VCL streaming can resolve them by name.
+    void __fastcall EditPmrBindAddressChange(TObject *Sender);
+    void __fastcall EditPmrBindAddressEnter(TObject *Sender);
+    void __fastcall EditPmrBindAddressLeave(TObject *Sender);
+
+private:
+    bool pmrAddrShowingPlaceholder = false;  // true while the gray "127.0.0.1" hint stands for an empty value
+    bool pmrAddrEditedOnFocus = false;       // set by OnChange: user actually typed something since focus
 
 public:
     __fastcall TFormMotecSettings(TComponent* Owner);

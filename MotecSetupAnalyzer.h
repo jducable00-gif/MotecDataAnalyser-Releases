@@ -29,6 +29,7 @@
 enum class ChannelProfile {
     EvoM1 = 0,
     AMS2 = 1,
+    Pmr = 2,          // PMR UDP live capture (no file import — profile only selects the live backend)
     Generic = AMS2
 };
 

@@ -23,11 +23,12 @@
 #include <Vcl.ExtCtrls.hpp>
 #include "Ams2LiveCapture.h"
 #include "AcsEvoLiveCapture.h"
+#include "PmrLiveCapture.h"
 #include "LapReportGenerator.h"
 #include <map>
 
 // Active live-capture backend.
-enum LiveMode { LIVE_AMS2 = 0, LIVE_EVO = 1 };
+enum LiveMode { LIVE_AMS2 = 0, LIVE_EVO = 1, LIVE_PMR = 2 };
 
 class TFormMotecSetup : public TForm
 {
@@ -116,6 +117,7 @@ public:
     void __fastcall stopLiveCapture();
     void __fastcall processLiveFrame(const Ams2SharedMemory& frame);
     void __fastcall processLiveFrameEVO(const SPageFilePhysics& phys, const SPageFileGraphicEvo& gfx);
+    void __fastcall processLiveFramePmir();
     void __fastcall finalizeLiveLap();
     void __fastcall generateLiveReport();
     void __fastcall UpdateReportTabs(const ReportResult& result);
@@ -172,6 +174,9 @@ public:
     double liveLapStartTime = 0.0;
     bool liveWasOnTrack = false;
     std::string liveTrackName;
+
+    // --- PMR State Tracking (for event detection) ---
+    int pmrPrevSector = -1;         // last known sector for the player vehicle (-1 = unknown / no state yet)
 
     // --- AMS2 State Tracking (for event detection) ---
     int lastPitMode = -1;           // To detect pit exit and teleport transitions

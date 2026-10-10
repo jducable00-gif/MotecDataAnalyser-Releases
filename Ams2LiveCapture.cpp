@@ -1,4 +1,4 @@
-﻿//---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 // Ams2LiveCapture.cpp — AMS2 live capture from shared memory.
 //
 // Implements:
@@ -10,9 +10,11 @@
 #include <windows.h>
 #include <cmath>
 #include <string>
+#include <unordered_map>
 #include <cstring>
 #include <tlhelp32.h>
 #include "Ams2LiveCapture.h"
+#include "LiveChannelResolver.h"   // JSON-table-driven channel feed (LIVE_CAPTURE_JSON_MIGRATION_PLAN)
 
 // ---------------------------------------------------------------------------
 // Shared memory handle (module-level, single instance)
@@ -182,143 +184,95 @@ bool Ams2IsInPits(const Ams2SharedMemory& frame)
 static const double DEG_PER_RAD = 180.0 / 3.14159265358979323846;
 static const double G = 9.81;
 
+std::string Ams2GetChannelTableWarning();   // defined below
+// Resolved channel table for AMS2 LIVE rows (mapping.json), built ONCE on first use.
+// Unit conversions live in mapping.json, not here: this function only extracts RAW values
+// from the shared-memory frame and lets FeedLapFromTable() apply factor/offset per row.
+std::string g_ams2ChannelTableWarning;
+static LiveChannel::ResolvedChannelTable& Ams2GetChannelTable()
+{
+    static LiveChannel::ResolvedChannelTable table = [] {
+        LiveChannel::ResolvedChannelTable t;
+        t.build(ChannelProfile::AMS2);   // Generic == AMS2, so generic rows are included too
+        return t;
+    }();
+    // One-time validation: surface (never fatal) any mapping row that failed to resolve.
+    static bool validated = false;
+    if (!validated) {
+        std::string report;
+        const std::vector<std::string> none;   // empty -> no per-alias requirements, informational only for AMS2
+        table.validate(none, report);
+        g_ams2ChannelTableWarning = report.empty() ? "" : "AMS2 live channel table: " + report;
+        validated = true;
+    }
+    return table;
+}
+
 void Ams2FeedLap(LapStats& lap, const Ams2SharedMemory& frame, double timeSeconds)
 {
-    lap.rideHeightUnit = RideHeightUnit::Centimeters;
+    LiveChannel::ResolvedChannelTable& table = Ams2GetChannelTable();
 
-    // --- Speed ---
-    lap.speed.add(frame.mSpeed * 3.6);
-
-    // --- RPM ---
-    lap.rpm.add(frame.mRpm);
-
-    // --- Throttle / Brake ---
-    lap.throttle.add(frame.mThrottle * 100.0);
-    lap.brakePedal.add(frame.mBrake * 100.0);
-
-    // --- Steering ---
-    lap.steerAngle.add(frame.mSteering * 360.0);
-
-    // --- Yaw rate ---
-    lap.yawRate.add(frame.mAngularVelocity[1] * DEG_PER_RAD);
-
-    // --- G-forces ---
-    lap.longG.add(frame.mLocalAcceleration[0] / G);
-    lap.latG.add(frame.mLocalAcceleration[2] / G);
-
-    // --- Suspension travel (mm) ---
-    lap.susTravelLF.add(frame.mSuspensionTravel[TYRE_FRONT_LEFT] * 1000.0);
-    lap.susTravelRF.add(frame.mSuspensionTravel[TYRE_FRONT_RIGHT] * 1000.0);
-    lap.susTravelLR.add(frame.mSuspensionTravel[TYRE_REAR_LEFT] * 1000.0);
-    lap.susTravelRR.add(frame.mSuspensionTravel[TYRE_REAR_RIGHT] * 1000.0);
-
-    // --- Suspension velocity (mm/s) — derived from travel change ---
-    // We use the raw mSuspensionVelocity which is in m/s → ×1000 → mm/s
-    lap.suspVelLF.add(frame.mSuspensionVelocity[TYRE_FRONT_LEFT] * 1000.0);
-    lap.suspVelRF.add(frame.mSuspensionVelocity[TYRE_FRONT_RIGHT] * 1000.0);
-    lap.suspVelLR.add(frame.mSuspensionVelocity[TYRE_REAR_LEFT] * 1000.0);
-    lap.suspVelRR.add(frame.mSuspensionVelocity[TYRE_REAR_RIGHT] * 1000.0);
-
-    // --- Tyre pressures (kPa → PSI) ---
-    lap.pressureLF.add(frame.mAirPressure[TYRE_FRONT_LEFT] / 6.894757);
-    lap.pressureRF.add(frame.mAirPressure[TYRE_FRONT_RIGHT] / 6.894757);
-    lap.pressureLR.add(frame.mAirPressure[TYRE_REAR_LEFT] / 6.894757);
-    lap.pressureRR.add(frame.mAirPressure[TYRE_REAR_RIGHT] / 6.894757);
-
-    // --- Tyre temperatures (°C) ---
-    // Left tyres (LF=0, LR=2): mTyreTempLeft = Outer, mTyreTempRight = Inner
-    // Right tyres (RF=1, RR=3): mTyreTempLeft = Inner, mTyreTempRight = Outer
-    lap.tyreInnerTempLF.add(frame.mTyreTempRight[TYRE_FRONT_LEFT]);
-    lap.tyreCentreTempLF.add(frame.mTyreTempCenter[TYRE_FRONT_LEFT]);
-    lap.tyreOuterTempLF.add(frame.mTyreTempLeft[TYRE_FRONT_LEFT]);
-
-    lap.tyreInnerTempRF.add(frame.mTyreTempLeft[TYRE_FRONT_RIGHT]);
-    lap.tyreCentreTempRF.add(frame.mTyreTempCenter[TYRE_FRONT_RIGHT]);
-    lap.tyreOuterTempRF.add(frame.mTyreTempRight[TYRE_FRONT_RIGHT]);
-
-    lap.tyreInnerTempLR.add(frame.mTyreTempRight[TYRE_REAR_LEFT]);
-    lap.tyreCentreTempLR.add(frame.mTyreTempCenter[TYRE_REAR_LEFT]);
-    lap.tyreOuterTempLR.add(frame.mTyreTempLeft[TYRE_REAR_LEFT]);
-
-    lap.tyreInnerTempRR.add(frame.mTyreTempLeft[TYRE_REAR_RIGHT]);
-    lap.tyreCentreTempRR.add(frame.mTyreTempCenter[TYRE_REAR_RIGHT]);
-    lap.tyreOuterTempRR.add(frame.mTyreTempRight[TYRE_REAR_RIGHT]);
-
-    // --- Brake temperatures (°C) ---
-    lap.brakeTempLF.add(frame.mBrakeTempCelsius[TYRE_FRONT_LEFT]);
-    lap.brakeTempRF.add(frame.mBrakeTempCelsius[TYRE_FRONT_RIGHT]);
-    lap.brakeTempLR.add(frame.mBrakeTempCelsius[TYRE_REAR_LEFT]);
-    lap.brakeTempRR.add(frame.mBrakeTempCelsius[TYRE_REAR_RIGHT]);
-
-    // --- Brake bias (%) ---
-    if (frame.mBrakeBias >= 0.0f)
-        lap.brakeBiasSetting.add(frame.mBrakeBias * 100.0);
-
-    // --- Fuel level (%) ---
-    lap.fuelLevel.add(frame.mFuelLevel * 100.0);
-
-    // --- Oil / Water / Track / Ambient temperatures (°C) ---
-    lap.oilTemp.add(frame.mOilTempCelsius);
-    lap.waterTemp.add(frame.mWaterTempCelsius);
-    lap.trackTemp.add(frame.mTrackTemperature);
-    lap.ambientTemp.add(frame.mAmbientTemperature);
-
-    // --- TCS / ABS active ---
-    lap.tcsActive.add((frame.mCarFlags & CAR_TCS) ? 1.0 : 0.0);
-    lap.absActive.add((frame.mCarFlags & CAR_ABS) ? 1.0 : 0.0);
-
-    // --- Wheel slip (from mTyreSlipSpeed, m/s → km/h) ---
-    lap.wheelSlipLF.add(frame.mTyreSlipSpeed[TYRE_FRONT_LEFT] * 3.6);
-    lap.wheelSlipRF.add(frame.mTyreSlipSpeed[TYRE_FRONT_RIGHT] * 3.6);
-    lap.wheelSlipLR.add(frame.mTyreSlipSpeed[TYRE_REAR_LEFT] * 3.6);
-    lap.wheelSlipRR.add(frame.mTyreSlipSpeed[TYRE_REAR_RIGHT] * 3.6);
-
-    // --- Wheel speed (from mTyreRPS, rev/s → km/h assuming ~0.65m wheel circumference) ---
-    // Actually mTyreRPS is rev/s, so speed = RPS * circumference.
-    // We don't know the exact circumference, so use mSpeed as a proxy for wheel speed.
-    // The existing pipeline uses wheelSpeed for slip calculations, so we feed mSpeed.
-    lap.wheelSpeedLF.add(frame.mSpeed * 3.6);
-    lap.wheelSpeedRF.add(frame.mSpeed * 3.6);
-    lap.wheelSpeedLR.add(frame.mSpeed * 3.6);
-    lap.wheelSpeedRR.add(frame.mSpeed * 3.6);
-
-    // --- Brake torque (not directly available in shared memory, skip) ---
-
-    // --- Bumpstop (not directly available, skip) ---
-
-    // --- Corner entry/exit (not directly available, skip) ---
-
-    // --- Damper stats — use addSample which derives velocity from travel ---
-    double travelLF = frame.mSuspensionTravel[TYRE_FRONT_LEFT] * 1000.0;
+    // --- Raw channel dictionary (RAW values only - no unit conversion here). ---
+    // Keys MUST match the "channel" field of mapping.json AMS2 LIVE rows EXACTLY.
+    std::unordered_map<std::string, double> raw;
+    raw["mSpeed"]                 = frame.mSpeed;                       // m/s  (Vehicle_Speed + Wheel_Speed_* x3.6)
+    raw["mRpm"]                   = frame.mRpm;                         // RPM
+    raw["mThrottle"]              = frame.mThrottle;                    // 0..1 -> % via table factor 100
+    raw["mBrake"]                 = frame.mBrake;                       // 0..1 -> % via table factor 100
+    raw["mSteering"]              = frame.mSteering;                    // -1..1 -> deg x360 via table (Steering_Angle)
+    raw["mAngularVelocity[1]"]    = frame.mAngularVelocity[1];          // rad/s -> deg/s via table (Yaw_Rate)
+    raw["mLocalAcceleration[0]"]  = frame.mLocalAcceleration[0];        // m/s^2 -> G x0.10197162 (G_Long)
+    raw["mLocalAcceleration[2]"]  = frame.mLocalAcceleration[2];        // m/s^2 -> G x0.10197162 (G_Lat)
+    for (int i = 0; i < TYRE_MAX; ++i) {   // wheel order: FL=0, FR=1, RL=2, RR=3
+        char key[48];
+        snprintf(key, sizeof(key), "mSuspensionTravel[%d]", i);    raw[key] = frame.mSuspensionTravel[i];     // m -> mm x1000 (susTravel*)
+        snprintf(key, sizeof(key), "mSuspensionVelocity[%d]", i);  raw[key] = frame.mSuspensionVelocity[i];   // m/s -> mm/s x1000 (suspVel*)
+        snprintf(key, sizeof(key), "mAirPressure[%d]", i);         raw[key] = frame.mAirPressure[i];          // kPa -> psi via table factor 0.1450377
+        snprintf(key, sizeof(key), "mTyreSlipSpeed[%d]", i);       raw[key] = frame.mTyreSlipSpeed[i];        // m/s -> km/h x3.6 (wheel slip)
+        snprintf(key, sizeof(key), "mBrakeTempCelsius[%d]", i);    raw[key] = frame.mBrakeTempCelsius[i];     // C
+        snprintf(key, sizeof(key), "mRideHeight[%d]", i);          raw[key] = frame.mRideHeight[i];           // cm -> mm x10 (aeroHeight*)
+        // Tyre tread temps: the L/R swap per wheel position is a non-linear mapping that stays in C++ by design;
+        // JSON rows already encode it via mTyreTempLeft/Center/Right[N] channels.
+        snprintf(key, sizeof(key), "mTyreTempLeft[%d]", i);        raw[key] = frame.mTyreTempLeft[i];         // C
+        snprintf(key, sizeof(key), "mTyreTempCenter[%d]", i);      raw[key] = frame.mTyreTempCenter[i];       // C
+        snprintf(key, sizeof(key), "mTyreTempRight[%d]", i);       raw[key] = frame.mTyreTempRight[i];        // C
+        snprintf(key, sizeof(key), "mTyreInternalAirTemp[%d]", i); raw[key] = frame.mTyreInternalAirTemp[i];  // C (NEW: was unpopulated before)
+    }
+    raw["mFuelLevel"]             = frame.mFuelLevel * 100.0;        // % - pre-computed so the ratio row lands in percent, matching EVO/PMR + old C++
+    raw["mOilTempCelsius"]        = frame.mOilTempCelsius;           // C
+    raw["mWaterTempCelsius"]      = frame.mWaterTempCelsius;         // C
+    raw["mTrackTemperature"]      = frame.mTrackTemperature;         // C
+    raw["mAmbientTemperature"]    = frame.mAmbientTemperature;       // C
+    if (frame.mBrakeBias >= 0.0f)                                     // guard stays in C++: AMS2 reports -1 when unset
+        raw["mBrakeBias"]         = frame.mBrakeBias;                 // 0..1 -> % x100 via table
+    raw["mCarFlags_TCS"]          = (frame.mCarFlags & CAR_TCS) ? 1.0 : 0.0;   // synthetic bit-flag channel (TCS_Active)
+    raw["mAntiLockActive"]        = frame.mAntiLockActive ? 1.0 : 0.0;         // bool -> numeric (ABS_Active)
+    // --- Generic table-driven feed: v = raw * factor + offset -> LapStats sink. ---
+    LiveChannel::FeedLapFromTable(lap, raw, table, timeSeconds);
+    lap.rideHeightUnit = RideHeightUnit::Millimeters;   // aeroHeight* now arrive in mm (table x10 from cm) - downstream Rake identical to old cm+Centimeters path
+    // --- Damper stats: addSample derives shaft velocity from travel deltas over wall-clock time.
+    // Stays post-table by design (multi-value derived sample, not a single-channel sink). ---
+    double travelLF = frame.mSuspensionTravel[TYRE_FRONT_LEFT] * 1000.0;   // m -> mm
     double travelRF = frame.mSuspensionTravel[TYRE_FRONT_RIGHT] * 1000.0;
     double travelLR = frame.mSuspensionTravel[TYRE_REAR_LEFT] * 1000.0;
     double travelRR = frame.mSuspensionTravel[TYRE_REAR_RIGHT] * 1000.0;
-
     lap.damperLF.addSample(travelLF, timeSeconds);
     lap.damperRF.addSample(travelRF, timeSeconds);
     lap.damperLR.addSample(travelLR, timeSeconds);
     lap.damperRR.addSample(travelRR, timeSeconds);
-
-    // --- Handling sample (understeer/oversteer detection) ---
+    // --- Handling sample (understeer/oversteer detection) - multi-value derived sample. ---
     double steer = frame.mSteering * 360.0;
-    double yaw = frame.mAngularVelocity[1] * DEG_PER_RAD;
-    double latG = frame.mLocalAcceleration[2] / G;
+    double yaw   = frame.mAngularVelocity[1] * DEG_PER_RAD;
+    double latG  = frame.mLocalAcceleration[2] / G;
     double longG = frame.mLocalAcceleration[0] / G;
-    double brake = frame.mBrake * 100.0;
-    double throttle = frame.mThrottle * 100.0;
+    double brake     = frame.mBrake * 100.0;
+    double throttle  = frame.mThrottle * 100.0;
     double suspAsymmetry = (travelLF - travelRF) / 2.0;
-
     lap.addHandlingSample(steer, yaw, latG, longG, brake, throttle, suspAsymmetry);
-
     // --- Steer/Yaw correlation ---
     lap.addSteerYaw(steer, yaw);
-
-    // --- Aero ride heights (cm) ---
-    lap.aeroHeight0.add(frame.mRideHeight[TYRE_FRONT_LEFT]);
-    lap.aeroHeight1.add(frame.mRideHeight[TYRE_FRONT_RIGHT]);
-    lap.aeroHeight2.add(frame.mRideHeight[TYRE_REAR_LEFT]);
-    lap.aeroHeight3.add(frame.mRideHeight[TYRE_REAR_RIGHT]);
-
     // --- Row count ---
     lap.rowCount++;
 }
+
+std::string Ams2GetChannelTableWarning() { return g_ams2ChannelTableWarning; }

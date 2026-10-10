@@ -1,4 +1,4 @@
-﻿//---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 // AcsEvoLiveCapture.cpp — AC EVO live capture from shared memory.
 //
 // Implements:
@@ -11,9 +11,13 @@
 
 #include <windows.h>
 #include <cmath>
+#include <cstdio>
 #include <string>
+#include <unordered_map>
+#include <vector>
 #include <cstring>
 #include "AcsEvoLiveCapture.h"
+#include "LiveChannelResolver.h"   // JSON-table-driven channel feed (LIVE_CAPTURE_JSON_MIGRATION_PLAN)
 
 // ---------------------------------------------------------------------------
 // Shared memory handles (module-level, single instance)
@@ -25,9 +29,67 @@ static void*  g_pGraphics = NULL;
 static HANDLE g_hStatic   = NULL;
 static void*  g_pStatic   = NULL;
 
-// Default wheel radius (m) used to convert wheel angular speed (rad/s) to km/h.
-static const double kWheelRadiusM = 0.33;
+// rad/s -> deg/s (post-table handling sample only; the table row uses its own factor).
 static const double DEG_PER_RAD = 180.0 / 3.14159265358979323846;
+
+std::string AcsEvoGetChannelTableWarning();   // defined below
+// Resolved channel table for EVOM1 LIVE rows (mapping.json), built ONCE on first use.
+// Unit conversions live in mapping.json, not here: this function only extracts RAW values
+// from the shared-memory frames and lets FeedLapFromTable() apply factor/offset per row.
+std::string g_acsEvoChannelTableWarning;
+static LiveChannel::ResolvedChannelTable& AcsEvoGetChannelTable()
+{
+    static LiveChannel::ResolvedChannelTable table = [] {
+        LiveChannel::ResolvedChannelTable t;
+        t.build(ChannelProfile::EvoM1);   // EVOM1 + Generic rows
+        return t;
+    }();
+    // One-time validation: surface (never fatal) any mapping row that failed to resolve.
+    static bool validated = false;
+    if (!validated) {
+        std::string report;
+        // Required raw channel names - a JSON/dict-key typo would otherwise cause
+        // silent per-frame skips, so every name the dict below is built from must exist in mapping.json.
+        const std::vector<std::string> required = [] {
+            std::vector<std::string> v;
+            v.push_back("physics.speedKmh");
+            v.push_back("physics.rpms");
+            v.push_back("physics.gas");
+            v.push_back("physics.brake");
+            v.push_back("physics.steerAngle");
+            v.push_back("physics.localAngularVel[1]");
+            v.push_back("physics.accG[0]");
+            v.push_back("physics.accG[1]");
+            for (int i = 0; i < 4; ++i) {
+                char key[64];
+                snprintf(key, sizeof(key), "physics.wheelAngularSpeed[%d]", i);   v.push_back(key);
+                snprintf(key, sizeof(key), "physics.brakeTemp[%d]", i);           v.push_back(key);
+                snprintf(key, sizeof(key), "physics.wheelsPressure[%d]", i);      v.push_back(key);
+                snprintf(key, sizeof(key), "physics.tyreTempI[%d]", i);           v.push_back(key);
+                snprintf(key, sizeof(key), "physics.tyreTempM[%d]", i);           v.push_back(key);
+                snprintf(key, sizeof(key), "physics.tyreTempO[%d]", i);           v.push_back(key);
+                snprintf(key, sizeof(key), "physics.brakeTorque[%d]", i);         v.push_back(key);
+                snprintf(key, sizeof(key), "physics.slipRatio[%d]", i);           v.push_back(key);
+                snprintf(key, sizeof(key), "physics.suspensionTravel[%d]", i);    v.push_back(key);
+            }
+            v.push_back("physics.tcinAction");
+            v.push_back("physics.absInAction");
+            v.push_back("physics.brakeBias");
+            v.push_back("graphics.oil_temperature_c");
+            v.push_back("physics.waterTemp");
+            v.push_back("physics.roadTemp");
+            v.push_back("physics.airTemp");
+            v.push_back("physics.fuel");
+            v.push_back("physics.rideHeight[0]");
+            v.push_back("physics.rideHeight[1]");
+            return v;
+        }();
+        table.validate(required, report);
+        g_acsEvoChannelTableWarning = report.empty() ? "" : "AC EVO live channel table: " + report;
+        validated = true;
+    }
+    return table;
+}
 
 // ---------------------------------------------------------------------------
 // AcsEvoOpenSharedMemory
@@ -194,158 +256,76 @@ bool AcsEvoIsInPits(const SPageFileGraphicEvo& gfx)
 }
 
 // ---------------------------------------------------------------------------
-// AcsEvoFeedLap — feed one frame into LapStats accumulators
+// AcsEvoFeedLap — feed one frame into LapStats accumulators (table-driven)
 // ---------------------------------------------------------------------------
-//
-// Unit conversions (from plan_ac_evo.md):
-//   speedKmh: km/h direct
-//   gas / brake: 0-1 -> x100 -> %
-//   rpms: direct
-//   steerAngle: -1..1 -> x360 -> degrees
-//   localAngularVel[1]: rad/s -> x180/pi -> deg/s (yaw)
-//   accG[0]: g direct (lat), accG[1]: g direct (long)
-//   wheelAngularSpeed[4]: rad/s -> x radius x 3600/(2*pi*1000) -> km/h
-//   brakeTemp[4]: C direct
-//   wheelsPressure[4]: PSI direct
-//   tyreTempI/M/O[4]: C direct (inner/centre/outer)
-//   brakeTorque[4]: Nm direct
-//   slipRatio[4]: ratio -> x100 -> %
-//   tcinAction / absInAction: 0/1 -> x100 -> %
-//   brakeBias: 0-1 -> x100 -> %
-//   suspensionTravel[4]: meters -> x1000 -> mm
-//   oil_temperature_c (graphics): C direct
-//   waterTemp (physics): C direct
-//   roadTemp (physics): C direct
-//   airTemp (physics): C direct
-//   rideHeight[0..1]: meters -> x100 -> cm (front/rear)
+// Unit conversions live in mapping.json EVOM1 LIVE rows; this function only
+// extracts RAW values from the physics/graphics frames. Pre-computed percent
+// values (fuel, TCS/ABS) are fed as 0..100 so f=1 ratio rows land in percent,
+// matching old C++ behaviour exactly.
 // ---------------------------------------------------------------------------
 
 void AcsEvoFeedLap(LapStats& lap, const SPageFilePhysics& phys,
                    const SPageFileGraphicEvo& gfx, double timeSeconds)
 {
-    lap.rideHeightUnit = RideHeightUnit::Centimeters;
+    LiveChannel::ResolvedChannelTable& table = AcsEvoGetChannelTable();
 
-    // --- Speed (km/h) ---
-    lap.speed.add(phys.speedKmh);
+    // --- Raw channel dictionary (RAW values only - no unit conversion here). ---
+    // Keys MUST match the "channel" field of mapping.json EVOM1 LIVE rows EXACTLY.
+    std::unordered_map<std::string, double> raw;
+    raw["physics.speedKmh"]            = phys.speedKmh;                    // km/h (Vehicle_Speed)
+    raw["physics.rpms"]                = phys.rpms;                        // RPM
+    raw["physics.gas"]                 = phys.gas;                         // 0..1 -> % x100 via table
+    raw["physics.brake"]               = phys.brake;                       // 0..1 -> % x100 via table (Brake_Pos)
+    raw["physics.steerAngle"]          = phys.steerAngle;                  // -1..1 -> deg x360 via table
+    raw["physics.localAngularVel[1]"]  = phys.localAngularVel[1];          // rad/s -> deg/s via table (Yaw_Rate)
+    raw["physics.accG[0]"]             = phys.accG[0];                     // g direct (lat)
+    raw["physics.accG[1]"]             = phys.accG[1];                     // g direct (long)
+    for (int i = 0; i < 4; ++i) {   // wheel order: FL=0, FR=1, RL=2, RR=3
+        char key[64];
+        snprintf(key, sizeof(key), "physics.wheelAngularSpeed[%d]", i); raw[key] = phys.wheelAngularSpeed[i];  // rad/s -> km/h via table factor (r=0.33m)
+        snprintf(key, sizeof(key), "physics.brakeTemp[%d]", i);         raw[key] = phys.brakeTemp[i];          // C
+        snprintf(key, sizeof(key), "physics.wheelsPressure[%d]", i);    raw[key] = phys.wheelsPressure[i];     // PSI direct (f=1)
+        snprintf(key, sizeof(key), "physics.tyreTempI[%d]", i);         raw[key] = phys.tyreTempI[i];          // C inner
+        snprintf(key, sizeof(key), "physics.tyreTempM[%d]", i);         raw[key] = phys.tyreTempM[i];          // C centre (Tyre_Temp_*_Middle + Surf_Temp_*)
+        snprintf(key, sizeof(key), "physics.tyreTempO[%d]", i);         raw[key] = phys.tyreTempO[i];          // C outer
+        snprintf(key, sizeof(key), "physics.brakeTorque[%d]", i);       raw[key] = phys.brakeTorque[i];        // Nm
+        snprintf(key, sizeof(key), "physics.slipRatio[%d]", i);         raw[key] = phys.slipRatio[i];          // ratio -> % x100 via table (Wheel_Slip_Ratio_*)
+        snprintf(key, sizeof(key), "physics.suspensionTravel[%d]", i);  raw[key] = phys.suspensionTravel[i];   // m -> mm x1000 via table
+    }
+    raw["physics.tcinAction"]          = phys.tcinAction ? 100.0 : 0.0;     // pre-computed % (TCS_In_Action, f=1)
+    raw["physics.absInAction"]         = phys.absInAction ? 100.0 : 0.0;    // pre-computed % (ABS_In_Action, f=1)
+    raw["physics.brakeBias"]           = phys.brakeBias;                    // 0..1 -> % x100 via table
+    raw["graphics.oil_temperature_c"]  = gfx.oil_temperature_c;             // C (oil temp lives on the graphics page)
+    raw["physics.waterTemp"]           = phys.waterTemp;                    // C
+    raw["physics.roadTemp"]            = phys.roadTemp;                     // C (track surface)
+    raw["physics.airTemp"]             = phys.airTemp;                      // C ambient
+    raw["physics.fuel"]                = phys.fuel * 100.0;                 // % - pre-computed so the ratio row lands in percent, matching old C++
+    raw["physics.rideHeight[0]"]       = phys.rideHeight[0];               // m -> cm x100 via table (aeroHeight0)
+    raw["physics.rideHeight[1]"]        = phys.rideHeight[1];               // m -> cm x100 via table (aeroHeight1)
 
-    // --- RPM ---
-    lap.rpm.add(phys.rpms);
+    // --- Generic table-driven feed: v = raw * factor + offset -> LapStats sink. ---
+    LiveChannel::FeedLapFromTable(lap, raw, table, timeSeconds);
+    lap.rideHeightUnit = RideHeightUnit::Centimeters;   // aeroHeight0/1 arrive in cm (table x10 from m) - identical to old C++ path
 
-    // --- Throttle / Brake (%) ---
-    lap.throttle.add(phys.gas * 100.0);
-    lap.brakePedal.add(phys.brake * 100.0);
-
-    // --- Steering (degrees) ---
-    lap.steerAngle.add(phys.steerAngle * 360.0);
-
-    // --- Yaw rate (deg/s) ---
-    lap.yawRate.add(phys.localAngularVel[1] * DEG_PER_RAD);
-
-    // --- G-forces (g) ---
-    lap.latG.add(phys.accG[0]);
-    lap.longG.add(phys.accG[1]);
-
-    // --- Wheel speed (km/h) from angular speed (rad/s) ---
-    const double angToKmh = kWheelRadiusM * 3600.0 / (2.0 * 3.14159265358979323846 * 1000.0);
-    lap.wheelSpeedLF.add(phys.wheelAngularSpeed[0] * angToKmh);
-    lap.wheelSpeedRF.add(phys.wheelAngularSpeed[1] * angToKmh);
-    lap.wheelSpeedLR.add(phys.wheelAngularSpeed[2] * angToKmh);
-    lap.wheelSpeedRR.add(phys.wheelAngularSpeed[3] * angToKmh);
-
-    // --- Brake temperatures (C) ---
-    lap.brakeTempLF.add(phys.brakeTemp[0]);
-    lap.brakeTempRF.add(phys.brakeTemp[1]);
-    lap.brakeTempLR.add(phys.brakeTemp[2]);
-    lap.brakeTempRR.add(phys.brakeTemp[3]);
-
-    // --- Tyre pressures (PSI) ---
-    lap.pressureLF.add(phys.wheelsPressure[0]);
-    lap.pressureRF.add(phys.wheelsPressure[1]);
-    lap.pressureLR.add(phys.wheelsPressure[2]);
-    lap.pressureRR.add(phys.wheelsPressure[3]);
-
-    // --- Tyre temperatures (C) — inner/centre/outer directly available ---
-    lap.tyreInnerTempLF.add(phys.tyreTempI[0]);
-    lap.tyreCentreTempLF.add(phys.tyreTempM[0]);
-    lap.tyreOuterTempLF.add(phys.tyreTempO[0]);
-
-    lap.tyreInnerTempRF.add(phys.tyreTempI[1]);
-    lap.tyreCentreTempRF.add(phys.tyreTempM[1]);
-    lap.tyreOuterTempRF.add(phys.tyreTempO[1]);
-
-    lap.tyreInnerTempLR.add(phys.tyreTempI[2]);
-    lap.tyreCentreTempLR.add(phys.tyreTempM[2]);
-    lap.tyreOuterTempLR.add(phys.tyreTempO[2]);
-
-    lap.tyreInnerTempRR.add(phys.tyreTempI[3]);
-    lap.tyreCentreTempRR.add(phys.tyreTempM[3]);
-    lap.tyreOuterTempRR.add(phys.tyreTempO[3]);
-
-    // Surface (centre) temps also feed the surfTempC* channels used by the
-    // front/rear temperature-difference checks.
-    lap.surfTempCFL.add(phys.tyreTempM[0]);
-    lap.surfTempCRF.add(phys.tyreTempM[1]);
-    lap.surfTempCLR.add(phys.tyreTempM[2]);
-    lap.surfTempCRR.add(phys.tyreTempM[3]);
-
-    // --- Brake torque (Nm) ---
-    lap.brakeTorqueLF.add(phys.brakeTorque[0]);
-    lap.brakeTorqueRF.add(phys.brakeTorque[1]);
-    lap.brakeTorqueLR.add(phys.brakeTorque[2]);
-    lap.brakeTorqueRR.add(phys.brakeTorque[3]);
-
-    // --- Wheel slip ratio (%) ---
-    lap.wheelSlipLF.add(phys.slipRatio[0] * 100.0);
-    lap.wheelSlipRF.add(phys.slipRatio[1] * 100.0);
-    lap.wheelSlipLR.add(phys.slipRatio[2] * 100.0);
-    lap.wheelSlipRR.add(phys.slipRatio[3] * 100.0);
-
-    // --- TCS / ABS active (%) ---
-    lap.tcsActive.add(phys.tcinAction ? 100.0 : 0.0);
-    lap.absActive.add(phys.absInAction ? 100.0 : 0.0);
-
-    // --- Brake bias setting (%) ---
-    lap.brakeBiasSetting.add(phys.brakeBias * 100.0);
-
-    // --- Suspension travel (mm) ---
-    double travelLF = phys.suspensionTravel[0] * 1000.0;
+    // --- Damper stats: addSample derives shaft velocity from travel deltas over wall-clock time.
+    // Stays post-table by design (multi-value derived sample, not a single-channel sink). ---
+    double travelLF = phys.suspensionTravel[0] * 1000.0;   // m -> mm
     double travelRF = phys.suspensionTravel[1] * 1000.0;
     double travelLR = phys.suspensionTravel[2] * 1000.0;
     double travelRR = phys.suspensionTravel[3] * 1000.0;
-
-    lap.susTravelLF.add(travelLF);
-    lap.susTravelRF.add(travelRF);
-    lap.susTravelLR.add(travelLR);
-    lap.susTravelRR.add(travelRR);
-
-    // --- Damper stats — derive velocity from travel (dTravel/dt) ---
     lap.damperLF.addSample(travelLF, timeSeconds);
     lap.damperRF.addSample(travelRF, timeSeconds);
     lap.damperLR.addSample(travelLR, timeSeconds);
     lap.damperRR.addSample(travelRR, timeSeconds);
 
-    // --- Oil / Water / Track / Ambient temperatures (C) ---
-    lap.oilTemp.add(gfx.oil_temperature_c);
-    lap.waterTemp.add(phys.waterTemp);
-    lap.trackTemp.add(phys.roadTemp);
-    lap.ambientTemp.add(phys.airTemp);
-
-    // --- Fuel level (%) ---
-    lap.fuelLevel.add(phys.fuel * 100.0);
-
-    // --- Ride height (cm) — front/rear only ---
-    lap.aeroHeight0.add(phys.rideHeight[0] * 100.0);
-    lap.aeroHeight1.add(phys.rideHeight[1] * 100.0);
-
-    // --- Handling sample (understeer/oversteer detection) ---
+    // --- Handling sample (understeer/oversteer detection) - multi-value derived sample. ---
     double steer = phys.steerAngle * 360.0;
-    double yaw = phys.localAngularVel[1] * DEG_PER_RAD;
-    double latG = phys.accG[0];
+    double yaw   = phys.localAngularVel[1] * DEG_PER_RAD;
+    double latG  = phys.accG[0];
     double longG = phys.accG[1];
-    double brake = phys.brake * 100.0;
-    double throttle = phys.gas * 100.0;
+    double brake     = phys.brake * 100.0;
+    double throttle  = phys.gas * 100.0;
     double suspAsymmetry = (travelLF - travelRF) / 2.0;
-
     lap.addHandlingSample(steer, yaw, latG, longG, brake, throttle, suspAsymmetry);
 
     // --- Steer/Yaw correlation ---
@@ -354,3 +334,5 @@ void AcsEvoFeedLap(LapStats& lap, const SPageFilePhysics& phys,
     // --- Row count ---
     lap.rowCount++;
 }
+
+std::string AcsEvoGetChannelTableWarning() { return g_acsEvoChannelTableWarning; }
