@@ -460,7 +460,7 @@ function drawCombinedHistogram(canvas,damperData){
     cornerStats[key]={
       rebHi:h.rebHi||"0", rebLo:h.rebLo||"0", rebAvg:h.rebAvg||"0",
       bmpHi:h.bmpHi||"0", bmpLo:h.bmpLo||"0", bmpAvg:h.bmpAvg||"0",
-      bins:bins,count:count
+      bins:bins.map(function(v){return v/count;}),count:count
     };
   }
 
@@ -471,36 +471,42 @@ function drawCombinedHistogram(canvas,damperData){
 
   var rowH=18;
   var statsTable = document.getElementById("damperStatsTable");
-  statsTable.innerHTML = "<div><b>Corner</b></div><div><b>Rebound (S/F/A)</b></div><div><b>Bump (S/F/A)</b></div>";
+  statsTable.innerHTML = "<div><b>Corner</b></div><div><b>Rebound (A/F/S)</b></div><div><b>Bump (S/F/A)</b></div>";
 
   for(var vC=0;vC<validCorners.length;vC++){
-    var k=validCorners[vC];var s=cornerStats[k];var col=colorMap[k]||"#fff";
-    ctx.fillStyle=col;ctx.font="bold 11px sans-serif";ctx.textAlign="left";
-    ctx.fillText("Damper Vel "+k,pad.l,60+vC*rowH);
-    ctx.textAlign="center";
-    var rLo = s.rebLo || "0", rHi = s.rebHi || "0", rAvg = s.rebAvg || "0";
-    var bLo = s.bmpLo || "0", bHi = s.bmpHi || "0", bAvg = s.bmpAvg || "0";
-    ctx.fillText(rLo+"%  "+rHi+"%  "+rAvg+"%",pad.l+(pw*0.2),60+vC*rowH);
-    ctx.fillText(bLo+"%  "+bHi+"%  "+bAvg+"%",pad.l+(pw*0.6),60+vC*rowH);
+    var k=validCorners[vC];var s=cornerStats[k];
+    
+    // Captions removed from canvas to clean up the histogram view
+
+	var rAvg = s.rebAvg || "0", rHi = s.rebHi || "0", rLo = s.rebLo   || "0";
+	var bLo = s.bmpLo   || "0", bHi = s.bmpHi || "0", bAvg = s.bmpAvg || "0";
 
     var row = document.createElement("div");
     row.style.display = "contents";
-    row.innerHTML = '<div><b>' + k + '</b></div><div>' + rLo + '% / ' + rHi + '% / ' + rAvg + '%</div><div>' + bLo + '% / ' + bHi + '% / ' + bAvg + '%</div>';
+    row.innerHTML = '<div><b>' + k + '</b></div><div>' + rAvg + '% / ' + rHi + '% / ' + rLo + '%</div><div>' + bLo + '% / ' + bHi + '% / ' + bAvg + '%</div>';
     statsTable.appendChild(row);
   }
 
-  // Y-axis labels (0%, 5%, ..., max%)
-  var globalMax=0;
-  for(var cC=0;cC<validCorners.length;cC++){
-    var kC=validCorners[cC];var bC=cornerStats[kC].bins;
-    var mB=0;for(var i=0;i<bC.length;i++)if(bC[i]>mB)mB=bC[i];
-    if(mB>globalMax)globalMax=mB;
+  // Y-axis labels (Dynamic scale based on data + headroom)
+  var globalMax = 0;
+  for(var cC=0; cC<validCorners.length; cC++){
+    var kC=validCorners[cC]; var bC=cornerStats[kC].bins;
+    var mB=0; for(var i=0; i<bC.length; i++) if(bC[i]>mB) mB=bC[i];
+    if(mB>globalMax) globalMax=mB;
   }
-  
-  ctx.fillStyle="#7f8c8d";ctx.font="9px sans-serif";ctx.textAlign="right";
-  for(var yL=0;yL<=globalMax*100;yL+=5){
-    var yPos=pad.t+ph-(yL/ (globalMax*100 || 1)*ph);
-    ctx.fillText(Math.round(yL)+"%",pad.l-10,yPos+3);
+
+  // Apply App GUI scaling: maxBin * (1 + offset/100), floor at minYPct.
+  // Note: In a real 1:1, these thresholds would come from the API, but we use defaults here to match logic.
+  var histogramYOffset = 20.0; 
+  var histogramMinYPct = 20.0;
+  var displayMax = Math.max(globalMax * (1 + histogramYOffset/100), histogramMinYPct / 100);
+
+  ctx.fillStyle="#7f8c8d"; ctx.font="9px sans-serif"; ctx.textAlign="right";
+  var maxPct = displayMax * 100;
+  for(var t=0; t<=4; t++){
+    var pctVal = maxPct * (t / 4);
+    var yPos = pad.t + ph - (t / 4 * ph);
+    ctx.fillText(Math.round(pctVal), pad.l-10, yPos+3);
   }
 
   // Grid & Axes
@@ -525,7 +531,7 @@ function drawCombinedHistogram(canvas,damperData){
     ctx.moveTo(pad.l, pad.t+ph);
     for(var i=0;i<sC2.bins.length;i++){
       var x=(pad.l+(( (i-20)*10 + 200)/400)*pw)|0;
-      var y=pad.t+ph-(sC2.bins[i]/globalMax*ph);
+      var y=pad.t+ph-(sC2.bins[i]/displayMax*ph);
       ctx.lineTo(x,y);
     }
     ctx.lineTo(pad.l+(( (sC2.bins.length-1-20)*10 + 200)/400)*pw|0, pad.t+ph);
@@ -540,7 +546,7 @@ function drawCombinedHistogram(canvas,damperData){
     ctx.beginPath();
     for(var i=0;i<sC2.bins.length;i++){
       var x=(pad.l+(( (i-20)*10 + 200)/400)*pw)|0;
-      var y=pad.t+ph-(sC2.bins[i]/globalMax*ph);
+      var y=pad.t+ph-(sC2.bins[i]/displayMax*ph);
       if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
     }
     ctx.stroke();
@@ -556,7 +562,7 @@ function render(data){
 }
 
 function poll(){
-  fetch("/api/report").then(function(r){return r.json()}).then(function(d){
+  fetch("/api/report?t=" + Date.now()).then(function(r){return r.json()}).then(function(d){
     if(!d.version)return;
     if(d.version===lastVersion)return; // no change — skip re-render.
     lastVersion=d.version;render(d);
