@@ -73,7 +73,9 @@ std::string makeResponse(const char* statusLine, const std::string& contentType,
     snprintf(lenBuf, sizeof(lenBuf), "%zu", body.size());
     return std::string("HTTP/1.1 ") + statusLine + "\r\n"
          "Content-Type: " + contentType + "\r\n"
-         "Cache-Control: no-store\r\n"
+         "Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n"
+         "Pragma: no-cache\r\n"
+         "Expires: 0\r\n"
          "Connection: close\r\n"
          "Content-Length: " + lenBuf + "\r\n"
          "\r\n" + body;
