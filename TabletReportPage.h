@@ -1,4 +1,4 @@
-//---------------------------------------------------------------------------
+﻿//---------------------------------------------------------------------------
 // TabletReportPage.h — Phase C (Tablet Report Viewer plan, docs/TABLET_REPORT_VIEWER_PLAN.md §C1-C5).
 // Self-contained HTML document served at GET / by the embedded HTTP server.
 // Mobile-first: one-column scroll; system font stack; no external CDN/framework.
@@ -17,7 +17,7 @@ inline const std::string& tabletIndexHtml() {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=5.0">
-<title>Motec Data Analyser — Tablet Report</title>
+<title>Motec Data Analyser - Tablet Report</title>
 <style>
 :root{--bg:#f4f6f9;--card:#fff;--text:#2c3e50;--muted:#7f8c8d;--accent:#2980b9;
       --ok:#27ae60;--warn:#f39c12;--crit:#e74c3c;--border:#dde3ea}
@@ -75,7 +75,7 @@ footer{text-align:center;font-size:.76rem;color:var(--muted);padding:1rem .8rem 
 </style>
 </head>
 <body>
-<header>Motec Data Analyser — Session Report</header>
+<header>Motec Data Analyser - Session Report</header>
 <main id="content">
   <div class="empty-notice" id="emptyNotice"><h2>No session data yet</h2><p>Analyze a file on the PC and this page will update automatically.</p></div>
   <section id="sectionsWrap"></section>
@@ -103,6 +103,8 @@ footer{text-align:center;font-size:.76rem;color:var(--muted);padding:1rem .8rem 
       <div class="damper-grid" id="damperGrid"></div>
       <div id="damperCombinedWrap" class="hidden" style="padding:0 1rem .85rem; text-align:center;">
         <canvas id="damperCombinedCanvas" width="640" height="320" style="max-width:100%; height:auto;"></canvas>
+        <div id="damperStatsTable" style="margin-top:1rem; font-family:monospace; font-size:.85rem; color:var(--text); display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px; border-top:1px solid var(--border); padding-top:1rem;">
+        </div>
       </div>
     </details>
   </section>
@@ -393,7 +395,7 @@ function renderDampers(ls){
     (function(corner){
       var box=document.createElement("div");box.className="damper-box";
       var title=document.createElement("div");title.className="damper-title";
-      title.textContent=corner+" Bump/Rebound Velocity";box.appendChild(title);
+	  title.textContent=corner+" Rebound/bump Velocity";box.appendChild(title);
       var cv=document.createElement("canvas");cv.width=320;cv.height=150;
       box.appendChild(cv);gridWrap.appendChild(box);
       drawHistogram(cv,ls.damperHistograms[corner],yMax);
@@ -455,15 +457,9 @@ function drawCombinedHistogram(canvas,damperData){
     var bins=h.bins;var count=bins.reduce((a,b)=>a+b,0);
     totalSamples+=count;validCorners.push(key);
     
-    var rebHi=0,rebLo=0,bmpHi=0,bmpLo=0,sumV=0,cntV=0;
-    for(var i=0;i<bins.length;i++){
-      var v=(i-20)*10;
-      if(v<0){if(Math.abs(v)>slowRange)rebHi+=bins[i];else rebLo+=bins[i];}
-      else if(v>0){if(v>slowRange)bmpHi+=bins[i];else bmpLo+=bins[i];sumV+=bins[i]*v;cntV+=bins[i];}
-    }
     cornerStats[key]={
-      rebHi:(rebHi/count*100).toFixed(1),rebLo:(rebLo/count*100).toFixed(1),
-      bmpHi:(bmpHi/count*100).toFixed(1),bmpAvg:(sumV/cntV||0).toFixed(1),
+      rebHi:h.rebHi||"0", rebLo:h.rebLo||"0", rebAvg:h.rebAvg||"0",
+      bmpHi:h.bmpHi||"0", bmpLo:h.bmpLo||"0", bmpAvg:h.bmpAvg||"0",
       bins:bins,count:count
     };
   }
@@ -473,19 +469,24 @@ function drawCombinedHistogram(canvas,damperData){
   ctx.fillText(totalSamples+" samples",pad.l,25);
   ctx.textAlign="right";ctx.fillText("Zoom Linked",W-pad.r,25);
 
-  ctx.fillStyle="#fff";ctx.font="bold 11px sans-serif";ctx.textAlign="center";
-  ctx.fillText("Rebound",pad.l+(pw*0.2),45);ctx.fillText("Bump",pad.l+(pw*0.6),45);
-  ctx.textAlign="right";ctx.fillText("Avg [mm/s]",W-pad.r,45);
-
   var rowH=18;
+  var statsTable = document.getElementById("damperStatsTable");
+  statsTable.innerHTML = "<div><b>Corner</b></div><div><b>Rebound (S/F/A)</b></div><div><b>Bump (S/F/A)</b></div>";
+
   for(var vC=0;vC<validCorners.length;vC++){
     var k=validCorners[vC];var s=cornerStats[k];var col=colorMap[k]||"#fff";
     ctx.fillStyle=col;ctx.font="bold 11px sans-serif";ctx.textAlign="left";
     ctx.fillText("Damper Vel "+k,pad.l,60+vC*rowH);
     ctx.textAlign="center";
-    ctx.fillText(s.rebLo+"%  "+s.rebHi+"%",pad.l+(pw*0.2),60+vC*rowH);
-    ctx.fillText(s.bmpHi+"%",pad.l+(pw*0.6),60+vC*rowH);
-    ctx.textAlign="right";ctx.fillText(s.bmpAvg,W-pad.r,60+vC*rowH);
+    var rLo = s.rebLo || "0", rHi = s.rebHi || "0", rAvg = s.rebAvg || "0";
+    var bLo = s.bmpLo || "0", bHi = s.bmpHi || "0", bAvg = s.bmpAvg || "0";
+    ctx.fillText(rLo+"%  "+rHi+"%  "+rAvg+"%",pad.l+(pw*0.2),60+vC*rowH);
+    ctx.fillText(bLo+"%  "+bHi+"%  "+bAvg+"%",pad.l+(pw*0.6),60+vC*rowH);
+
+    var row = document.createElement("div");
+    row.style.display = "contents";
+    row.innerHTML = '<div><b>' + k + '</b></div><div>' + rLo + '% / ' + rHi + '% / ' + rAvg + '%</div><div>' + bLo + '% / ' + bHi + '% / ' + bAvg + '%</div>';
+    statsTable.appendChild(row);
   }
 
   // Y-axis labels (0%, 5%, ..., max%)

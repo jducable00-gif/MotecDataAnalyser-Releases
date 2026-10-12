@@ -207,6 +207,13 @@
         <CppCompile Include="analyze_motec_setup.cpp">
             <BuildOrder>3</BuildOrder>
         </CppCompile>
+        <CppCompile Include="HttpServer.cpp">
+            <DependentOn>HttpServer.h</DependentOn>
+            <BuildOrder>21</BuildOrder>
+        </CppCompile>
+        <None Include="HttpServer.h">
+            <BuildOrder>23</BuildOrder>
+        </None>
         <CppCompile Include="LapReportGenerator.cpp">
             <DependentOn>LapReportGenerator.h</DependentOn>
             <BuildOrder>12</BuildOrder>
@@ -260,12 +267,18 @@
             <BuildOrder>1</BuildOrder>
             <PCH>true</PCH>
         </PCHCompile>
+        <None Include="ReportJsonWriter.h">
+            <BuildOrder>24</BuildOrder>
+        </None>
         <CppCompile Include="RuleConfig.cpp">
             <DependentOn>RuleConfig.h</DependentOn>
             <BuildOrder>9</BuildOrder>
         </CppCompile>
         <None Include="RuleConfig.h">
             <BuildOrder>4</BuildOrder>
+        </None>
+        <None Include="TabletReportPage.h">
+            <BuildOrder>25</BuildOrder>
         </None>
         <FormResources Include="MotecSetupForm.dfm"/>
         <FormResources Include="MotecSettingsForm.dfm"/>

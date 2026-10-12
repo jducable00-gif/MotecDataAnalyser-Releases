@@ -833,6 +833,73 @@ struct VelocityHistogram {
         sum += other.sum;
         sumSq += other.sumSq;
     }
+
+    // Returns % of samples in [-slowRange, 0)
+    double percentReboundLow(double slowRange) const {
+        if (totalCount == 0) return 0.0;
+        std::size_t c = 0;
+        for (int i = 0; i < kBinCount; ++i) {
+            double v = -rangeMax() + (i + 0.5) * binWidth();
+            if (v < 0 && v >= -slowRange) c += bins[i];
+        }
+        return 100.0 * static_cast<double>(c) / static_cast<double>(totalCount);
+    }
+
+    // Returns % of samples in (-infinity, -slowRange)
+    double percentReboundHigh(double slowRange) const {
+        if (totalCount == 0) return 0.0;
+        std::size_t c = 0;
+        for (int i = 0; i < kBinCount; ++i) {
+            double v = -rangeMax() + (i + 0.5) * binWidth();
+            if (v < -slowRange) c += bins[i];
+        }
+        return 100.0 * static_cast<double>(c) / static_cast<double>(totalCount);
+    }
+
+    // Returns % of samples in (slowRange, +infinity)
+    double percentBumpHigh(double slowRange) const {
+        if (totalCount == 0) return 0.0;
+        std::size_t c = 0;
+        for (int i = 0; i < kBinCount; ++i) {
+            double v = -rangeMax() + (i + 0.5) * binWidth();
+            if (v > slowRange) c += bins[i];
+        }
+        return 100.0 * static_cast<double>(c) / static_cast<double>(totalCount);
+    }
+
+    // Returns % of samples in (0, slowRange]
+    double percentBumpLow(double slowRange) const {
+        if (totalCount == 0) return 0.0;
+        std::size_t c = 0;
+        for (int i = 0; i < kBinCount; ++i) {
+            double v = -rangeMax() + (i + 0.5) * binWidth();
+            if (v > 0 && v <= slowRange) c += bins[i];
+        }
+        return 100.0 * static_cast<double>(c) / static_cast<double>(totalCount);
+    }
+
+    // Returns average percentage of the side: (Slow% + Fast%) / 2
+    double percentReboundAvg(double slowRange) const {
+        return (percentReboundLow(slowRange) + percentReboundHigh(slowRange)) / 2.0;
+    }
+
+    double percentBumpAvg(double slowRange) const {
+        return (percentBumpLow(slowRange) + percentBumpHigh(slowRange)) / 2.0;
+    }
+
+    // Returns average velocity of samples in (slowRange, +infinity)
+    double bumpAverage(double slowRange) const {
+        std::size_t c = 0;
+        double s = 0.0;
+        for (int i = 0; i < kBinCount; ++i) {
+            double v = -rangeMax() + (i + 0.5) * binWidth();
+            if (v > slowRange) {
+                c += bins[i];
+                s += bins[i] * v;
+            }
+        }
+        return (c == 0) ? 0.0 : s / static_cast<double>(c);
+    }
 };
 
 // ===============================

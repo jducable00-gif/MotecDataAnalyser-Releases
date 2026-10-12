@@ -98,6 +98,16 @@ if (Test-Path $logFile) {
 
 # Success = msbuild exited 0 AND the exe is on disk. (MSBuild 4.8 with /v:minimal
 # prints only its banner on success, so "Build succeeded" cannot be relied upon.)
+# NOTE: $msbuildExit above can be UNRELIABLE - cmd.exe's "& echo EXITCODE=..." makes
+# the command line exit with ECHO's code (0) even when msbuild failed. So also scan
+# build_log.txt for compiler/linker errors as a second, authoritative signal.
+if ($msbuildExit -eq 0 -and $logFile -and (Test-Path $logFile)) {
+    if (Select-String -Path $logFile -Pattern 'error E\d+:|: error MSB' -Quiet) {
+        Write-Warning "Compiler/linker errors found in build_log.txt despite exit code 0."
+        $msbuildExit = 1
+    }
+}
+
 $exePath = Join-Path $OutDir 'Project1.exe'
 if ($msbuildExit -eq 0 -and (Test-Path $exePath)) {
     Write-Host ""

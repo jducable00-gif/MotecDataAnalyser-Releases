@@ -25,6 +25,7 @@
 #include "AcsEvoLiveCapture.h"
 #include "PmrLiveCapture.h"
 #include "LapReportGenerator.h"
+#include "HttpServer.h"   // Phase B: embedded tablet report server
 #include <map>
 
 // Active live-capture backend.
@@ -129,6 +130,12 @@ public:
     void __fastcall UpdateBrakeTemps(const std::vector<LapStats>& laps);
     void __fastcall UpdateSuspension(std::vector<LapStats>& laps);
 
+    // Phase B5: push the freshly generated report to any connected tablet. No-op when server is off.
+    void __fastcall publishToTabletServer(const ReportResult& result, const std::vector<LapStats>& laps);
+
+    // Phase D3: live start/stop/restart the tablet web server from Settings dialog (no app restart).
+    void ApplyWebServerSettings();
+
     struct TireTempData {
         double inner = 0.0;
         double middle = 0.0;
@@ -184,6 +191,10 @@ public:
     unsigned int sessionLapCounter = 0;  // Our internal counter that resets on pit entry/exit
 	float previous_mCurrentTime = 0.0;
     bool firstLapStarted = false;
+
+    // --- Tablet Report Server (Phase B) ---
+    TabletReportServer _tabletServer{8765};   // default port; overridden by INI at startup
+    int tabletVersion_ = 1;                   // incremented per analysis pass, embedded in JSON version field
 };
 
 extern PACKAGE TFormMotecSetup *FormMotecSetup;

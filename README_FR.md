@@ -8,15 +8,6 @@ Les rapports peuvent être générés en **Anglais** ou en **Français**. Les no
 
 ## Mise en route
 
-Vous avez trois façons d'exécuter l'application. Elles fonctionnent toutes de la même manière une fois lancées — chaque fichier que l'application lit ou écrit se trouve **à côté de l'exécutable**.
-
-| Option | Ce dont vous avez besoin | Emplacement d'exécution |
-|--------|--------------------------|-------------------------|
-| **Package portable** (recommandé) | Le dossier `MotecDataAnalyser_Portable\` produit par `package.ps1`. Copiez tout le dossier n'importe où et lancez `MotecDataAnalyser.exe`. Aucune installation, aucun C++ Builder requis. | N'importe où — autonome |
-| **Sortie de build** | Un build réussi (`build.ps1`). Lancez `Win32\Debug\Project1.exe` (ou votre config/plateforme choisie). | `Win32\<Config>\` |
-| **IDE** | Ouvrez `Project1.cbproj`, ciblez **Win32**, configuration **Debug**, puis Build / Compile. | Dossier de sortie géré par l'IDE |
-
-> Le package portable inclut les cinq packages d'exécution (`rtl`, `vcl`, `vclwinx`, `vclimg`, `bindengine`) sous forme de fichiers `.bpl` à côté de l'exe, ce qui permet de le lancer sur une machine propre sans C++ Builder installé.
 
 Lors du premier lancement, l'application crée son fichier de paramètres à côté d'elle :
 - `MotecDataAnalyser.ini` — derniers dossiers + options UI (langue, profil, rapport complet).
@@ -35,8 +26,6 @@ Cliquez sur **Import Motec Data**. Une boîte de dialogue s'ouvre, filtrée sur 
 - le panneau **température des pneus** (températures intérieur/centre/extérieur par coin + pression),
 - le panneau **suspension / vitesse d'amortisseur** (distribution sur 41 bins −400…+400 mm/s par coin, débattement moyen, engagement du bumpstop).
 
-### Fichiers MoTeC CSV  →  `.csv`
-Le moteur d'analyse lit également les exports CSV standard de MoTeC. Le bouton dédié **"Load MoTeC CSV"** existe dans l'interface mais est masqué par défaut ; si vous avez besoin de le rendre visible (par exemple pour un build où seules des données CSV sont disponibles), réglez `ButtonLoad->Visible = true` lors de la création du formulaire et cliquez dessus — il ouvre une boîte de dialogue filtrée sur `*.csv`.
 
 ### Capture en direct
 - **Live (AMS2)** — lit la mémoire partagée d'AMS2 en temps réel ; sélectionne automatiquement le profil *AMS2*.
@@ -53,6 +42,27 @@ Ces contrôles UI s'enregistrent eux-mêmes dans `MotecDataAnalyser.ini` — auc
 | **Profile** | Evo / AMS2 / PMR | Profil de canal : *Evo*/*AMS2* sélectionnent la table de normalisation des noms de canaux pour l'import ; *Pmr* est réservé à la capture en direct (PMR UDP). |
 | **Language** | English / Français | Langue du rapport (toutes les chaînes de caractères sont localisées). |
 | **Full Report** | on/off | Active ou désactive les sections étendues du rapport écrit. |
+
+---
+
+## Visionneuse Tablette (rapport web en LAN)
+
+L'application peut servir le rapport d'analyse terminé sous forme de page web autonome à toute tablette ou téléphone sur votre réseau local — sans internet, sans application native.
+
+### Activation
+1. Ouvrir **Réglages → onglet « Visionneuse Tablette »**.
+2. Cocher **Activer le visionneur de rapport tablette (serveur web local)** et définir un port HTTP (défaut `8765`, plage 1024–65535).
+3. Cliquer sur **Enregistrer**. La barre d'état affiche l'URL, ex. : `Tablet viewer active — http://192.168.1.42:8765`.
+
+Au premier démarrage (ou après un changement de port), le Pare-feu Windows affichera une invite unique pour autoriser les connexions entrantes TCP sur ce port — cliquer sur **Autoriser l'accès**. L'application ne modifie jamais automatiquement les règles du pare-feu.
+
+### Fonctionnement
+- Le serveur démarre au lancement quand activé et tourne jusqu'à désactivation dans Réglages ou fermeture de l'app. La bascule en direct (sans redémarrage) est prise en charge.
+- À chaque analyse terminée (import fichier *ou* fin de capture live), la charge JSON est poussée automatiquement — les tablettes connectées se mettent à jour sous ~3 s par interrogation, sans rafraîchissement manuel.
+- La page affiche : 7 cartes textuelles + carte thermique des pneus + barres de température freins + histogrammes de vitesse d'amortisseurs. Avant toute analyse, un avis « aucune donnée » est affiché proprement.
+
+### Désactivation / arrêt
+Décocher la case dans Réglages puis Enregistrer (ou simplement fermer l'app). Les navigateurs connectés reçoivent une connexion refusée ; réactiver restaure le service immédiatement sans redémarrer l'application.
 
 ---
 

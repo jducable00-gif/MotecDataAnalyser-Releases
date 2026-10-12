@@ -8,15 +8,6 @@ Reports can be generated in **English** or **Français**. Channel names are norm
 
 ## Getting started
 
-You have three ways to run the app. All of them work identically once running — every file the app reads or writes lives **next to the executable**.
-
-| Option | What you need | Where it runs from |
-|--------|---------------|--------------------|
-| **Portable package** (recommended) | The `MotecDataAnalyser_Portable\` folder produced by `package.ps1`. Copy the whole folder anywhere and run `MotecDataAnalyser.exe`. No install, no C++ Builder required. | Anywhere — self-contained |
-| **Build output** | A successful build (`build.ps1`). Run `Win32\Debug\Project1.exe` (or your chosen config/platform). | `Win32\<Config>\` |
-| **IDE** | Open `Project1.cbproj`, target **Win32**, configuration **Debug**, then Build / Compile. | IDE-managed output dir |
-
-> The portable package ships the five runtime packages (`rtl`, `vcl`, `vclwinx`, `vclimg`, `bindengine`) as `.bpl` files beside the exe, so it starts on a clean machine without C++ Builder installed.
 
 On first run the app creates its settings file next to itself:
 - `MotecDataAnalyser.ini` — last folders + UI options (language, profile, full-report).
@@ -35,9 +26,6 @@ Click **Import Motec Data**. A file dialog opens filtered to `*.ld`. Pick your M
 - the **tyre temperature** panel (per-corner inner/centre/outer temps + pressure),
 - the **suspension / damper velocity** panel (41-bin distribution −400…+400 mm/s per corner, average travel, bumpstop engagement).
 
-### MoTeC CSV files  →  `.csv`
-The analysis engine also reads standard MoTeC CSV exports. The dedicated **"Load MoTeC CSV"** button exists in the UI but is hidden by default; if you need it visible (e.g. for a build where only CSV data is available), set `ButtonLoad->Visible = true` at form creation and click it — it opens a dialog filtered to `*.csv`.
-
 ### Live capture
 - **Live (AMS2)** — reads AMS2 shared memory in real time; auto-selects the *AMS2* profile.
 - **AC EVO Live** — reads AC Evora M1 live data; auto-selects the *Evo* profile.
@@ -53,6 +41,27 @@ These UI controls save themselves to `MotecDataAnalyser.ini` — no restart need
 | **Profile** | Evo / AMS2 / PMR | Channel profile: *Evo*/*AMS2* select the name-normalization tables for file imports; *Pmr* is live-capture only (PMR UDP). |
 | **Language** | English / Français | Report language (all report strings are localized). |
 | **Full Report** | on/off | Toggles the extended sections of the written-out report. |
+
+---
+
+## Tablet Viewer (LAN web report)
+
+The app can serve the completed analysis as a self-contained web page to any tablet or phone on your local network — no internet, no native app required.
+
+### Enabling it
+1. Open **Settings → Tablet Viewer** tab.
+2. Tick **Enable tablet report viewer (local web server)** and set an HTTP port (default `8765`, range 1024–65535).
+3. Click **Save**. The status bar shows the URL, e.g. `Tablet viewer active — http://192.168.1.42:8765`.
+
+On first start (or after a port change) Windows Firewall will show a one-time prompt for inbound TCP on that port — click **Allow access**. No firewall rules are modified automatically by the app.
+
+### How it works
+- The server starts at launch when enabled and runs until you disable it in Settings or close the app. Toggling live (no restart) is supported.
+- Every time an analysis completes (file import *or* live-capture stop), the JSON payload is pushed automatically — connected tablets re-render within ~3 s via polling, no manual refresh needed.
+- The page shows: 7 text finding cards + tyre-temp heat map + brake-temp bars + damper velocity histograms. Before any analysis it displays a "no data yet" notice gracefully.
+
+### Disabling / stopping
+Untick the checkbox in Settings and Save (or simply close the app). Connected browsers get connection-refused; re-enabling restores service immediately without an app restart.
 
 ---
 

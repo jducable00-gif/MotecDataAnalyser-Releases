@@ -162,7 +162,13 @@ inline void appendDamperHistogram(std::string& out, const char* cornerKey,
         out += buf;
     }
     out += "],\"mean\":" + jsonNumber(h.mean(), 1);
-    out += ",\"stdDev\":" + jsonNumber(h.stdDev(), 1) + "}";
+    out += ",\"stdDev\":" + jsonNumber(h.stdDev(), 1);
+    out += ",\"rebLo\":" + jsonNumber(h.percentReboundLow(g_thresholds.damperSlowSpeedRange), 1);
+    out += ",\"rebHi\":" + jsonNumber(h.percentReboundHigh(g_thresholds.damperSlowSpeedRange), 1);
+    out += ",\"rebAvg\":" + jsonNumber(h.percentReboundAvg(g_thresholds.damperSlowSpeedRange), 1);
+    out += ",\"bmpLo\":" + jsonNumber(h.percentBumpLow(g_thresholds.damperSlowSpeedRange), 1);
+    out += ",\"bmpHi\":" + jsonNumber(h.percentBumpHigh(g_thresholds.damperSlowSpeedRange), 1);
+    out += ",\"bmpAvg\":" + jsonNumber(h.percentBumpAvg(g_thresholds.damperSlowSpeedRange), 1) + "}";
 }
 
 // Builds the full tablet payload (plan §3). `lap` is the averaged lap used for the report;

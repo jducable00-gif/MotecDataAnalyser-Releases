@@ -1,5 +1,5 @@
-﻿//---------------------------------------------------------------------------
-// MotecSettingsForm.h — Dialog for configuring analysis thresholds.
+//---------------------------------------------------------------------------
+// MotecSettingsForm.h � Dialog for configuring analysis thresholds.
 //---------------------------------------------------------------------------
 
 #pragma once
@@ -100,6 +100,15 @@ __published:
     TEdit *EditPmrPort;
     TLabel *LblPmrHint;
 
+    // Tablet Viewer Tab (Phase D)
+    TTabSheet *TabTablet;
+    TGroupBox *GroupWebServer;
+    TCheckBox *ChkWebServerEnabled;
+    TLabel *LblWebUrl;
+    TLabel *LblWebPort;
+    TEdit *EditWebPort;
+    TLabel *LblWebHint;
+
     // Buttons
     TButton *ButtonSave;
     TButton *ButtonCancel;
@@ -107,6 +116,10 @@ __published:
     void __fastcall ButtonSaveClick(TObject *Sender);
     void __fastcall ButtonCancelClick(TObject *Sender);
     void __fastcall FormShow(TObject *Sender);
+    // Phase D: live start/stop on checkbox toggle (no Save needed)
+    void __fastcall ChkWebServerEnabledClick(TObject *Sender);
+    void __fastcall EditWebPortChange(TObject *Sender);   // keep LblWebUrl in sync while typing the port
+    void UpdateWebUrlLabel();
     // DFM-referenced handlers must stay in __published so VCL streaming can resolve them by name.
     void __fastcall EditPmrBindAddressChange(TObject *Sender);
     void __fastcall EditPmrBindAddressEnter(TObject *Sender);

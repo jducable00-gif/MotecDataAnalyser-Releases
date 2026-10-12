@@ -504,6 +504,58 @@ object FormMotecSettings: TFormMotecSettings
         end
       end
     end
+    object TabTablet: TTabSheet
+      Caption = 'Tablet Viewer'
+      object GroupWebServer: TGroupBox
+        Left = 16
+        Top = 16
+        Width = 552
+        Height = 140
+        Caption = 'Local Web Server'
+        TabOrder = 0
+        object ChkWebServerEnabled: TCheckBox
+          Left = 16
+          Top = 32
+          Width = 350
+          Height = 17
+          Caption = 'Enable tablet report viewer (local web server)'
+          TabOrder = 0
+          OnClick = ChkWebServerEnabledClick
+        end
+        object LblWebUrl: TLabel
+          Left = 384
+          Top = 35
+          Width = 120
+          Height = 15
+          AutoSize = True
+          Caption = 'http://...'
+        end
+        object LblWebPort: TLabel
+          Left = 16
+          Top = 64
+          Width = 90
+          Height = 15
+          Caption = 'HTTP Port:'
+        end
+        object EditWebPort: TEdit
+          Left = 170
+          Top = 60
+          Width = 80
+          Height = 23
+          TabOrder = 1
+          OnChange = EditWebPortChange
+          Text = '8765'
+        end
+        object LblWebHint: TLabel
+          Left = 16
+          Top = 92
+          Width = 480
+          Height = 32
+          AutoSize = False
+          Caption = '(When enabled, a local web server runs so connected tablets can view analysis results automatically.\r\nNote: Windows Firewall will prompt once on first start to allow inbound connections on the configured port.)'
+        end
+      end
+    end
   end
   object ButtonSave: TButton
     Left = 384

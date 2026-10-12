@@ -1,8 +1,11 @@
-﻿//---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 // MotecSettingsForm.cpp � Implementation of the settings dialog.
 //---------------------------------------------------------------------------
 
 #pragma hdrstop
+
+// WinSock for the LAN-IP lookup below; needed even when the web server (which normally calls WSAStartup) is off.
+#include <winsock2.h>
 
 #include <vcl.h>
 #include "MotecSettingsForm.h"
@@ -15,9 +18,57 @@ extern String ReadPmrBindAddressSetting();
 extern void   SavePmrBindAddressSetting(const String& addr);
 extern int     ReadPmrPortSetting();
 
+// Tablet Viewer web server INI helpers (defined in MotecSetupForm.cpp)
+extern bool   ReadWebServerEnabled();
+extern void   SaveWebServerEnabled(bool enabled);
+extern int    ReadWebServerPort();
+extern void   SaveWebServerPort(int port);
+
 // Access to global thresholds and helper functions from other units
 extern Thresholds g_thresholds;
-extern String ThresholdsFilePath(); 
+extern String ThresholdsFilePath();
+
+// Best-effort primary LAN IPv4 for the settings label. Self-contained WSA pair: Windows refcounts
+// WSAStartup/WSACleanup per process, so this is independent of the TabletReportServer reference.
+// Iterates ALL local addresses (gethostbyname returns them in adapter order) and picks the first
+// that looks like a real private-LAN address — skipping loopback (127.x), APIPA/link-local
+// (169.254.x, assigned to disconnected Ethernet ports), and other non-routable ranges.
+static String getLocalLanIpForLabel()
+{
+    WSADATA wsa; bool started = (::WSAStartup(MAKEWORD(2, 2), &wsa) == 0);
+    if (!started) return L"localhost";
+
+    char namebuf[256];
+    struct hostent* he = NULL;
+    String result = L"";   // empty until we find a good candidate
+
+    if (::gethostname(namebuf, sizeof(namebuf)) == 0)
+        he = ::gethostbyname(namebuf);
+
+    for (int i = 0; he != NULL && he->h_addr_list[i] != NULL; ++i) {
+        const struct in_addr& addr = *reinterpret_cast<const struct in_addr*>(he->h_addr_list[i]);
+        const unsigned char* b = reinterpret_cast<const unsigned char*>(&addr);
+
+        // Skip loopback (127.x), APIPA/link-local (169.254.x — disconnected adapters)
+        if (b[0] == 127 || b[0] == 169) continue;
+
+        // Prefer private LAN ranges: 10.x, 172.16-31.x, 192.168.x
+        bool isPrivate = false;
+        if (b[0] == 10)                                        isPrivate = true;
+        else if (b[0] == 172 && b[1] >= 16 && b[1] <= 31)      isPrivate = true;
+        else if (b[0] == 192 && b[1] == 168)                   isPrivate = true;
+
+        char buf[INET_ADDRSTRLEN];
+        if (::inet_ntop(AF_INET, &addr, buf, sizeof(buf)) != NULL) {
+            result = String(buf);
+            if (isPrivate) break;   // best candidate found — stop scanning
+        }
+    }
+
+    ::WSACleanup();
+    if (result.Length() == 0) return L"localhost";
+    return result;
+} 
 
 __fastcall TFormMotecSettings::TFormMotecSettings(TComponent* Owner)
     : TForm(Owner)
@@ -28,6 +79,7 @@ void __fastcall TFormMotecSettings::FormShow(TObject *Sender)
 {
     TranslateUI();
     LoadFromThresholds();
+    UpdateWebUrlLabel();   // show the tablet URL (IP+port) as soon as the dialog opens
 }
 
 void TFormMotecSettings::LoadFromThresholds()
@@ -82,6 +134,10 @@ void TFormMotecSettings::LoadFromThresholds()
         pmrAddrShowingPlaceholder = false;
     }
     EditPmrPort->Text = IntToStr(ReadPmrPortSetting());
+
+    // Tablet Viewer web server settings (from INI, not g_thresholds)
+    ChkWebServerEnabled->Checked = ReadWebServerEnabled();
+    EditWebPort->Text = IntToStr(ReadWebServerPort());
 }
 
 // Grayed-out "127.0.0.1" hint for the Bind Address field (this VCL has no PlaceholderText).
@@ -212,6 +268,19 @@ void __fastcall TFormMotecSettings::ButtonSaveClick(TObject *Sender)
             delete iniMain;
         }
 
+        // Tablet Viewer web server settings → [WebServer] section (same INI file).
+        int webPort = StrToIntDef(EditWebPort->Text, 8765);
+        if (webPort < 1024 || webPort > 65535) {
+            ShowMessage("Tablet viewer port must be between 1024 and 65535.");
+            return;
+        }
+        UpdateWebUrlLabel();   // refresh the tablet URL label on enable/disable toggle
+    SaveWebServerEnabled(ChkWebServerEnabled->Checked);
+        SaveWebServerPort(webPort);
+
+        // Live-apply: start/stop the server immediately without restarting.
+        FormMotecSetup->ApplyWebServerSettings();
+
         ModalResult = mrOk;
     } catch (...) {
         // Error message already shown in SaveToThresholds
@@ -221,6 +290,30 @@ void __fastcall TFormMotecSettings::ButtonSaveClick(TObject *Sender)
 void __fastcall TFormMotecSettings::ButtonCancelClick(TObject *Sender)
 {
     ModalResult = mrCancel;
+}
+
+// Phase D3: live start/stop on checkbox toggle — persist immediately so the running app reacts.
+void __fastcall TFormMotecSettings::ChkWebServerEnabledClick(TObject *Sender)
+{
+    UpdateWebUrlLabel();   // refresh the tablet URL label on enable/disable toggle
+    SaveWebServerEnabled(ChkWebServerEnabled->Checked);
+    FormMotecSetup->ApplyWebServerSettings();
+}
+
+void TFormMotecSettings::UpdateWebUrlLabel()
+{
+    const int port = StrToIntDef(EditWebPort->Text, 8765);
+    LblWebUrl->Caption = "http://" + getLocalLanIpForLabel() + ":" + IntToStr(port);
+    // Dim the URL while disabled so it reads as informational, not active.
+    if (ChkWebServerEnabled->Checked)
+        LblWebUrl->Font->Color = clNavy;
+    else
+        LblWebUrl->Font->Color = clGray;
+}
+
+void __fastcall TFormMotecSettings::EditWebPortChange(TObject *Sender)
+{
+    UpdateWebUrlLabel();   // live-update the URL while the user types a new port
 }
 
 #pragma package(smart_init)
@@ -285,9 +378,16 @@ void TFormMotecSettings::TranslateUI()
     LblPmrPort->Caption = isFr ? "Port UDP :" : "UDP Port:";
     LblPmrHint->Caption = isFr ? "(Laisser vide pour écouter sur toutes les interfaces)" : "(Leave Bind Address empty to listen on all interfaces)";
 
+    TabTablet->Caption = isFr ? "Visionneuse Tablette" : "Tablet Viewer";
+    GroupWebServer->Caption = isFr ? "Serveur Web Local" : "Local Web Server";
+    ChkWebServerEnabled->Caption = isFr ? "Activer le visionneur de rapport tablette (serveur web local)" : "Enable tablet report viewer (local web server)";
+    LblWebPort->Caption = isFr ? "Port HTTP :" : "HTTP Port:";
+    LblWebHint->Caption = isFr
+        ? "(Quand activé, un serveur web local permet aux tablettes connectées de voir les résultats d'analyse automatiquement.\r\nNote : le Pare-feu Windows demandera une autorisation à la première activation pour le port configuré.)"
+        : "(When enabled, a local web server runs so connected tablets can view analysis results automatically.\r\nNote: Windows Firewall will prompt once on first start to allow inbound connections on the configured port.)";
+
     ButtonSave->Caption = isFr ? "Enregistrer" : "Save";
     ButtonCancel->Caption = isFr ? "Annuler" : "Cancel";
 }
 
 #pragma package(smart_init)
-
