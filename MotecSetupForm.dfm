@@ -2,7 +2,7 @@ object FormMotecSetup: TFormMotecSetup
   Left = 0
   Top = 0
   Caption = 'AC EVO  - MoTeC Setup Analyzer'
-  ClientHeight = 1173
+  ClientHeight = 1061
   ClientWidth = 1471
   Color = clWhite
   Font.Charset = DEFAULT_CHARSET
@@ -110,8 +110,8 @@ object FormMotecSetup: TFormMotecSetup
         Height = 344
         Align = alClient
         OnPaint = DamperCombinedPaintBoxPaint
-        ExplicitLeft = 3
-        ExplicitHeight = 326
+        ExplicitLeft = -4
+        ExplicitTop = 4
       end
     end
   end
@@ -275,7 +275,7 @@ object FormMotecSetup: TFormMotecSetup
   end
   object StatusBar1: TStatusBar
     Left = 0
-    Top = 1154
+    Top = 1042
     Width = 1471
     Height = 19
     Panels = <
@@ -284,7 +284,7 @@ object FormMotecSetup: TFormMotecSetup
         Width = 50
       end
       item
-        Text = 'V5.2.2'
+        Text = 'V5.3'
         Width = 50
       end>
   end

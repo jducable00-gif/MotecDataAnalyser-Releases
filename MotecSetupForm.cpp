@@ -373,6 +373,9 @@ void SaveLiveCaptureSetting(bool enabled)
 
 TFormMotecSetup::~TFormMotecSetup()
 {
+    // Ensure live capture is stopped to release shared memory handles and sockets
+    stopLiveCapture();
+
     // Phase E2: graceful shutdown — stop the tablet server before tearing down VCL/GDI+.
     if (_tabletServer.isRunning()) _tabletServer.stop();
 
@@ -842,7 +845,9 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
 		// Restore previous state and run the normal start path (timers, connection search)
 		LiveCaptureCheckBox->Checked = true;
 		LiveCaptureCheckBoxClick(this);
-	}
+	} else if (LiveCaptureCheckBox != NULL) {
+        LiveCaptureCheckBox->Checked = false;
+    }
 
 	TranslateUI();
 	updateResetButtonState();
@@ -2352,9 +2357,14 @@ void __fastcall TFormMotecSetup::AutoDetectTrackCheckBoxClick(TObject *Sender)
 
 void __fastcall TFormMotecSetup::LiveCaptureCheckBoxClick(TObject *Sender)
 {
-	SaveLiveCaptureSetting(LiveCaptureCheckBox != NULL && LiveCaptureCheckBox->Checked);
+	bool isChecked = (LiveCaptureCheckBox != NULL && LiveCaptureCheckBox->Checked);
+	SaveLiveCaptureSetting(isChecked);
 
-	if (LiveCaptureCheckBox->Checked) {
+    // Mutual exclusivity with import buttons
+	if (isChecked) {
+		if (ButtonLoad != NULL) ButtonLoad->Enabled = false;
+		if (Button1 != NULL) Button1->Enabled = false;
+
 		liveActive = true;
 		liveConnected = false;
 
@@ -2379,6 +2389,9 @@ void __fastcall TFormMotecSetup::LiveCaptureCheckBoxClick(TObject *Sender)
 		LiveConnectTimer->Enabled = true;
 		updateResetButtonState();
 	} else {
+		if (ButtonLoad != NULL) ButtonLoad->Enabled = true;
+		if (Button1 != NULL) Button1->Enabled = true;
+
 		stopLiveCapture();
 		updateResetButtonState();
 	}

@@ -25,6 +25,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 class TabletReportServer {
 public:
@@ -67,6 +68,8 @@ private:
     std::atomic<bool> running_{false};
     bool wsaHeld_ = false;   // set in start(), cleared by the first stop() that runs — plain bool: only touched on the UI thread
     std::atomic<int> activeHandlers_{0};   // bounded to kMaxConcurrentConnections
+    std::vector<std::thread> handlerThreads_; // track handlers for graceful join
+    std::mutex threadsMutex_;                // guards handlerThreads_
 
     mutable std::mutex payloadMutex_;      // guards payload_, version_ (read by handlers)
     std::string payload_;                  // current JSON document, empty doc at startup

@@ -234,7 +234,8 @@ void TabletReportServer::acceptLoop(TabletReportServer* self) {
                 ::closesocket(clientSock);   // at capacity — drop the connection
                 self->activeHandlers_.fetch_sub(1);
             } else {
-                std::thread(handleConnection, clientSock, self).detach();
+                std::lock_guard<std::mutex> lock(self->threadsMutex_);
+                self->handlerThreads_.emplace_back(handleConnection, clientSock, self);
             }
         }
     }
@@ -292,6 +293,15 @@ void TabletReportServer::stop() {
 
     if (acceptThread_.joinable()) {
         acceptThread_.join();            // bounded: the loop polls running_ every <=500 ms
+    }
+
+    // Join all handler threads to prevent access violations on exit
+    {
+        std::lock_guard<std::mutex> lock(threadsMutex_);
+        for (auto& t : handlerThreads_) {
+            if (t.joinable()) t.join();
+        }
+        handlerThreads_.clear();
     }
 
     if (wsaHeld_) { wsaHeld_ = false; releaseWsa(); }   // last instance down -> WSACleanup inside here, exactly once per start()
