@@ -15,6 +15,8 @@
 #pragma hdrstop
 
 #include <System.UITypes.hpp>
+#include <winsock2.h>
+
 #include <System.SysUtils.hpp>
 #include <IniFiles.hpp>
 #include <shlobj.h>
@@ -27,6 +29,7 @@
 #include "MotecSetupForm.h"
 #include "MotecToCSV.h"
 #include "RuleConfig.h"
+#include "ReportJsonWriter.h"
 #include "MotecSettingsForm.h"
 #include <gdiplus.h>
 
@@ -206,6 +209,71 @@ void SavePmrPortSetting(int port)
 	}
 }
 
+// Tablet web server settings: persisted as [WebServer] Enabled/Port in the main
+// UI-options INI (same file/location pattern as PMR). Default port 8765.
+int ReadWebServerPort()
+{
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		int value = settings->ReadInteger("WebServer", "Port", 8765);
+		if (value < 1024 || value > 65535)
+			value = 8765;
+		return value;
+	} __finally {
+		delete settings;
+	}
+}
+
+void SaveWebServerPort(int port)
+{
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		settings->WriteInteger("WebServer", "Port", port);
+	} __finally {
+		delete settings;
+	}
+}
+
+bool ReadWebServerEnabled()
+{
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		return settings->ReadInteger("WebServer", "Enabled", 0) == 1;
+	} __finally {
+		delete settings;
+	}
+}
+
+void SaveWebServerEnabled(bool enabled)
+{
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		settings->WriteInteger("WebServer", "Enabled", enabled ? 1 : 0);
+	} __finally {
+		delete settings;
+	}
+}
+
+// Best-effort primary LAN IPv4 address for the status-bar URL (B4).
+static String getLocalLanIp()
+{
+	char namebuf[256];
+	if (::gethostname(namebuf, sizeof(namebuf)) != 0)
+		return L"localhost";
+
+	struct hostent* he = ::gethostbyname(namebuf);
+	if (he == NULL || he->h_addr_list[0] == NULL)
+		return L"localhost";
+
+	char buf[INET_ADDRSTRLEN];
+	const struct in_addr addr = *(reinterpret_cast<const struct in_addr*>(he->h_addr_list[0]));
+	// Windows WinSock inet_ntop() returns PCSTR (NULL on failure), unlike POSIX int.
+	if (::inet_ntop(AF_INET, &addr, buf, sizeof(buf)) != NULL && strcmp(buf, "127.0.0.1") != 0)
+		return String(buf);
+
+	return L"localhost";
+}
+
 // PMR UDP bind address: persisted as [PMR] BindAddress. Empty string = INADDR_ANY (all interfaces).
 String ReadPmrBindAddressSetting()
 {
@@ -305,6 +373,9 @@ void SaveLiveCaptureSetting(bool enabled)
 
 TFormMotecSetup::~TFormMotecSetup()
 {
+    // Phase E2: graceful shutdown — stop the tablet server before tearing down VCL/GDI+.
+    if (_tabletServer.isRunning()) _tabletServer.stop();
+
     Gdiplus::GdiplusShutdown(gdiplusToken);
 }
 
@@ -727,6 +798,16 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
 	// (creates the file with defaults if it does not exist yet).
 	loadThresholds();
 
+	// Tablet viewer: auto-start the embedded HTTP server when enabled in INI.
+	if (ReadWebServerEnabled()) {
+		const int webPort = ReadWebServerPort();
+		_tabletServer.setPort(webPort);
+		if (!_tabletServer.isRunning() && _tabletServer.start()) {
+			StatusBar1->SimpleText = "Tablet viewer active — http://" + getLocalLanIp()
+				+ ":" + IntToStr(_tabletServer.port());
+		}
+	}
+
 	if (LanguageCombo != NULL) {
 		LanguageCombo->Items->Clear();
 		LanguageCombo->Items->Add("English");
@@ -1129,7 +1210,7 @@ void __fastcall TFormMotecSetup::BrakeTempPaintBoxPaint(TObject *Sender)
     const int gaugeX = leftPad + 2 * (iconSize + colGap) + 30; // x of gauge column (pushed to the right)
     const float gaugeD = 46.0f;                            // same diameter as brake discs
 
-    auto drawTempGauge = [&](float gx, float gy, double tempValue, bool dataValid, double warnThreshold, const wchar_t* caption) {
+    auto drawTempGauge = [&](float gx, float gy, double tempValue, double maxTempValue, bool dataValid, double warnThreshold, const wchar_t* caption) {
         float cx = gx + gaugeD / 2.0f;
         float cy = gy + gaugeD / 2.0f;
 
@@ -1213,21 +1294,28 @@ void __fastcall TFormMotecSetup::BrakeTempPaintBoxPaint(TObject *Sender)
 
         // Value text
         wchar_t valBuf[16];
+        wchar_t maxBuf[16];
         Gdiplus::RectF valRect(gx - 6.0f, gy + gaugeD + 17.0f, gaugeD + 12.0f, 14.0f);
+        Gdiplus::RectF maxRect(gx - 6.0f, gy + gaugeD + 31.0f, gaugeD + 12.0f, 14.0f);
         if (dataValid) {
-            swprintf(valBuf, 16, L"%.0fC", tempValue);
+            swprintf(valBuf, 16, L"Avg: %.0fC", tempValue);
             Gdiplus::SolidBrush valBrush(Gdiplus::Color(255, 100, 200, 255));
             graphics.DrawString(valBuf, -1, &tempFont, valRect, &centerFmt, &valBrush);
+
+            swprintf(maxBuf, 16, L"Max: %.0fC", maxTempValue);
+            Gdiplus::SolidBrush maxBrakeBrush(Gdiplus::Color(255, 255, 130, 130));
+            graphics.DrawString(maxBuf, -1, &tempFont, maxRect, &centerFmt, &maxBrakeBrush);
         } else {
             Gdiplus::SolidBrush noDataBrush(Gdiplus::Color(255, 140, 140, 140));
             graphics.DrawString(L"--", -1, &tempFont, valRect, &centerFmt, &noDataBrush);
+            graphics.DrawString(L"--", -1, &tempFont, maxRect, &centerFmt, &noDataBrush);
         }
     };
 
     // Water gauge (front row) and Oil gauge (rear row)
     // Needle turns red above the configured warning thresholds
-    drawTempGauge((float)gaugeX, (float)topY0, waterTemp.avg, waterTemp.valid, g_thresholds.waterTempMax, L"Water");
-    drawTempGauge((float)gaugeX, (float)topY1, oilTemp.avg, oilTemp.valid, g_thresholds.oilTempMax, L"Oil");
+    drawTempGauge((float)gaugeX, (float)topY0, waterTemp.avg, waterTemp.max, waterTemp.valid, g_thresholds.waterTempMax, L"Water");
+    drawTempGauge((float)gaugeX, (float)topY1, oilTemp.avg, oilTemp.max, oilTemp.valid, g_thresholds.oilTempMax, L"Oil");
 }
 
 void __fastcall TFormMotecSetup::DrawModernHistogram(TCanvas* canvas, int x, int y, int width, int height, const SuspensionCornerData& stats, const String& label)
@@ -1812,24 +1900,19 @@ void __fastcall TFormMotecSetup::UpdateBrakeTemps(const std::vector<LapStats>& l
         return;
     }
 
-    // Use the last lap for current brake temperatures as they are per-lap stats
-    const LapStats& stats = laps.back();
+    // Use averaged data for brake and engine temperatures across all valid laps
+    LapStats avg = buildAverageLapData(laps);
 
     for (int i = 0; i < 4; ++i) {
         const StatSummary* summary = nullptr;
         switch (i) {
-            case 0: summary = &stats.brakeTempLF; break; // FL
-            case 1: summary = &stats.brakeTempRF; break; // FR
-            case 2: summary = &stats.brakeTempLR; break; // RL
-            case 3: summary = &stats.brakeTempRR; break; // RR
+            case 0: summary = &avg.brakeTempLF; break; // FL
+            case 1: summary = &avg.brakeTempRF; break; // FR
+            case 2: summary = &avg.brakeTempLR; break; // RL
+            case 3: summary = &avg.brakeTempRR; break; // RR
         }
 
         if (summary && summary->count > 0) {
-            // For average, we might want to aggregate over all laps if that's what the user expects,
-            // but usually brake temps are shown for the current/last lap or an average.
-            // Given the previous implementation used 'stats', I will stick to providing data from the provided vector.
-            // However, since it's a vector of laps, we should probably aggregate if we want "average" as requested in legend.
-            // But for now, let's just fix the signature and use the last lap to satisfy the linker.
             brakeTemps[i].avg = summary->average(); 
             brakeTemps[i].max = summary->max;
             brakeTemps[i].valid = true;
@@ -1839,17 +1922,17 @@ void __fastcall TFormMotecSetup::UpdateBrakeTemps(const std::vector<LapStats>& l
     }
 
     // Water & Oil temperatures
-    if (stats.waterTemp.count > 0) {
-        waterTemp.avg = stats.waterTemp.average();
-        waterTemp.max = stats.waterTemp.max;
+    if (avg.waterTemp.count > 0) {
+        waterTemp.avg = avg.waterTemp.average();
+        waterTemp.max = avg.waterTemp.max;
         waterTemp.valid = true;
     } else {
         waterTemp.valid = false;
     }
 
-    if (stats.oilTemp.count > 0) {
-        oilTemp.avg = stats.oilTemp.average();
-        oilTemp.max = stats.oilTemp.max;
+    if (avg.oilTemp.count > 0) {
+        oilTemp.avg = avg.oilTemp.average();
+        oilTemp.max = avg.oilTemp.max;
         oilTemp.valid = true;
     } else {
         oilTemp.valid = false;
@@ -2119,6 +2202,7 @@ bool __fastcall TFormMotecSetup::AnalyzeSelectedFile(const std::string& filePath
 	ReportResult result = buildAverageLapReport(laps, language, profile);
 
     UpdateReportTabs(result);
+    publishToTabletServer(result, laps);
     std::vector<LapStats> validLaps = LapReportGenerator::getValidLaps(laps);
     UpdateTireTemps(validLaps);
     UpdateBrakeTemps(validLaps);
@@ -2152,6 +2236,7 @@ bool __fastcall TFormMotecSetup::AnalyzeSelectedLdFile(const std::string& filePa
 	ReportResult result = buildAverageLapReport(laps, language, profile);
 
     UpdateReportTabs(result);
+    publishToTabletServer(result, laps);
     std::vector<LapStats> validLaps = LapReportGenerator::getValidLaps(laps);
     UpdateTireTemps(validLaps);
     UpdateBrakeTemps(validLaps);
@@ -2752,6 +2837,7 @@ void __fastcall TFormMotecSetup::generateLiveReport()
 	ReportResult result = buildAverageLapReport(liveLaps, language, profile);
 
     UpdateReportTabs(result);
+    publishToTabletServer(result, liveLaps);
 
     // Update graphics (valid laps only, consistent with the report)
     std::vector<LapStats> validLiveLaps = LapReportGenerator::getValidLaps(liveLaps);
@@ -2762,6 +2848,37 @@ void __fastcall TFormMotecSetup::generateLiveReport()
         PageControlReport->ActivePage = TabSummary;
 
     //StatusBar1->SimpleText = "Live capture complete — " + IntToStr((int)liveLaps.size()) + " laps";
+}
+
+// B5: push a fresh JSON payload to the tablet server after every analysis.
+// No-op when the server is disabled/not running. The version counter lets
+// polling clients detect changes without re-rendering identical data.
+void __fastcall TFormMotecSetup::publishToTabletServer(const ReportResult& result, const std::vector<LapStats>& laps)
+{
+    if (!_tabletServer.isRunning()) return;
+
+    LapStats avg = buildAverageLapData(laps);
+    int included = (int)LapReportGenerator::getValidLaps(laps).size();
+    ++tabletVersion_;
+    _tabletServer.setPayload(reportjson::buildReportJson(result, avg, included, tabletVersion_));
+}
+
+// Phase D3: live start/stop/restart the tablet web server when settings change in Settings dialog.
+void TFormMotecSetup::ApplyWebServerSettings()
+{
+    if (_tabletServer.isRunning()) _tabletServer.stop();
+
+    int port = ReadWebServerPort();
+    bool enabled = ReadWebServerEnabled();
+
+    if (enabled) {
+        _tabletServer.setPort(port);
+        if (!_tabletServer.start()) return;  // start() already shows an error message on failure
+        StatusBar1->SimpleText = "Tablet viewer active — http://" + getLocalLanIp()
+                + ":" + IntToStr(_tabletServer.port());
+    } else {
+        StatusBar1->SimpleText = "";
+    }
 }
 
 void __fastcall TFormMotecSetup::UpdateReportTabs(const ReportResult& result)
