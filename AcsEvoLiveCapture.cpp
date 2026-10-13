@@ -33,6 +33,58 @@ static void*  g_pStatic   = NULL;
 static const double DEG_PER_RAD = 180.0 / 3.14159265358979323846;
 
 std::string AcsEvoGetChannelTableWarning();   // defined below
+
+// ---------------------------------------------------------------------------
+// One-time diagnostic: dump the RAW shared-memory values for every channel we
+// feed, so a "0°" report can be attributed to the game (writes 0.0f) vs our
+// pipeline (drops/zeroes it). Written next to the exe as ac_evo_diag.txt on
+// the first frame after connect; delete this block once diagnosed.
+// ---------------------------------------------------------------------------
+static void AcsEvoDumpRawDiagOnce(const SPageFilePhysics& phys, const SPageFileGraphicEvo& gfx) {
+    static bool done = false;
+    if (done) return;
+    done = true;
+
+    char path[MAX_PATH] = {0};
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    char* p = path + strlen(path);
+    while (p > path && *p != '\\' && *p != '/') --p;
+    size_t remaining = MAX_PATH - static_cast<size_t>(p - path);
+    strcpy_s(p, remaining, "\\ac_evo_diag.txt");
+
+    FILE* f = NULL;
+    fopen_s(&f, path, "w");
+    if (!f) return;
+
+    fprintf(f, "AC EVO raw shared-memory dump (first frame)\n\n");
+    for (int i = 0; i < 4; ++i) {
+        const char* w[4] = {"FL", "FR", "RL", "RR"};
+        fprintf(f, "%s: tyreTempI=%.2f  tyreTempM=%.2f  tyreTempO=%.2f  tyreTemp=%.2f\n",
+                w[i], (double)phys.tyreTempI[i], (double)phys.tyreTempM[i],
+                (double)phys.tyreTempO[i], (double)phys.tyreTemp[i]);
+    }
+    fprintf(f, "\n");
+    for (int i = 0; i < 4; ++i) {
+        const char* w[4] = {"FL", "FR", "RL", "RR"};
+        fprintf(f, "%s: pressure=%.2f  brakeTemp=%.1f  wheelAngSpeed=%.3f  suspTravel=%.5f\n",
+                w[i], (double)phys.wheelsPressure[i], (double)phys.brakeTemp[i],
+                (double)phys.wheelAngularSpeed[i], (double)phys.suspensionTravel[i]);
+    }
+    fprintf(f, "\n");
+    for (int i = 0; i < 4; ++i) {
+        const char* w[4] = {"FL", "FR", "RL", "RR"};
+        const SMEvoTyreState& t = (&gfx.tyre_lf)[i];   // lf, rf, lr, rr are contiguous in the struct
+        fprintf(f, "%s gfx: temp_c=%.2f  left=%.2f  center=%.2f  right=%.2f\n",
+                w[i], (double)t.tyre_temperature_c, (double)t.tyre_temperature_left,
+                (double)t.tyre_temperature_center, (double)t.tyre_temperature_right);
+    }
+    fprintf(f, "\n");
+    fprintf(f, "waterTemp=%.1f  oil_temp(gfx)=%.2f  rideHeight[0]=%.5f  rideHeight[1]=%.5f\n",
+            (double)phys.waterTemp, (double)gfx.oil_temperature_c,
+            (double)phys.rideHeight[0], (double)phys.rideHeight[1]);
+
+    fclose(f);
+}
 // Resolved channel table for EVOM1 LIVE rows (mapping.json), built ONCE on first use.
 // Unit conversions live in mapping.json, not here: this function only extracts RAW values
 // from the shared-memory frames and lets FeedLapFromTable() apply factor/offset per row.
@@ -269,6 +321,9 @@ void AcsEvoFeedLap(LapStats& lap, const SPageFilePhysics& phys,
 {
     LiveChannel::ResolvedChannelTable& table = AcsEvoGetChannelTable();
 
+    AcsEvoDumpRawDiagOnce(phys, gfx);   // one-time raw-value dump -> ac_evo_diag.txt (delete after diagnosis)
+
+
     // --- Raw channel dictionary (RAW values only - no unit conversion here). ---
     // Keys MUST match the "channel" field of mapping.json EVOM1 LIVE rows EXACTLY.
     std::unordered_map<std::string, double> raw;
@@ -302,6 +357,21 @@ void AcsEvoFeedLap(LapStats& lap, const SPageFilePhysics& phys,
     raw["physics.fuel"]                = phys.fuel * 100.0;                 // % - pre-computed so the ratio row lands in percent, matching old C++
     raw["physics.rideHeight[0]"]       = phys.rideHeight[0];               // m -> cm x100 via table (aeroHeight0)
     raw["physics.rideHeight[1]"]        = phys.rideHeight[1];               // m -> cm x100 via table (aeroHeight1)
+
+    // Per-band tyre temps: AC EVO writes these ONLY on the graphics page, not physics.
+    // The physics arrays (tyreTempI/M/O) are always 0.0f in practice.
+    raw["graphics.tyre_lf.temp_left"]   = gfx.tyre_lf.tyre_temperature_left;   // C
+    raw["graphics.tyre_lf.temp_center"]  = gfx.tyre_lf.tyre_temperature_center;
+    raw["graphics.tyre_lf.temp_right"]   = gfx.tyre_lf.tyre_temperature_right;
+    raw["graphics.tyre_rf.temp_left"]   = gfx.tyre_rf.tyre_temperature_left;   // C
+    raw["graphics.tyre_rf.temp_center"]  = gfx.tyre_rf.tyre_temperature_center;
+    raw["graphics.tyre_rf.temp_right"]   = gfx.tyre_rf.tyre_temperature_right;
+    raw["graphics.tyre_lr.temp_left"]   = gfx.tyre_lr.tyre_temperature_left;   // C
+    raw["graphics.tyre_lr.temp_center"]  = gfx.tyre_lr.tyre_temperature_center;
+    raw["graphics.tyre_lr.temp_right"]   = gfx.tyre_lr.tyre_temperature_right;
+    raw["graphics.tyre_rr.temp_left"]   = gfx.tyre_rr.tyre_temperature_left;   // C
+    raw["graphics.tyre_rr.temp_center"]  = gfx.tyre_rr.tyre_temperature_center;
+    raw["graphics.tyre_rr.temp_right"]   = gfx.tyre_rr.tyre_temperature_right;
 
     // --- Generic table-driven feed: v = raw * factor + offset -> LapStats sink. ---
     LiveChannel::FeedLapFromTable(lap, raw, table, timeSeconds);

@@ -2327,7 +2327,9 @@ void __fastcall TFormMotecSetup::resetLiveSession()
 	previous_mCurrentTime = 0.0f;
 	lastPitMode = -1;
 
-	pmrPrevSector = -1;   // PMR: no sector state until the first participant packet arrives
+	pmrPrevSector = -1;      // PMR: no sector state until the first participant packet arrives
+	liveEvoPrevNPos = -1.0f;  // AC EVO: no npos history until back on track
+	liveEvoPitReportDone = false;
 
 	// Clear all displayed data (tyre temps, brake temps, suspension/damper histograms)
 	resetAnalysisGraphics();
@@ -2452,6 +2454,13 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
                 liveTrackName = stat.track;
 
             MemoSummary->Lines->Add("Live: connected to AC EVO. Waiting for car to leave pits...");
+
+            // Surface channel-table problems immediately (e.g. mapping.json missing next to the exe).
+            {
+                std::string tblWarn = AcsEvoGetChannelTableWarning();
+                if (!tblWarn.empty())
+                    MemoSummary->Lines->Add(String(tblWarn.c_str()));
+            }
 			//StatusBar1->SimpleText = "Live: connected (AC EVO) — waiting for track";
         }
         else if (liveMode == LIVE_PMR)
@@ -2460,6 +2469,13 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
             String pmrAddr = ReadPmrBindAddressSetting().Trim();
             String pmrWhere = pmrAddr.IsEmpty() ? "all interfaces" : ("*" + pmrAddr);
             MemoSummary->Lines->Add("Live: PMR UDP listening on " + pmrWhere + ":" + IntToStr(ReadPmrPortSetting()) + ". Waiting for telemetry...");
+
+            // Surface channel-table problems immediately (e.g. mapping.json missing next to the exe).
+            {
+                std::string tblWarn = PmrGetChannelTableWarning();
+                if (!tblWarn.empty())
+                    MemoSummary->Lines->Add(String(tblWarn.c_str()));
+            }
 			//StatusBar1->SimpleText = "Live: connected (PMR) — waiting for telemetry";
         }
         else
@@ -2469,6 +2485,13 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
             // Instead, let processLiveFrame handle the status updates.
 			//StatusBar1->SimpleText = "Live: connected — waiting for car to leave pits...";
             MemoSummary->Lines->Add("Live: connected to AMS2. Waiting for car to leave pits...");
+
+            // Surface channel-table problems immediately (e.g. mapping.json missing next to the exe).
+            {
+                std::string tblWarn = Ams2GetChannelTableWarning();
+                if (!tblWarn.empty())
+                    MemoSummary->Lines->Add(String(tblWarn.c_str()));
+            }
         }
     }
     else
@@ -2682,6 +2705,13 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
 {
     bool onTrack = AcsEvoIsOnTrack(gfx);
 	bool inPits = AcsEvoIsInPits(gfx);
+    // --- In-game restart detection: current_lap drops back to ~1 while we're at a high number.
+    if (prevCurrentLapEvo > 2 && gfx.session_state.current_lap <= 1) {
+        resetLiveSession();
+        MemoSummary->Lines->Add("Auto: in-game restart detected, session reset.");
+    }
+    prevCurrentLapEvo = gfx.session_state.current_lap;
+
 
 	// Auto-detect: if back on track after a completed session, reset for a fresh start
 	if (onTrack && !liveWasOnTrack && AutoDetectTrackCheckBox != NULL && AutoDetectTrackCheckBox->Checked && !liveLaps.empty()) {
@@ -2692,6 +2722,7 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
     // Detect pit → track transition: start a new lap
     if (onTrack && !liveWasOnTrack)
     {
+        liveEvoPitReportDone = false;  // allow report again on next pit visit
         liveLapInProgress = true;
         liveLapNumber++;
         liveCurrentLap = LapStats();
@@ -2700,21 +2731,49 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
         liveCurrentLap.vehicleName = gfx.car_model;
         liveCurrentLap.trackName = liveTrackName;
 
+        // Seed npos so the wrap detector doesn't fire on this same frame:
+        // pit exit is at npos≈0.95, next frame drops to <0.2 — looks like a line
+        // crossing but you've only driven ~3% of track length. By seeding here,
+        // prevNPos == curNPos and the > 0.8 && < 0.2 condition can't trigger.
+        liveEvoPrevNPos = gfx.npos;
+
         MemoSummary->Lines->Add("Lap " + IntToStr(liveLapNumber) + " started.");
 		//StatusBar1->SimpleText = "Live: Lap " + IntToStr(liveLapNumber) + " in progress";
     }
 
-    // Detect track → pit transition: finalize the lap
-    if (inPits && liveWasOnTrack && liveLapInProgress)
+    // Detect track → pit arrival: finalize the lap.
+    // No liveWasOnTrack guard — teleports (ESC menu) can skip a frame where neither
+    // onTrack nor inPits is true, clearing liveWasOnTrack before we settle into pits.
+    if (inPits && liveLapInProgress)
     {
         liveCurrentLap.endTime = (double)GetTickCount64() / 1000.0;
         finalizeLiveLap();
     }
 
-    // If we entered pits and have captured laps, generate a report even if no lap is currently in progress
-    if (inPits && liveWasOnTrack && !liveLapInProgress && !liveLaps.empty())
+    // If in pits and have captured laps, generate a report once per pit visit.
+    // liveEvoPitReportDone prevents re-firing every tick while parked; reset on lap start / session reset.
+    if (inPits && !liveLapInProgress && !liveLaps.empty() && !liveEvoPitReportDone)
     {
         generateLiveReport();
+        liveEvoPitReportDone = true;
+    }
+
+    // --- npos wrap detection: prev > 0.8 && cur < 0.2 → start/finish line crossing on track ---
+    // Catches laps that complete without a pit stop (normalized position wraps ~1 -> 0).
+    if (onTrack && liveLapInProgress && liveEvoPrevNPos > 0.8f && gfx.npos < 0.2f) {
+        liveCurrentLap.endTime = (double)GetTickCount64() / 1000.0;
+        finalizeLiveLap();
+
+        // Immediately start the next lap so we don't lose data across the line crossing.
+        ++liveLapNumber;
+        liveLapInProgress    = true;   // re-arm: finalizeLiveLap() set it false above
+        liveCurrentLap     = LapStats();
+        liveCurrentLap.lapNumber   = liveLapNumber;
+        liveCurrentLap.startTime   = (double)GetTickCount64() / 1000.0;
+        liveCurrentLap.vehicleName = gfx.car_model;
+        liveCurrentLap.trackName   = liveTrackName;
+
+        MemoSummary->Lines->Add("Lap " + IntToStr(liveLapNumber) + " started (line crossing).");
     }
 
     // Feed data only when on track and lap is in progress
@@ -2722,7 +2781,11 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
     {
         double timeSeconds = (double)GetTickCount64() / 1000.0;
         AcsEvoFeedLap(liveCurrentLap, phys, gfx, timeSeconds);
+        liveEvoPrevNPos = gfx.npos;   // track npos only while feeding a lap on-track
     }
+
+    if (!onTrack)
+        liveEvoPrevNPos = -1.0f;      // stale position must not trigger a wrap after rejoining the track
 
     liveWasOnTrack = onTrack;
 }
@@ -2794,6 +2857,7 @@ void __fastcall TFormMotecSetup::processLiveFramePmir()
 
         // Immediately start the next lap so we don't lose data between sectors.
         ++liveLapNumber;
+        liveLapInProgress    = true;   // re-arm: finalizeLiveLap() set it false above
         liveCurrentLap     = LapStats();
         liveCurrentLap.lapNumber   = liveLapNumber;
         liveCurrentLap.startTime   = (double)GetTickCount64() / 1000.0;

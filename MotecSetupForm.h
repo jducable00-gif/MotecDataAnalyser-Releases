@@ -185,6 +185,11 @@ public:
     // --- PMR State Tracking (for event detection) ---
     int pmrPrevSector = -1;         // last known sector for the player vehicle (-1 = unknown / no state yet)
 
+    // --- AC EVO State Tracking (for event detection) ---
+    float liveEvoPrevNPos = -1.0f;  // previous npos (normalized track position, wraps ~0->1 per lap); -1 = not on track yet
+    bool  liveEvoPitReportDone = false; // prevents repeated generateLiveReport() while parked in pits
+    int32_t prevCurrentLapEvo = -1;   // previous gfx.current_lap for restart detection
+
     // --- AMS2 State Tracking (for event detection) ---
     int lastPitMode = -1;           // To detect pit exit and teleport transitions
     unsigned int lastCompletedLaps = 0; // The value from the game's mCompletedLaps field

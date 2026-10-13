@@ -55,6 +55,6 @@ bool AcsEvoIsOnTrack(const SPageFileGraphicEvo& gfx);
 // Returns true when the car is in the pit lane, pit entry/exit, or pit box.
 bool AcsEvoIsInPits(const SPageFileGraphicEvo& gfx);
 
-// Detect a lap change via the npos wrap (0.0 -> 1.0 per lap).
-// Returns true when the position wrapped from near the end to near the start.
+// Note: lap-change detection (npos wrap) lives in MotecSetupForm::processLiveFrameEVO(),
+// which tracks npos across frames and finalizes the lap on a ~1 -> 0 position wrap.
 
