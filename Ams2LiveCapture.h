@@ -15,10 +15,22 @@
 // Returns true on success; on failure, errorMessage contains a description.
 bool Ams2OpenSharedMemory(std::string& errorMessage);
 
-// Read a single consistent frame from shared memory.
-// Uses the mSequenceNumber double-check pattern to avoid torn reads.
-// Returns true if a valid frame was read.
-bool Ams2ReadFrame(Ams2SharedMemory& out);
+// Outcome of an attempt to read one frame from shared memory (see plan §4).
+enum class FrameReadStatus { NoNewData, TornRetry, NewFrame };
+
+// Read a single consistent frame from shared memory and detect whether it is
+// genuinely new since the last processed tick. Uses the mSequenceNumber
+// double-check pattern to avoid torn reads AND change-detection on the same
+// token so unchanged polls are skipped (no duplicate/stale work).
+//   NewFrame  -> `out` holds a fresh, consistent frame; safe to process once.
+//   TornRetry -> write in progress / copy was torn; retry next tick.
+//   NoNewData -> nothing new since the last processed frame; do not re-process.
+FrameReadStatus Ams2ReadFrame(Ams2SharedMemory& out);
+
+// Reset change-detection state so the first real frame after (re)connect or a
+// session reset is treated as NewFrame again. Call on connect and on any path
+// that resets the live session.
+void Ams2ResetFrameTracking();
 
 // Unmap and close the shared memory handle.
 void Ams2CloseSharedMemory();

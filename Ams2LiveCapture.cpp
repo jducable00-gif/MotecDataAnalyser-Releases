@@ -17,10 +17,17 @@
 #include "LiveChannelResolver.h"   // JSON-table-driven channel feed (LIVE_CAPTURE_JSON_MIGRATION_PLAN)
 
 // ---------------------------------------------------------------------------
-// Shared memory handle (module-level, single instance)
+// Shared memory handle + frame-sync state (module-level, single instance)
 // ---------------------------------------------------------------------------
 static HANDLE g_hMapFile = NULL;
 static void*  g_pSharedMem = NULL;
+
+// Last mSequenceNumber we actually processed. A read is "new" only when the
+// current even sequence differs from this value. Reset to 0 on connect /
+// session reset so the first real frame after (re)connect always counts as new.
+static unsigned int s_lastProcessedSeq = 0;
+
+void Ams2ResetFrameTracking() { s_lastProcessedSeq = 0; }
 
 // ---------------------------------------------------------------------------
 // Ams2OpenSharedMemory
@@ -60,33 +67,39 @@ bool Ams2OpenSharedMemory(std::string& errorMessage)
         return false;
     }
 
+    // Fresh (re)connect: the first real frame must count as new.
+    Ams2ResetFrameTracking();
     return true;
 }
 
 // ---------------------------------------------------------------------------
-// Ams2ReadFrame — double-check sequence number to avoid torn reads
+// Ams2ReadFrame — double-check sequence number to avoid torn reads AND detect
+// genuinely new frames via change-detection on mSequenceNumber (plan §4).
 // ---------------------------------------------------------------------------
-bool Ams2ReadFrame(Ams2SharedMemory& out)
+FrameReadStatus Ams2ReadFrame(Ams2SharedMemory& out)
 {
     if (g_pSharedMem == NULL)
-        return false;
+        return FrameReadStatus::NoNewData;
 
     const Ams2SharedMemory* sm = static_cast<const Ams2SharedMemory*>(g_pSharedMem);
 
     // Read sequence number, copy data, re-read sequence number.
-    // If they match and are even, the copy is consistent.
     unsigned int seq1 = sm->mSequenceNumber;
     if (seq1 & 1)
-        return false; // write in progress
+        return FrameReadStatus::TornRetry;   // write in progress -> retry next tick
 
     // Copy the struct (it's ~4-5 KB, fast enough at 60 Hz)
     memcpy(&out, sm, sizeof(Ams2SharedMemory));
 
     unsigned int seq2 = sm->mSequenceNumber;
     if (seq1 != seq2)
-        return false; // torn read, caller should retry
+        return FrameReadStatus::TornRetry;   // torn read -> retry next tick
 
-    return true;
+    if (seq1 == s_lastProcessedSeq)
+        return FrameReadStatus::NoNewData;   // nothing new since last processed frame
+
+    s_lastProcessedSeq = seq1;               // commit: this is a fresh, consistent frame
+    return FrameReadStatus::NewFrame;
 }
 
 // ---------------------------------------------------------------------------

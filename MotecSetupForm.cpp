@@ -33,10 +33,12 @@
 #include "MotecSettingsForm.h"
 #include <gdiplus.h>
 
+
 #pragma comment(lib, "gdiplus.lib")
 
-// GDI+ Token for lifecycle management
-ULONG_PTR gdiplusToken;
+// NOTE: The GDI+ token and its startup/shutdown now live in _tWinMain() (Project1.cpp),
+// not here. Starting/stopping GDI+ inside this form's lifetime caused an access violation
+// on exit ("Abnormal program termination").
 
 // ===============================
 
@@ -371,15 +373,49 @@ void SaveLiveCaptureSetting(bool enabled)
 // Thresholds configuration
 // ===============================
 
+// ---------------------------------------------------------------------------
+// OnClose handler — the ONLY place where resource cleanup happens.
+// VCL calls this while every child control is still alive (before DestroyComponents).
+// The destructor below must NOT touch any control because by then they are freed.
+// ---------------------------------------------------------------------------
+void __fastcall TFormMotecSetup::DoFormClose(TObject *Sender, TCloseAction &Action)
+{
+    // 0. Detach all PaintBox OnPaint handlers BEFORE any cleanup begins.
+    // If a timer fires mid-teardown and triggers WM_PAINT on a control that is
+    // being destroyed, the handler dereferences freed memory → AV / terminate().
+    if (TireTempPaintBox)        TireTempPaintBox->OnPaint = NULL;
+    if (BrakeTempPaintBox)       BrakeTempPaintBox->OnPaint = NULL;
+    if (DamperFLPaintBox)        DamperFLPaintBox->OnPaint = NULL;
+    if (DamperFRPaintBox)        DamperFRPaintBox->OnPaint = NULL;
+    if (DamperRLPaintBox)        DamperRLPaintBox->OnPaint = NULL;
+    if (DamperRRPaintBox)        DamperRRPaintBox->OnPaint = NULL;
+    if (DamperCombinedPaintBox)  DamperCombinedPaintBox->OnPaint = NULL;
+
+    // 1. Signal capture thread and stop timers to prevent new UI events or data pushes
+    stopCaptureThread = true;
+    if (LiveTimer != NULL) LiveTimer->Enabled = false;
+    if (LiveConnectTimer != NULL) LiveConnectTimer->Enabled = false;
+
+    // 2. Perform a strict sequential shutdown of capture resources
+    stopLiveCapture(true);
+    // 3. Stop the tablet server (HTTP + Winsock) while VCL is still fully alive.
+    if (_tabletServer.isRunning()) _tabletServer.stop();
+}
+
+// ---------------------------------------------------------------------------
+// Destructor — intentionally minimal.
+// By the time this runs, VCL has already called DestroyComponents() and every
+// child control (timers, buttons, memos) is freed. Touching them here caused an
+// access violation ("Abnormal program termination") on exit. All real cleanup
+// lives in DoFormClose above. We only set a flag so any stray thread can see it.
+// ---------------------------------------------------------------------------
 TFormMotecSetup::~TFormMotecSetup()
 {
-    // Ensure live capture is stopped to release shared memory handles and sockets
-    stopLiveCapture();
-
-    // Phase E2: graceful shutdown — stop the tablet server before tearing down VCL/GDI+.
-    if (_tabletServer.isRunning()) _tabletServer.stop();
-
-    Gdiplus::GdiplusShutdown(gdiplusToken);
+	// CRITICAL: Do NOT access ANY member variables in this destructor body.
+	// By the time VCL calls our C++ destructor, DestroyComponents() has already
+	// run and a pending WM_TIMER can corrupt atomic members mid-destruction.
+	// All real cleanup (thread join, timer disable, tablet server stop) is done
+	// in DoFormClose above — which runs while the form object is fully alive.
 }
 
 String ThresholdsFilePath()
@@ -787,19 +823,23 @@ void AnalysisProgress(int percent)
 __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
     : TForm(Owner)
 {
-	// Initialize GDI+ subsystem immediately to prevent access violations in Paint events
-	Gdiplus::GdiplusStartupInput gdiplusStartupInput;
-	Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+	// GDI+ is started in _tWinMain() before this form is created, and shut down there
+	// after Application->Run() returns. Do NOT start/stop it here — a double-startup
+	// (or shutdown while other VCL objects are alive) caused an access violation on exit.
 
 	// Load rule configuration from MotecDataAnalyser.rules.json (optional).
 	// Do this BEFORE loadThresholds() so the [SymptomWeights] INI values can
 	// override any weights that came from the JSON file.
+
 	loadRuleConfig();
+
     loadChannelMappingConfig();
+
 
 	// Load analysis thresholds from MotecDataAnalyser.thresholds.ini
 	// (creates the file with defaults if it does not exist yet).
 	loadThresholds();
+
 
 	// Tablet viewer: auto-start the embedded HTTP server when enabled in INI.
 	if (ReadWebServerEnabled()) {
@@ -849,8 +889,24 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
         LiveCaptureCheckBox->Checked = false;
     }
 
+
 	TranslateUI();
+
+
+	// Plan §10b — default to the Summary tab at startup so live collection-rate /
+	// report content is visible immediately. Runs once here (not in TranslateUI) so a
+	// mid-session language switch doesn't yank the user off their current report tab.
+	if (PageControlReport != NULL && TabSummary != NULL) {
+		PageControlReport->ActivePage = TabSummary;
+	}
+
 	updateResetButtonState();
+
+
+	// Wire up OnClose so all resource cleanup (live capture, tablet server) happens
+	// while child controls are still alive. The destructor runs AFTER VCL has already
+	// destroyed every component — touching any control there causes an access violation.
+	OnClose = DoFormClose;
 }
 
 void __fastcall TFormMotecSetup::TranslateUI()
@@ -892,8 +948,10 @@ void __fastcall TFormMotecSetup::TranslateUI()
     // Combo boxes items are usually set in DFM or constructor, 
     // but we can update them here if they were populated.
 
+
 	OnResize = FormResize;
 	FormResize(this);
+
 	MemoSummary->Lines->Add("Select a Motec file to analyze.");
 	// DetectMotecInstallation();
 }
@@ -2331,8 +2389,24 @@ void __fastcall TFormMotecSetup::resetLiveSession()
 	liveEvoPrevNPos = -1.0f;  // AC EVO: no npos history until back on track
 	liveEvoPitReportDone = false;
 
-	// Clear all displayed data (tyre temps, brake temps, suspension/damper histograms)
-	resetAnalysisGraphics();
+	// Frame-sync change-detection resets (plan §4/§5): after a session reset the
+	// first real frame from each sim must count as NewFrame again. Cheap no-ops
+	// for whichever source is not currently connected, so both are safe to call.
+	Ams2ResetFrameTracking();
+	AcsEvoResetFrameTracking();
+
+	// Frame-sync adaptive-interval / FPS state reset (plan §6): start fresh measurement on the next session.
+	liveLastNewFrameMs   = 0.0;
+	liveMeasuredHz       = 0.0;
+	liveEvoFpsAvg        = 0;
+	liveAdaptiveCounter  = 0;
+
+	// Session counters reset (plan §10a): collection rate is measured from the next session's first frame.
+	liveFrameCount       = 0;
+	liveSessionStartMs   = 0.0;
+
+	// packetId jump diagnostic resets with the session so stale tokens can't cause false positives on reconnect.
+	resetEvoPacketJumpTracking();
 }
 
 void __fastcall TFormMotecSetup::updateResetButtonState()
@@ -2394,7 +2468,7 @@ void __fastcall TFormMotecSetup::LiveCaptureCheckBoxClick(TObject *Sender)
 		if (ButtonLoad != NULL) ButtonLoad->Enabled = true;
 		if (Button1 != NULL) Button1->Enabled = true;
 
-		stopLiveCapture();
+		stopLiveCapture(false);
 		updateResetButtonState();
 	}
 }
@@ -2438,14 +2512,34 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
     {
         // Connected!
         liveConnected = true;
+        liveActive = true;
         LiveLed->Brush->Color = clLime;
         LabelLiveStatus->Caption = "Connected";
         LabelLiveStatus->Font->Color = clGreen;
         LiveConnectTimer->Enabled = false;
 
-        // Start the high-rate data timer
-        LiveTimer->Enabled = true;
+        // Start the high-rate data timer. AC EVO polls at a fixed fast rate from frame #1 so no physics
+        // packet is ever overwritten between reads — see updateLiveAdaptiveInterval() for details.
+        LiveTimer->Interval = 4;    // reset to default before adaptive logic takes over (plan §6)
+        LiveTimer->Enabled = true;  // START the UI processing loop
 
+        // Start dedicated capture thread for AC EVO to bypass Windows Timer resolution limits
+        if (liveMode == LIVE_EVO) {
+            stopCaptureThread = false;
+            captureThread = new std::thread(&TFormMotecSetup::captureThreadFunc, this);
+        }
+
+        liveLastNewFrameMs   = 0.0;
+        liveMeasuredHz       = 0.0;
+        liveEvoFpsAvg        = 0;
+        liveAdaptiveCounter  = 0;
+
+        // Session counters reset on connect too: a fresh connection starts a fresh collection-rate measurement (plan §10a).
+        liveFrameCount       = 0;
+        liveSessionStartMs   = 0.0;
+
+        // packetId jump diagnostic resets with the session so stale tokens from a previous connection can't cause false positives.
+        resetEvoPacketJumpTracking();
         if (liveMode == LIVE_EVO)
         {
             // Read static track name
@@ -2504,9 +2598,22 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
     }
 }
 
-void __fastcall TFormMotecSetup::stopLiveCapture()
+void __fastcall TFormMotecSetup::stopLiveCapture(bool isShuttingDown)
 {
-    if (LiveCaptureCheckBox != NULL && LiveCaptureCheckBox->Checked) {
+    // Stop the capture thread first to avoid accessing closed handles
+    if (captureThread != nullptr) {
+        stopCaptureThread = true;
+        // Give the thread a moment to see the flag and exit its loop before joining
+        // This prevents potential deadlocks if the thread is stuck in a system call
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+        if (captureThread->joinable())
+            captureThread->join();
+        delete captureThread;
+        captureThread = nullptr;
+    }
+
+    if (LiveCaptureCheckBox != NULL && LiveCaptureCheckBox->Checked && !isShuttingDown) {
         // Reconnection mode: user still wants live capture, but connection is lost.
         liveConnected = false;
         LiveTimer->Enabled = false;
@@ -2532,12 +2639,15 @@ void __fastcall TFormMotecSetup::stopLiveCapture()
         liveConnected = false;
         LiveConnectTimer->Enabled = false;
         LiveTimer->Enabled = false;
-        LiveLed->Brush->Color = clRed;
-        LabelLiveStatus->Caption = "Disconnected";
-        LabelLiveStatus->Font->Color = clGray;
 
-        // If a lap is in progress, finalize it
-        if (liveLapInProgress)
+        if (!isShuttingDown) {
+            LiveLed->Brush->Color = clRed;
+            LabelLiveStatus->Caption = "Disconnected";
+            LabelLiveStatus->Font->Color = clGray;
+        }
+
+        // If a lap is in progress, finalize it (only if not shutting down and UI exists)
+        if (!isShuttingDown && liveLapInProgress && MemoSummary != NULL)
             finalizeLiveLap();
 
         Button1->Enabled = true;
@@ -2550,14 +2660,141 @@ void __fastcall TFormMotecSetup::stopLiveCapture()
         else
             Ams2CloseSharedMemory();
 
-        if (!liveLaps.empty())
+        if (!isShuttingDown && !liveLaps.empty())
             generateLiveReport();
-        else
+        else if (!isShuttingDown)
         {
             MemoSummary->Lines->Add("Live capture stopped. No laps captured.");
 		//StatusBar1->SimpleText = "Live capture stopped";
         }
+
+        // packetId jump diagnostic summary (AC EVO): total missed sim writes over the whole session, if any.
+        if ((liveEvoPhysJumps > 0 || liveEvoGfxJumps > 0) && MemoSummary != NULL)
+            MemoSummary->Lines->Add("Session summary: " + IntToStr((int)liveEvoPhysJumps)
+                + " physics + " + IntToStr((int)liveEvoGfxJumps)
+                + " graphics packetId jumps (missed sim writes over the session).");
+
+        // Plausibility cross-check rejects (AC EVO): frames whose values were excluded from lap data. A few is normal; hundreds suggests a real problem with that page's write pattern.
+        if (liveMode == LIVE_EVO) {
+            unsigned long plausRejects = AcsEvoGetPlausibilityRejectCount();
+            if (plausRejects > 0 && MemoSummary != NULL)
+                MemoSummary->Lines->Add("Session summary: " + IntToStr((int)plausRejects)
+                    + " physics frame(s) rejected by plausibility check (values excluded from lap data).");
+        }
+
         updateResetButtonState();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// packetId jump diagnostic (AC EVO). Detects if sim writes were missed due to reader lag.
+// ---------------------------------------------------------------------------
+void TFormMotecSetup::resetEvoPacketJumpTracking()
+{
+    liveEvoLastPhysId  = -1;
+    liveEvoLastGfxId   = -1;
+    liveEvoPhysJumps   = 0;
+    liveEvoGfxJumps    = 0;
+    liveEvoJumpMsgMs   = 0.0;
+}
+
+void TFormMotecSetup::checkEvoPacketJump(const char* label, int id, bool isPhys)
+{
+    const int prevId = isPhys ? liveEvoLastPhysId : liveEvoLastGfxId;
+    if (isPhys) liveEvoLastPhysId = id; else liveEvoLastGfxId = id;
+
+    if (prevId < 0 || id <= prevId)
+        return;   // first read this connection, or token wrap/step — nothing to report
+
+    const int delta = id - prevId;
+    if (delta > 1) {
+        if (isPhys) ++liveEvoPhysJumps; else ++liveEvoGfxJumps;
+    }
+}
+
+void __fastcall TFormMotecSetup::updateLiveAdaptiveInterval(double simFpsHint)
+{
+    // Session counters (plan §10a): count every accepted NewFrame and stamp the collection start on frame #1.
+    ++liveFrameCount;
+    if (liveSessionStartMs <= 0.0)
+        liveSessionStartMs = (double)GetTickCount64();
+
+    // Measure arrival rate from wall-clock time between accepted NewFrames, EMA-smoothed (alpha=0.1).
+    double nowMs = (double)GetTickCount64();   // ms since boot; wraps only after ~49 days — fine for a live session
+    if (liveLastNewFrameMs > 0.0) {
+        double dtSec = (nowMs - liveLastNewFrameMs)/1000.0;
+        if (dtSec > 0 && dtSec < 0.2) {            // sanity guard against huge gaps / clock jumps (>200ms => not a real frame interval)
+            double instHz = 1.0/dtSec;
+            liveMeasuredHz = (liveMeasuredHz <= 0.0) ? instHz : (0.9*liveMeasuredHz + 0.1*instHz);
+        }
+    }
+    liveLastNewFrameMs = nowMs;
+
+    // AC EVO: fixed fast poll (~3 ms) to ensure physics packetId increments are caught.
+    int intervalMs = 3;                     // default: AC EVO fast-poll rate (overridden by adaptive logic for other modes)
+    if (!(liveMode == LIVE_EVO && simFpsHint > 5.0)) {
+        // Prefer the sim's own reported fps when available and plausible, else fall back to measured arrival rate.
+        double targetFps = (simFpsHint > 5.0) ? simFpsHint : liveMeasuredHz;   // <5 => treat as unknown/low -> use ceiling below
+
+    if (targetFps >= 10.0 && targetFps <= 240.0) {
+        double raw = 1000.0/targetFps;      // ms per frame at sim rate
+        intervalMs = (int)(raw + 0.5);
+    } else if (targetFps > 0.0 && targetFps < 10.0) {
+        intervalMs = 33;                     // low/unknown fps -> ceiling, avoid busy-looping on a slow sim
+    }
+    }
+
+    // Clamp to [2ms floor .. 33ms ceiling] (timeBeginPeriod(1) in WinMain unlocks sub-4 ms timer resolution).
+    if (intervalMs < 2) intervalMs = 2;
+    else if (intervalMs > 33) intervalMs = 33;
+
+    // Throttle the actual write to LiveTimer->Interval: only apply ~every 15 accepted frames (~4 Hz cadence at 60 fps),
+    // and only when it differs from current, so we don't churn a VCL property on every tick. On this same cadence we also
+    // refresh LabelLiveStatus with the live FPS readout (plan §6: "surface it in the live status line"). We never touch
+    // Font->Color here — connection-state color is owned by connect/reconnect/disconnect handlers.
+    if (++liveAdaptiveCounter >= 15) {
+        liveAdaptiveCounter = 0;
+
+        if (intervalMs != LiveTimer->Interval)
+            LiveTimer->Interval = intervalMs;
+
+        String cap;
+        if (liveMode == LIVE_EVO && liveEvoFpsAvg > 0)
+            cap = "Connected · sim " + IntToStr(liveEvoFpsAvg) + " Hz / read " + FormatFloat("0", liveMeasuredHz) + " Hz";
+        else
+            cap = "Connected · read " + (liveMeasuredHz > 0 ? FormatFloat("0", liveMeasuredHz) : "--") + " Hz";
+        LabelLiveStatus->Caption = cap;   // color stays as set by connect/disconnect handlers
+    }
+}
+
+void TFormMotecSetup::captureThreadFunc()
+{
+    // Set thread priority to Normal as requested by user
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
+
+    while (!stopCaptureThread) {
+        if (liveActive && liveConnected && liveMode == LIVE_EVO) {
+            SPageFilePhysics phys;
+            SPageFileGraphicEvo gfx;
+            bool physUsable = true;
+
+            // Use a local copy of the status to avoid any potential race during shutdown
+            EvoReadStatus status = AcsEvoReadFrame(phys, gfx, &physUsable);
+
+            if (status == EvoReadStatus::NewFrame) {
+                std::lock_guard<std::mutex> lock(frameMutex);
+                // Double check stop flag inside the lock to prevent pushing a frame during destruction
+                if (!stopCaptureThread) {
+                    frameBuffer.push_back({phys, gfx, physUsable, (double)GetTickCount64()});
+                    if (frameBuffer.size() > 1000) frameBuffer.erase(frameBuffer.begin());
+                }
+            } else if (status == EvoReadStatus::TornRetry) {
+                liveEvoTornReads++;
+            }
+        } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        std::this_thread::yield();
     }
 }
 
@@ -2579,25 +2816,31 @@ void __fastcall TFormMotecSetup::LiveTimerTimer(TObject *Sender)
 
     else if (liveMode == LIVE_EVO)
     {
-        SPageFilePhysics phys;
-        SPageFileGraphicEvo gfx;
-        if (!AcsEvoReadPhysics(phys) || !AcsEvoReadGraphics(gfx))
+        // Process all frames accumulated in the buffer since last tick
+        std::vector<CapturedFrame> localFrames;
         {
-            // If reading fails, it might be a torn read or connection loss. 
-            // We don't stop immediately to avoid false disconnects on torn reads.
-            return; 
+            std::lock_guard<std::mutex> lock(frameMutex);
+            localFrames.swap(frameBuffer);
         }
-        processLiveFrameEVO(phys, gfx);
+
+        if (localFrames.empty()) return;
+
+        for (const auto& frame : localFrames) {
+            liveEvoFpsAvg = frame.gfx.player_fps_avg;
+            updateLiveAdaptiveInterval(frame.gfx.player_fps_avg);
+            checkEvoPacketJump("physics", frame.phys.packetId, true);
+            checkEvoPacketJump("graphics", frame.gfx.packetId, false);
+            processLiveFrameEVO(frame.phys, frame.gfx, frame.physUsable);
+        }
     }
     else
     {
         Ams2SharedMemory frame;
-        if (!Ams2ReadFrame(frame))
-        {
-            // If reading fails, it might be a torn read. We skip this tick.
-            return; 
-        }
+        FrameReadStatus status = Ams2ReadFrame(frame);
+        if (status != FrameReadStatus::NewFrame)
+            return;   // NoNewData or TornRetry -> skip this tick, no duplicate/stale work
 
+        updateLiveAdaptiveInterval(0.0);  // AMS2 has no sim-reported fps field: drive interval from measured arrival rate only
         processLiveFrame(frame);
     }
 }
@@ -2701,13 +2944,14 @@ void __fastcall TFormMotecSetup::processLiveFrame(const Ams2SharedMemory& frame)
 	previous_mCurrentTime = frame.mCurrentTime;
 
 }
-void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phys, const SPageFileGraphicEvo& gfx)
+void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phys, const SPageFileGraphicEvo& gfx, bool physUsable)
 {
     bool onTrack = AcsEvoIsOnTrack(gfx);
 	bool inPits = AcsEvoIsInPits(gfx);
     // --- In-game restart detection: current_lap drops back to ~1 while we're at a high number.
     if (prevCurrentLapEvo > 2 && gfx.session_state.current_lap <= 1) {
         resetLiveSession();
+        MemoSummary->Lines->Clear();
         MemoSummary->Lines->Add("Auto: in-game restart detected, session reset.");
     }
     prevCurrentLapEvo = gfx.session_state.current_lap;
@@ -2758,9 +3002,12 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
         liveEvoPitReportDone = true;
     }
 
-    // --- npos wrap detection: prev > 0.8 && cur < 0.2 → start/finish line crossing on track ---
+    // --- npos wrap detection: backward jump >40% of track → start/finish line crossing on track ---
     // Catches laps that complete without a pit stop (normalized position wraps ~1 -> 0).
-    if (onTrack && liveLapInProgress && liveEvoPrevNPos > 0.8f && gfx.npos < 0.2f) {
+    // Using "backward delta" instead of fixed thresholds (>0.8/<0.2) makes this robust to
+    // dropped frames: with frame-sync change-detection we may skip intermediate writes, so
+    // prev can be e.g. 0.75 and cur 0.3 — the old threshold pair would miss that crossing.
+    if (onTrack && liveLapInProgress && (liveEvoPrevNPos - gfx.npos) > 0.4f) {
         liveCurrentLap.endTime = (double)GetTickCount64() / 1000.0;
         finalizeLiveLap();
 
@@ -2776,11 +3023,12 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
         MemoSummary->Lines->Add("Lap " + IntToStr(liveLapNumber) + " started (line crossing).");
     }
 
-    // Feed data only when on track and lap is in progress
+    // Feed data only when on track and lap is in progress. A plausibility-rejected physics page (physUsable=false) skips the feed for this tick ONLY — its values are excluded from lap stats, but npos tracking continues so line-crossing detection stays accurate.
     if (onTrack && liveLapInProgress)
     {
         double timeSeconds = (double)GetTickCount64() / 1000.0;
-        AcsEvoFeedLap(liveCurrentLap, phys, gfx, timeSeconds);
+        if (physUsable)
+            AcsEvoFeedLap(liveCurrentLap, phys, gfx, timeSeconds);
         liveEvoPrevNPos = gfx.npos;   // track npos only while feeding a lap on-track
     }
 
@@ -2989,6 +3237,33 @@ void __fastcall TFormMotecSetup::UpdateReportTabs(const ReportResult& result)
     if (result.count(ReportSection::Summary)) {
         MemoSummary->Text = formatForMemo(result.at(ReportSection::Summary).content);
     }
+
+    // Plan §10a — live collection-rate line appended to the Summary memo so it stays
+    // visible alongside report content while a live session is running.
+    if (liveActive && liveFrameCount > 0) {
+        const double elapsedSec = ((double)(GetTickCount64() - (__int64)liveSessionStartMs)) / 1000.0;
+        String rateLine;
+        bool lagWarning = false;
+        if (elapsedSec >= 0.5) { // minimum window for a meaningful average
+            const double avgHz = (double)liveFrameCount / elapsedSec;
+            rateLine = "Collection rate: " + FormatFloat("0.0", avgHz) + " Hz avg over "
+                + IntToStr((int)liveFrameCount) + " frames / " + IntToStr((int)(elapsedSec + 0.5))
+                + (liveMode == LIVE_EVO ? " s [physics]" : " s");
+            // AC EVO: compare against the sim-reported frame rate; warn on reader lag.
+            if (liveMode == LIVE_EVO && liveEvoFpsAvg > 5) {
+                const double ratio = avgHz / (double)liveEvoFpsAvg;
+                rateLine += " | sim gfx " + IntToStr(liveEvoFpsAvg) + " Hz";
+                if (ratio < 0.85)
+                    lagWarning = true;
+            }
+        } else {
+            rateLine = "Collection started (" + IntToStr((int)liveFrameCount) + " frames so far).";
+        }
+        MemoSummary->Lines->Add(rateLine);
+        if (lagWarning)
+            MemoSummary->Lines->Add("Warning: reader lag — consider lowering LiveTimer interval.");
+    }
+
     if (result.count(ReportSection::General)) {
         MemoGeneral->Text = formatForMemo(result.at(ReportSection::General).content);
     }

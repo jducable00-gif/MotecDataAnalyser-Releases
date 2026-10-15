@@ -83,6 +83,10 @@ static void AcsEvoDumpRawDiagOnce(const SPageFilePhysics& phys, const SPageFileG
             (double)phys.waterTemp, (double)gfx.oil_temperature_c,
             (double)phys.rideHeight[0], (double)phys.rideHeight[1]);
 
+    // Frame-sync sanity check (plan §6): sim-reported frame rate for the adaptive poll interval + status line.
+    fprintf(f, "\n");
+    fprintf(f, "player_fps=%d  player_fps_avg=%d\n", gfx.player_fps, gfx.player_fps_avg);
+
     fclose(f);
 }
 // Resolved channel table for EVOM1 LIVE rows (mapping.json), built ONCE on first use.
@@ -148,8 +152,9 @@ static LiveChannel::ResolvedChannelTable& AcsEvoGetChannelTable()
 // ---------------------------------------------------------------------------
 bool AcsEvoOpenSharedMemory(std::string& errorMessage)
 {
-    if (g_pPhysics != NULL && g_pGraphics != NULL)
+    if (g_pPhysics != NULL && g_pGraphics != NULL) {
         return true; // already open
+    }
 
     // Physics
     g_hPhysics = OpenFileMappingA(FILE_MAP_READ, FALSE, ACEVO_SM_PHYSICS);
@@ -203,16 +208,73 @@ bool AcsEvoOpenSharedMemory(std::string& errorMessage)
         }
     }
 
+    // Fresh connect: reset per-page change-detection so the first real frame from each
+    // page counts as NewFrame again (plan §5). The "already open" early-return above does
+    // NOT reach here, so an in-progress session is not disturbed.
+    AcsEvoResetFrameTracking();
+
+    return true;
+}
+
+// ============================================================================
+// Frame-sync change-detection for AC EVO (plan §5). One last-processed token per
+// page; -1 means "no frame processed yet" so the first real read always counts as
+// new. Reset to -1 on connect / session reset via AcsEvoResetFrameTracking().
+// ============================================================================
+
+static int s_lastPhysPacket = -1;   // last-processed physics packetId (-1 = none)
+static int s_lastGfxPacket  = -1;   // last-processed graphics packetId (-1 = none)
+
+// Optional inter-cycle plausibility cross-check (plan §5 step 5). Enabled by default so a grossly
+// implausible jump is treated as suspected torn data and skipped. Toggle at runtime via
+// AcsEvoSetPlausibilityCheck() if false-positives appear on exotic content; the snapshot below holds
+// the last *accepted* physics frame's guard fields for comparison.
+static bool             s_plausibilityEnabled = true;  // flag guarding the cross-check (plan §5)
+static SPageFilePhysics s_lastPhys{};                  // zeroed on connect/reset
+static bool             s_haveLastPhys    = false;     // no accepted physics frame yet
+static unsigned long    s_plausibilityRejects = 0;     // diagnostic: suspected torn frames skipped
+
+void AcsEvoResetFrameTracking() {
+    s_lastPhysPacket      = -1;
+    s_lastGfxPacket       = -1;
+    s_haveLastPhys        = false;   // first real frame after reset has nothing to compare against
+    s_plausibilityRejects = 0;       // fresh session -> restart the diagnostic counter
+}
+
+void AcsEvoSetPlausibilityCheck(bool enabled) { s_plausibilityEnabled = enabled; }
+bool   AcsEvoGetPlausibilityCheck()           { return s_plausibilityEnabled; }
+unsigned long AcsEvoGetPlausibilityRejectCount() { return s_plausibilityRejects; }
+
+// ---------------------------------------------------------------------------
+// AcsEvoPlausible — inter-cycle plausibility cross-check (plan §5 step 5). Compares key guard
+// channels of the current physics frame against the last accepted one and rejects a grossly
+// implausible jump as suspected torn/corrupt data. Thresholds are deliberately generous: they exist
+// only to catch half-written floats, not to model real physics — if a legitimate hard transient trips
+// them, raise the limit (do NOT remove the check).
+// ---------------------------------------------------------------------------
+bool AcsEvoPlausible(const SPageFilePhysics& cur, const SPageFilePhysics& prev) {
+    auto saneDelta = [](float a, float b, double maxStep) -> bool {
+        return std::abs((double)a - (double)b) <= maxStep;   // compare in double for precision
+    };
+    if (!saneDelta(cur.speedKmh, prev.speedKmh, 30.0))       return false; // >30 km/h/tick implausible
+    if (!saneDelta(cur.gas,     prev.gas,      1.5))          return false;
+    if (!saneDelta(cur.brake,   prev.brake,    1.5))          return false;
+    for (int i = 0; i < 4; ++i)                               // tyre core temps move slowly
+        if (!saneDelta(cur.tyreCoreTemperature[i], prev.tyreCoreTemperature[i], 20.0)) return false;
+    if (std::abs((double)(cur.gear - prev.gear)) > 3.0)       return false; // gear blip cap ±3
     return true;
 }
 
 // ---------------------------------------------------------------------------
-// AcsEvoReadPhysics — double-check packetId to avoid torn reads
+// Internal page readers. Each reads one shared-memory page with a packetId double-
+// check to detect torn writes (plan §2). Returns true if the read is consistent,
+// false on failure/torn-read. Not exposed publicly: use AcsEvoReadFrame() which
+// combines both pages and applies change-detection in a single call so LiveTimer
+// processes at most one fresh frame per tick.
 // ---------------------------------------------------------------------------
-bool AcsEvoReadPhysics(SPageFilePhysics& out)
+static bool ReadPhysicsPage(SPageFilePhysics& out)
 {
-    if (g_pPhysics == NULL)
-        return false;
+    if (g_pPhysics == NULL) return false;
 
     const SPageFilePhysics* sm = static_cast<const SPageFilePhysics*>(g_pPhysics);
 
@@ -220,16 +282,13 @@ bool AcsEvoReadPhysics(SPageFilePhysics& out)
     memcpy(&out, sm, sizeof(SPageFilePhysics));
     int id2 = sm->packetId;
 
+    // Torn read: packetId changed between the two reads. Discard and retry next tick.
     return (id1 == id2);
 }
 
-// ---------------------------------------------------------------------------
-// AcsEvoReadGraphics — double-check packetId to avoid torn reads
-// ---------------------------------------------------------------------------
-bool AcsEvoReadGraphics(SPageFileGraphicEvo& out)
+static bool ReadGraphicsPage(SPageFileGraphicEvo& out)
 {
-    if (g_pGraphics == NULL)
-        return false;
+    if (g_pGraphics == NULL) return false;
 
     const SPageFileGraphicEvo* sm = static_cast<const SPageFileGraphicEvo*>(g_pGraphics);
 
@@ -237,7 +296,88 @@ bool AcsEvoReadGraphics(SPageFileGraphicEvo& out)
     memcpy(&out, sm, sizeof(SPageFileGraphicEvo));
     int id2 = sm->packetId;
 
+    // Torn read: packetId changed between the two reads. Discard and retry next tick.
     return (id1 == id2);
+}
+
+// ---------------------------------------------------------------------------
+// AcsEvoReadFrame — combined physics + graphics read with per-page change-
+// detection (plan §5). Reads both pages, applies a torn-check to each, then treats
+// the frame as NewFrame only when at least one page advanced past its last-processed
+// token. Pages that failed their torn-check this tick simply contribute nothing and
+// are retried next tick; tokens for them are NOT committed (plan §5). A physics frame
+// rejected by the plausibility cross-check is likewise uncommitted/unfed, but it does
+// NOT block graphics acceptance — gfx-driven lap/pit detection must keep running.
+// ---------------------------------------------------------------------------
+// physUsableOut: set to false when a fresh physics page failed the plausibility cross-check — its values must NOT be fed into lap stats, but graphics is still accepted and processed normally.
+EvoReadStatus AcsEvoReadFrame(SPageFilePhysics& physOut, SPageFileGraphicEvo& gfxOut, bool* physUsableOut)
+{
+    if (physUsableOut != NULL) *physUsableOut = true;
+
+    if (g_pPhysics == NULL && g_pGraphics == NULL) {
+        return EvoReadStatus::NoNewData;   // nothing mapped / not connected
+    }
+
+    const bool physOk = ReadPhysicsPage(physOut);
+    const bool gfxOk  = ReadGraphicsPage(gfxOut);
+
+    if (!physOk && !gfxOk) {
+        // Both pages failed their torn-check (or are unmapped). Nothing usable this tick.
+        return EvoReadStatus::TornRetry;
+    }
+
+    const int physId = physOk ? physOut.packetId : -1;
+    const int gfxId  = gfxOk  ? gfxOut.packetId  : -1;
+
+    // DIAGNOSTIC: Log raw packet IDs to see update frequency and jump patterns
+    {
+        static int diagCount = 0;
+        if (diagCount < 100) {
+            FILE* df = NULL;
+            fopen_s(&df, "packet_id_trace.txt", "a"); // Append to see the sequence
+            if (df) {
+                fprintf(df, "P: %d | G: %d\n", physId, gfxId);
+                fclose(df);
+            }
+            diagCount++;
+        }
+    }
+
+    // Per-page change-detection: a page is "new" only if it read OK AND its token has
+    // advanced past the last one we processed (packetIds are monotonically increasing).
+    const bool physNew = physOk && (physId != s_lastPhysPacket);
+    const bool gfxNew  = gfxOk && (gfxId != s_lastGfxPacket);
+
+    if (!physNew && !gfxNew) {
+        // Both pages are consistent but neither advanced -> we already processed this data.
+        return EvoReadStatus::NoNewData;
+    }
+
+    // Optional inter-cycle plausibility cross-check (plan §5 step 5): a grossly implausible physics frame is
+    // treated as suspected torn/corrupt data. Its values must not be fed into the lap, BUT it no longer blocks
+    // the whole tick: graphics commits independently below so gfx-driven detection (pit-exit / line-crossing via
+    // car_location + npos) keeps firing even when a physics spike is rejected. The token IS committed for both
+    // pages — otherwise every later frame would be re-compared against this stale snapshot and the rejection
+    // loop would lock out NewFrame forever (this was exactly what killed pit-exit / line-crossing detection).
+    bool physRejected = false;   // fresh physics page failed plausibility -> its values must not be fed into lap stats
+    if (s_plausibilityEnabled && physOk && s_haveLastPhys) {
+        if (!AcsEvoPlausible(physOut, s_lastPhys)) {
+            ++s_plausibilityRejects;   // diagnostic: count suspected torn frames
+            physRejected = true;       // values excluded from lap data ONLY — token still committed below (see comment above)
+        }
+    }
+
+    // Commit only the tokens for pages that produced fresh, consistent data so a page that failed its
+    // torn-check is retried on the next tick (plan §5). Also refresh the plausibility snapshot with this
+    // accepted physics frame. A plausibility-rejected frame still commits: it IS a real sim write we saw —
+    // holding back its token would make every later frame compare against stale data and lock out NewFrame forever.
+    if (physOk) { s_lastPhysPacket = physId; s_lastPhys = physOut; s_haveLastPhys = true; }
+    if (gfxOk)  s_lastGfxPacket   = gfxId;
+
+    // Default (set at entry) is true. Mark unusable when the physics page was rejected above OR failed its torn-check — in both cases physOut may hold stale/half-written values that must not be fed into lap stats, while gfx-based detection runs normally on this same tick.
+    if ((physRejected || !physOk) && physUsableOut != NULL) *physUsableOut = false;
+
+    return EvoReadStatus::NewFrame;
 }
 
 // ---------------------------------------------------------------------------
@@ -295,8 +435,9 @@ void AcsEvoCloseSharedMemory()
 // ---------------------------------------------------------------------------
 bool AcsEvoIsOnTrack(const SPageFileGraphicEvo& gfx)
 {
-    // Game must be live and the car must be on the track.
-    return (gfx.status == AC_LIVE) && (gfx.car_location == ACEVO_TRACK);
+    // Relaxed: if car_location is TRACK, we are on track regardless of AC_LIVE status.
+    // This prevents "Waiting for car to leave pits" hangs if the game reports a non-LIVE status while driving.
+    return (gfx.car_location == ACEVO_TRACK);
 }
 
 bool AcsEvoIsInPits(const SPageFileGraphicEvo& gfx)

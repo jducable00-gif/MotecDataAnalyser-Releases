@@ -22,12 +22,34 @@
 bool AcsEvoOpenSharedMemory(std::string& errorMessage);
 
 // Read a single consistent physics frame.
-// Returns true if a valid frame was read.
-bool AcsEvoReadPhysics(SPageFilePhysics& out);
+// Frame-sync read status for the AC EVO combined reader. Mirrors AMS2's
+// FrameReadStatus so LiveTimerTimer can apply one uniform "process only on a
+// genuinely new frame" policy across both sims (plan §5).
+enum class EvoReadStatus { NoNewData, TornRetry, NewFrame };
 
-// Read a single consistent graphics frame.
-// Returns true if a valid frame was read.
-bool AcsEvoReadGraphics(SPageFileGraphicEvo& out);
+// Combined physics + graphics read with per-page change-detection. Each page is
+// guarded by its own packetId double-check AND tracked against the last-processed
+// token for that page: a page whose packetId has not advanced since we last used it
+// contributes no new data this tick (it may still be mid-write -> TornRetry). The
+// frame as a whole counts as NewFrame only when at least one page produced fresh,
+// consistent data. This prevents duplicate/stale processing and torn reads while the
+// 16 ms poll runs slower than AC EVO's ~90 Hz write rate (plan §2/§5).
+// physUsableOut: set to false ONLY when a fresh physics page failed the plausibility cross-check — its values must not be fed into lap stats, but gfx-based detection still runs on this tick. Pass NULL if unused.
+EvoReadStatus AcsEvoReadFrame(SPageFilePhysics& physOut, SPageFileGraphicEvo& gfxOut, bool* physUsableOut);
+
+// Reset per-page last-processed packet tracking AND the plausibility snapshot/counter.
+// Call on connect and after a session reset so the first real frame from each page
+// counts as NewFrame again (plan §5).
+void AcsEvoResetFrameTracking();
+
+// Optional inter-cycle plausibility cross-check (plan §5 step 5). Enabled by default; toggle at
+// runtime if false-positives appear on exotic content. When enabled, a grossly implausible jump in
+// key physics channels vs the last accepted frame is treated as suspected torn data and skipped.
+void AcsEvoSetPlausibilityCheck(bool enabled);
+bool   AcsEvoGetPlausibilityCheck();
+
+// Diagnostic: number of frames rejected by the plausibility cross-check since connect/reset.
+unsigned long AcsEvoGetPlausibilityRejectCount();
 
 // Read the static object (track name, session, lap length, ...).
 // Returns true on success.

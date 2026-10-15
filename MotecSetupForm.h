@@ -92,6 +92,10 @@ __published:
     void __fastcall LiveCaptureCheckBoxClick(TObject *Sender);
     void __fastcall LiveTimerTimer(TObject *Sender);
     void __fastcall LiveConnectTimerTimer(TObject *Sender);
+
+    // Dedicated capture thread worker
+    void captureThreadFunc();
+
     void __fastcall ButtonResetSessionClick(TObject *Sender);
     void __fastcall AutoDetectTrackCheckBoxClick(TObject *Sender);
     void __fastcall resetLiveSession();
@@ -111,14 +115,29 @@ public:
 
     __fastcall TFormMotecSetup(TComponent* Owner);
     ~TFormMotecSetup();
+
+    // OnClose handler: performs all resource cleanup (live capture, tablet server)
+    // while child controls are still alive. The destructor itself must NOT touch
+    // any control because VCL destroys components before the dtor body runs.
+    void __fastcall DoFormClose(TObject *Sender, TCloseAction &Action);
+
     static ReportLanguage ReadReportLanguageSetting();
     bool __fastcall AnalyzeSelectedFile(const std::string& filePath, std::string& errorMessage);
     bool __fastcall AnalyzeSelectedLdFile(const std::string& filePath, std::string& errorMessage);
     void __fastcall resetAnalysisGraphics();
-    void __fastcall stopLiveCapture();
+    void __fastcall stopLiveCapture(bool isShuttingDown = false);
     void __fastcall processLiveFrame(const Ams2SharedMemory& frame);
-    void __fastcall processLiveFrameEVO(const SPageFilePhysics& phys, const SPageFileGraphicEvo& gfx);
+    // physUsable=false: the physics page failed plausibility this tick — skip feeding its values into lap data only; all gfx-based detection (pit/track state, line crossing) runs normally.
+    void __fastcall processLiveFrameEVO(const SPageFilePhysics& phys, const SPageFileGraphicEvo& gfx, bool physUsable = true);
     void __fastcall processLiveFramePmir();
+
+    // Frame-sync adaptive poll interval + FPS surfacing (plan §6). Call once per accepted NewFrame.
+    // simFpsHint: authoritative sim-reported fps when available (>0), else 0 to use measured arrival rate only.
+    void __fastcall updateLiveAdaptiveInterval(double simFpsHint);
+
+    // packetId jump diagnostic (AC EVO): reset tokens/counters on connect + session reset; call once per accepted NewFrame with each page's token.
+    void resetEvoPacketJumpTracking();
+    void checkEvoPacketJump(const char* label, int id, bool isPhys);
     void __fastcall finalizeLiveLap();
     void __fastcall generateLiveReport();
     void __fastcall UpdateReportTabs(const ReportResult& result);
@@ -173,6 +192,19 @@ public:
     bool liveActive = false;
     bool liveConnected = false;
     bool liveInPit = false;
+
+    // --- Dedicated Capture Thread (Performance Fix) ---
+    std::thread* captureThread = nullptr;
+    std::atomic<bool> stopCaptureThread{false};
+    std::mutex frameMutex;
+    struct CapturedFrame {
+        SPageFilePhysics phys;
+        SPageFileGraphicEvo gfx;
+        bool physUsable;
+        double timestampMs;
+    };
+    std::vector<CapturedFrame> frameBuffer; // Queue of frames to be processed by UI thread
+
     LiveMode liveMode = LIVE_AMS2;
     bool liveLapInProgress = false;
     LapStats liveCurrentLap;
@@ -196,6 +228,24 @@ public:
     unsigned int sessionLapCounter = 0;  // Our internal counter that resets on pit entry/exit
 	float previous_mCurrentTime = 0.0;
     bool firstLapStarted = false;
+
+    // --- Frame-sync adaptive interval + FPS display (plan §6) ---
+    double    liveLastNewFrameMs   = 0.0; // GetTickCount64() ms of last accepted NewFrame (for Hz measurement); 0 = none yet
+    double    liveMeasuredHz       = 0.0; // EMA-smoothed capture rate in frames/sec (alpha=0.1)
+    int32_t   liveEvoFpsAvg        = 0;   // last-seen AC EVO player_fps_avg for status display / comparison
+    int       liveAdaptiveCounter  = 0;   // accepted-frame counter used to throttle interval updates (~every 64 frames)
+    __int64     liveEvoTornReads      = 0;   // diagnostic: count of frames discarded due to torn reads
+
+    // --- packetId jump diagnostic (AC EVO): a token advancing by >1 between two ACCEPTED reads means at least one sim write was overwritten before we sampled it (= missed frame on our side). Steady +1 steps prove the reader keeps up and any slowness is in the sim. Messages throttled to 1/s; counters feed the session summary line.
+    int       liveEvoLastPhysId    = -1;   // last accepted physics packetId (-1 = none yet this connection)
+    int       liveEvoLastGfxId     = -1;   // last accepted graphics packetId
+    __int64   liveEvoPhysJumps     = 0;    // total missed physics writes since connect/reset
+    __int64   liveEvoGfxJumps      = 0;    // total missed graphics writes since connect/reset
+    double    liveEvoJumpMsgMs     = 0.0;  // GetTickCount64() ms of last jump message (throttle)
+
+    // --- Live session counters (plan §10a: "Collection rate" summary line) ---
+    __int64   liveFrameCount       = 0;     // total accepted NewFrames since the current collection started
+    double    liveSessionStartMs   = 0.0;   // GetTickCount64() ms when this collection's first frame was seen (for "over S s"); 0 = none yet
 
     // --- Tablet Report Server (Phase B) ---
     TabletReportServer _tabletServer{8765};   // default port; overridden by INI at startup
