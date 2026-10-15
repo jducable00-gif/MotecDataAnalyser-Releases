@@ -198,10 +198,22 @@ public:
     std::atomic<bool> stopCaptureThread{false};
     std::mutex frameMutex;
     struct CapturedFrame {
-        SPageFilePhysics phys;
-        SPageFileGraphicEvo gfx;
-        bool physUsable;
-        double timestampMs;
+        union {
+            struct {   // AC EVO (LIVE_EVO)
+                SPageFilePhysics phys;
+                SPageFileGraphicEvo gfx;
+                bool physUsable;
+            } evo;
+            Ams2SharedMemory ams;  // AMS2 (LIVE_AMS2) — POD, copied whole from shared memory
+        };
+        double timestampMs = 0.0;
+
+        // SPageFilePhysics has NSDMIs → non-trivial default ctor, so the union's implicit
+        // default constructor is deleted (bcc32c: "variant field 'evo' has a non-trivial
+        // default constructor"). A user-provided body suppresses that rule. Both capture
+        // branches assign every member before push_back, so an empty body is safe — we just
+        // need the type to be default-constructible for std::vector's reallocation/copy path.
+        CapturedFrame() {}
     };
     std::vector<CapturedFrame> frameBuffer; // Queue of frames to be processed by UI thread
 

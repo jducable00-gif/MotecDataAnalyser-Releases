@@ -329,20 +329,6 @@ EvoReadStatus AcsEvoReadFrame(SPageFilePhysics& physOut, SPageFileGraphicEvo& gf
     const int physId = physOk ? physOut.packetId : -1;
     const int gfxId  = gfxOk  ? gfxOut.packetId  : -1;
 
-    // DIAGNOSTIC: Log raw packet IDs to see update frequency and jump patterns
-    {
-        static int diagCount = 0;
-        if (diagCount < 100) {
-            FILE* df = NULL;
-            fopen_s(&df, "packet_id_trace.txt", "a"); // Append to see the sequence
-            if (df) {
-                fprintf(df, "P: %d | G: %d\n", physId, gfxId);
-                fclose(df);
-            }
-            diagCount++;
-        }
-    }
-
     // Per-page change-detection: a page is "new" only if it read OK AND its token has
     // advanced past the last one we processed (packetIds are monotonically increasing).
     const bool physNew = physOk && (physId != s_lastPhysPacket);

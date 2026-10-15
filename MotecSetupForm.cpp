@@ -2395,6 +2395,14 @@ void __fastcall TFormMotecSetup::resetLiveSession()
 	Ams2ResetFrameTracking();
 	AcsEvoResetFrameTracking();
 
+	// Drain buffer: frames queued by the capture thread belong to the OLD profile's
+	// union member — draining them under a new liveMode would read garbage. The
+	// idling capture thread only appends when connected, so clearing here is safe.
+	{
+	    std::lock_guard<std::mutex> lock(frameMutex);
+	    frameBuffer.clear();
+	}
+
 	// Frame-sync adaptive-interval / FPS state reset (plan §6): start fresh measurement on the next session.
 	liveLastNewFrameMs   = 0.0;
 	liveMeasuredHz       = 0.0;
@@ -2523,8 +2531,11 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
         LiveTimer->Interval = 4;    // reset to default before adaptive logic takes over (plan §6)
         LiveTimer->Enabled = true;  // START the UI processing loop
 
-        // Start dedicated capture thread for AC EVO to bypass Windows Timer resolution limits
-        if (liveMode == LIVE_EVO) {
+        // Start the dedicated shared-memory capture thread for AC EVO and AMS2 so reads run
+        // off the UI/VCL timer (bypasses Windows Timer resolution limits + keeps GDI+ repaints
+        // from starving frame processing). PMR stays on the timer: its UDP drain is already
+        // non-blocking. On reconnect the existing thread simply idles until liveConnected flips back.
+        if ((liveMode == LIVE_EVO || liveMode == LIVE_AMS2) && captureThread == nullptr) {
             stopCaptureThread = false;
             captureThread = new std::thread(&TFormMotecSetup::captureThreadFunc, this);
         }
@@ -2600,11 +2611,13 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
 
 void __fastcall TFormMotecSetup::stopLiveCapture(bool isShuttingDown)
 {
-    // Stop the capture thread first to avoid accessing closed handles
-    if (captureThread != nullptr) {
+    // Stop the capture thread first to avoid accessing closed handles.
+    // Reconnect mode: leave a live idling thread running (it sleeps while !liveConnected) so we
+    // don't churn create/join on every reconnect cycle. Only join+delete when fully stopping,
+    // shutting down, or switching simulator profile — the connect handler recreates it then.
+    if (captureThread != nullptr && !(LiveCaptureCheckBox != NULL && LiveCaptureCheckBox->Checked && !isShuttingDown)) {
         stopCaptureThread = true;
         // Give the thread a moment to see the flag and exit its loop before joining
-        // This prevents potential deadlocks if the thread is stuck in a system call
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
         if (captureThread->joinable())
@@ -2767,6 +2780,8 @@ void __fastcall TFormMotecSetup::updateLiveAdaptiveInterval(double simFpsHint)
     }
 }
 
+// Dedicated shared-memory capture loop for AC EVO and AMS2. Reads run here, off the UI thread;
+// fresh frames are queued in frameBuffer under frameMutex and drained by LiveTimerTimer.
 void TFormMotecSetup::captureThreadFunc()
 {
     // Set thread priority to Normal as requested by user
@@ -2785,16 +2800,48 @@ void TFormMotecSetup::captureThreadFunc()
                 std::lock_guard<std::mutex> lock(frameMutex);
                 // Double check stop flag inside the lock to prevent pushing a frame during destruction
                 if (!stopCaptureThread) {
-                    frameBuffer.push_back({phys, gfx, physUsable, (double)GetTickCount64()});
+                    CapturedFrame f;
+                    f.evo.phys       = phys;
+                    f.evo.gfx        = gfx;
+                    f.evo.physUsable = physUsable;
+                    f.timestampMs    = (double)GetTickCount64();
+                    frameBuffer.push_back(f);
                     if (frameBuffer.size() > 1000) frameBuffer.erase(frameBuffer.begin());
                 }
             } else if (status == EvoReadStatus::TornRetry) {
                 liveEvoTornReads++;
             }
-        } else {
+
+            // AC EVO writes the physics page at ~333 Hz (~every 3 ms). Polling every ~1-2 ms
+            // (timeBeginPeriod(1) in WinMain unlocks sub-ms timer resolution) comfortably exceeds
+            // that write rate, so no packetId increment goes unseen — while eliminating the previous
+            // yield-only busy-loop that spun at full CPU speed between sim writes.
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        else if (liveActive && liveConnected && liveMode == LIVE_AMS2) {
+            Ams2SharedMemory ams;
+
+            // Same double-check + change-detection as before; only genuinely new frames are queued.
+            FrameReadStatus status = Ams2ReadFrame(ams);
+
+            if (status == FrameReadStatus::NewFrame) {
+                std::lock_guard<std::mutex> lock(frameMutex);
+                if (!stopCaptureThread) {
+                    CapturedFrame f;
+                    f.ams  = ams;   // POD copy of the whole shared-memory struct (~5 KB)
+                    f.timestampMs = (double)GetTickCount64();
+                    frameBuffer.push_back(f);
+                    if (frameBuffer.size() > 1000) frameBuffer.erase(frameBuffer.begin());
+                }
+            }
+
+            // AMS2 writes shared memory at ~60-90 Hz (~every 11 ms). An 8 ms poll comfortably exceeds
+            // that rate, so no mSequenceNumber increment goes unseen — and the thread sleeps most of its time.
+            std::this_thread::sleep_for(std::chrono::milliseconds(8));
+        }
+        else {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
-        std::this_thread::yield();
     }
 }
 
@@ -2811,9 +2858,28 @@ void __fastcall TFormMotecSetup::LiveTimerTimer(TObject *Sender)
         return;
     }
 
+    // PMR stays on the timer: its UDP drain is already non-blocking and needs no capture thread.
     if (liveMode == LIVE_PMR)
         processLiveFramePmir();
 
+    else if (liveMode == LIVE_AMS2)
+    {
+        // AMS2 now runs through the same dedicated-thread + buffer architecture as AC EVO:
+        // captureThreadFunc() polls shared memory off the UI thread and queues fresh frames;
+        // here we just drain whatever accumulated since last tick.
+        std::vector<CapturedFrame> localFrames;
+        {
+            std::lock_guard<std::mutex> lock(frameMutex);
+            localFrames.swap(frameBuffer);
+        }
+
+        if (localFrames.empty()) return;
+
+        for (const auto& frame : localFrames) {
+            updateLiveAdaptiveInterval(0.0);  // AMS2 has no sim-reported fps field: drive interval from measured arrival rate only
+            processLiveFrame(frame.ams);
+        }
+    }
     else if (liveMode == LIVE_EVO)
     {
         // Process all frames accumulated in the buffer since last tick
@@ -2826,22 +2892,12 @@ void __fastcall TFormMotecSetup::LiveTimerTimer(TObject *Sender)
         if (localFrames.empty()) return;
 
         for (const auto& frame : localFrames) {
-            liveEvoFpsAvg = frame.gfx.player_fps_avg;
-            updateLiveAdaptiveInterval(frame.gfx.player_fps_avg);
-            checkEvoPacketJump("physics", frame.phys.packetId, true);
-            checkEvoPacketJump("graphics", frame.gfx.packetId, false);
-            processLiveFrameEVO(frame.phys, frame.gfx, frame.physUsable);
+            liveEvoFpsAvg = frame.evo.gfx.player_fps_avg;
+            updateLiveAdaptiveInterval(frame.evo.gfx.player_fps_avg);
+            checkEvoPacketJump("physics", frame.evo.phys.packetId, true);
+            checkEvoPacketJump("graphics", frame.evo.gfx.packetId, false);
+            processLiveFrameEVO(frame.evo.phys, frame.evo.gfx, frame.evo.physUsable);
         }
-    }
-    else
-    {
-        Ams2SharedMemory frame;
-        FrameReadStatus status = Ams2ReadFrame(frame);
-        if (status != FrameReadStatus::NewFrame)
-            return;   // NoNewData or TornRetry -> skip this tick, no duplicate/stale work
-
-        updateLiveAdaptiveInterval(0.0);  // AMS2 has no sim-reported fps field: drive interval from measured arrival rate only
-        processLiveFrame(frame);
     }
 }
 
