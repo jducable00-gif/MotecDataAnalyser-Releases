@@ -383,12 +383,18 @@ function renderDampers(ls){
     combWrap.classList.remove("hidden");gridWrap.classList.add("hidden");
   };
 
-  // Shared Y max across all present corners for Grid view.
-  var yMax=1;
-  for(var p=0;p<present.length;p++){
-    var bins=ls.damperHistograms[present[p]].bins||[];
-    for(var b2=0;b2<bins.length;b2++)if(bins[b2]>yMax)yMax=bins[b2];
-  }
+  // Threshold config from the API (mirrors app g_thresholds). Fallback defaults keep it safe.
+  var cfg=ls.damperConfig||{slowRange:15,yOffsetPct:20,minYPct:20};
+
+  // Normalize each corner's raw counts to fractions — exactly what the app does before drawing
+  // (MotecSetupForm.cpp: suspensionData[i].bins[b] = hist.bins[b]/hist.totalCount).
+  function normBins(h){var b=h.bins||[];var tot=0;for(var i=0;i<b.length;i++)tot+=b[i];if(tot<=0)return{f:[],count:0};return{f:b.map(function(v){return v/tot;}),count:tot};}
+  var norm={};
+  for(var p=0;p<present.length;p++){norm[present[p]]=normBins(ls.damperHistograms[present[p]]);}
+
+  // Shared Y max across all present corners = the largest bin FRACTION (mirrors suspensionMaxBin, which starts at 0).
+  var ySharedFrac=0;
+  for(var p4=0;p4<present.length;p4++){var nf=norm[present[p4]].f;for(var b3=0;b3<nf.length;b3++)if(nf[b3]>ySharedFrac)ySharedFrac=nf[b3];}
 
   gridWrap.innerHTML="";
   for(var p3=0;p3<present.length;p3++){
@@ -398,52 +404,62 @@ function renderDampers(ls){
 	  title.textContent=corner+" Rebound/bump Velocity";box.appendChild(title);
       var cv=document.createElement("canvas");cv.width=320;cv.height=150;
       box.appendChild(cv);gridWrap.appendChild(box);
-      drawHistogram(cv,ls.damperHistograms[corner],yMax);
+      drawHistogram(cv,norm[corner],ySharedFrac,cfg);
     })(present[p3]);
   }
 
   var combCanvas=document.getElementById("damperCombinedCanvas");
-  drawCombinedHistogram(combCanvas,ls.damperHistograms);
+  drawCombinedHistogram(combCanvas,ls.damperHistograms,cfg);
 }
 
-function drawHistogram(canvas,hist,yShared){
+function drawHistogram(canvas,nf,ySharedFrac,cfg){
+  // Mirrors TFormMotecSetup::DrawModernHistogram (GDI+) exactly: same margins, slow band,
+  // gradient bars on a shared Y scale, and % / value axis labels. `nf.f` = normalized bin fractions.
   var ctx=canvas.getContext("2d");var W=canvas.width,H=canvas.height;
-  var pad={l:8,r:8,t:6,b:18};var pw=W-pad.l-pad.r,ph=H-pad.t-pad.b;
-  var bins=hist.bins||[];if(bins.length===0)return;
+  var ml=35,mb=20,cw=W-ml,ch=H-mb;   // app: marginLeft=35, marginBottom=20 (no top/right margin)
+  var bins=nf.f||[];if(bins.length===0)return;
   ctx.clearRect(0,0,W,H);
 
-  // ±1σ shaded band (behind bars).
-  if(hist.stdDev>0){
-    var meanX=(pad.l+((hist.mean+205)/410)*pw)|0;
-    var sigW=((hist.stdDev/410)*pw)|0;
-    ctx.fillStyle="rgba(41,128,185,.13)";ctx.fillRect(meanX-sigW,pad.t,sigW*2,ph);
+  // Background: deep charcoal (#1a1a1a).
+  ctx.fillStyle="#1a1a1a";ctx.fillRect(0,0,W,H);
+
+  var slowRange=cfg.slowRange||0;
+  var displayMax=Math.max(ySharedFrac*(1+(cfg.yOffsetPct||0)/100),(cfg.minYPct||0)/100); // app formula
+
+  // Slow-damper band: symmetric around v=0, width from threshold (app uses chartWidth/400 px-per-unit).
+  if(slowRange>0){
+    var xCenter=ml+cw/2;var halfW=slowRange*(cw/400);
+    ctx.fillStyle="rgba(60,60,100,.39)";ctx.fillRect(xCenter-halfW,0,halfW*2,H); // app fills full height
   }
 
-  // Bars.
-  var barW=pw/bins.length;var maxB=yShared||1;
-  for(var i=0;i<bins.length;i++){
-    if(bins[i]===0)continue;
-    var bh=(bins[i]/maxB)*ph;if(bh<1)bh=1;
-    ctx.fillStyle="#2980b9";ctx.fillRect(pad.l+i*barW,pad.t+ph-bh,Math.max(1,barW-1),bh);
+  // Grid: vertical center line (v=0) + horizontal quarter lines.
+  ctx.strokeStyle="rgba(60,60,60,.31)";ctx.lineWidth=1;
+  var cx=Math.round(ml+cw/2)+0.5;
+  ctx.beginPath();ctx.moveTo(cx,0);ctx.lineTo(cx,ch);ctx.stroke();
+  for(var i=1;i<4;i++){var gy=Math.round(ch*i/4)+0.5;ctx.beginPath();ctx.moveTo(ml,gy);ctx.lineTo(W,gy);ctx.stroke();}
+
+  // Bars: contiguous (no gap), gradient blue top->bottom, shared Y scale across corners.
+  var binW=cw/bins.length,scaleY=ch/displayMax;
+  if(ySharedFrac>0){
+    var grad=ctx.createLinearGradient(0,0,W,H);grad.addColorStop(0,"#00b4ff");grad.addColorStop(1,"#003c78");
+    ctx.fillStyle=grad;
+    for(var b2=0;b2<bins.length;b2++){var bh=bins[b2]*scaleY;if(bh<=0)continue;ctx.fillRect(ml+b2*binW,ch-bh,binW,bh);}
   }
 
-  // Mean line.
-  if(hist.mean!=null){
-    var mx=(pad.l+((hist.mean+205)/410)*pw)|0;
-    ctx.strokeStyle="#e74c3c";ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(mx,pad.t);ctx.lineTo(mx,pad.t+ph);ctx.stroke();
-  }
+  // Y-axis % labels (top..bottom), matching app's displayMax*(1-i/4)*100.
+  ctx.fillStyle="#b4b4b4";ctx.font="8px sans-serif";ctx.textAlign="left";
+  for(var i=1;i<4;i++){var gy2=(ch*i/4);var val=displayMax*(1-i/4)*100;ctx.fillText(val.toFixed(1)+"%",5,gy2-7);}
+  ctx.fillText("0.0%",5,ch-7);
 
-  // X-axis ticks every ~5th bin (−200, −150, … +200).
-  ctx.fillStyle="#7f8c8d";ctx.font="9px sans-serif";ctx.textAlign="center";
-  for(var t=-200;t<=200;t+=50){
-    var tx=(pad.l+((t+205)/410)*pw)|0;
-    ctx.fillText(t,tx,H-3);
-  }
+  // X-axis value labels every 50 mm/s (−200..+200), mapped with span 410 like the app.
+  ctx.textAlign="center";ctx.font="9px sans-serif";
+  for(var t=-200;t<=200;t+=50){var tx=ml+((t+205)/410)*cw;ctx.fillText(t,tx,H-6);}
 }
 
-function drawCombinedHistogram(canvas,damperData){
+function drawCombinedHistogram(canvas,damperData,cfg){
+  cfg=cfg||{slowRange:15,yOffsetPct:20,minYPct:20}; // app g_thresholds via /api/report damperConfig
   var ctx=canvas.getContext("2d");var W=canvas.width,H=canvas.height;
-  var slowRange=15; // Default slow speed threshold mm/s
+  var slowRange=cfg.slowRange||0;   // dynamic threshold (mm/s), not a fixed constant
   var cornerKeys=["LF","RF","LR","RR"]; 
   var colorMap={LF:"#ed403b", RF:"#5654f4", LR:"#ec4899", RR:"#00beea"};
 
@@ -495,11 +511,8 @@ function drawCombinedHistogram(canvas,damperData){
     if(mB>globalMax) globalMax=mB;
   }
 
-  // Apply App GUI scaling: maxBin * (1 + offset/100), floor at minYPct.
-  // Note: In a real 1:1, these thresholds would come from the API, but we use defaults here to match logic.
-  var histogramYOffset = 20.0; 
-  var histogramMinYPct = 20.0;
-  var displayMax = Math.max(globalMax * (1 + histogramYOffset/100), histogramMinYPct / 100);
+  // Apply App GUI scaling exactly as MotecSetupForm.cpp does, using the live thresholds from damperConfig.
+  var displayMax = Math.max(globalMax * (1 + (cfg.yOffsetPct||20)/100), (cfg.minYPct||20) / 100);
 
   ctx.fillStyle="#7f8c8d"; ctx.font="9px sans-serif"; ctx.textAlign="right";
   var maxPct = displayMax * 100;
@@ -509,43 +522,48 @@ function drawCombinedHistogram(canvas,damperData){
     ctx.fillText(Math.round(pctVal), pad.l-10, yPos+3);
   }
 
-  // Grid & Axes
-  ctx.strokeStyle="rgba(60,70,70,70,0.5)";ctx.lineWidth=1;
+  // Grid & Axes — X ticks at −200..+200 step 50 mm/s, mapped with span 410 (app: chartLeft + ((val+205)/410)*chartWidth).
+  ctx.strokeStyle="rgba(60,70,70,0.39)";ctx.lineWidth=1;
   for(var tx=-200;tx<=200;tx+=50){
-    var x=(pad.l+((tx+200)/400)*pw)|0;
+    var x=(pad.l+((tx+205)/410)*pw)|0;
     ctx.beginPath();ctx.moveTo(x,pad.t);ctx.lineTo(x,pad.t+ph);ctx.stroke();
     ctx.fillStyle="#7f8c8d";ctx.font="9px sans-serif";ctx.textAlign="center";
     ctx.fillText(tx,x,H-10);
   }
 
-  // Slow band
-  var xLow=(pad.l+((-slowRange+200)/400)*pw)|0;
-  var xHigh=(pad.l+((slowRange+200)/400)*pw)|0;
-  ctx.fillStyle="rgba(50,120,140,0.3)";ctx.fillRect(xLow,pad.t,xHigh-xLow,ph);
+  // Slow band — dynamic threshold, (int) truncation + clamp to plot area exactly like the app GDI+ code.
+  if(slowRange>0){
+    var xLow=pad.l+(Math.trunc(-slowRange)+205)/410*pw;
+    var xHigh=pad.l+(Math.trunc(+slowRange)+205)/410*pw;
+    if(xLow<pad.l)xLow=pad.l;if(xHigh>pad.l+pw)xHigh=pad.l+pw;
+    ctx.fillStyle="rgba(120,140,255,.196)";ctx.fillRect(xLow,pad.t,xHigh-xLow,ph); // app: Color(50,120,140,255)
+  }
 
   // Curves with fill
   for(var cC2=0;cC2<validCorners.length;cC2++){
     var kC2=validCorners[cC2];var sC2=cornerStats[kC2];var colC2=colorMap[kC2]||"#fff";
     
+    // App maps each bin by its CENTER: bc = -205 + (b+0.5)*10, then x = chartLeft + ((bc+205)/410)*chartWidth.
+    function bx(i){var bc=-205+(i+0.5)*10;return pad.l+((bc+205)/410)*pw;}
+
     ctx.beginPath();
     ctx.moveTo(pad.l, pad.t+ph);
     for(var i=0;i<sC2.bins.length;i++){
-      var x=(pad.l+(( (i-20)*10 + 200)/400)*pw)|0;
+      var x=bx(i)|0;
       var y=pad.t+ph-(sC2.bins[i]/displayMax*ph);
       ctx.lineTo(x,y);
     }
-    ctx.lineTo(pad.l+(( (sC2.bins.length-1-20)*10 + 200)/400)*pw|0, pad.t+ph);
+    ctx.lineTo(bx(sC2.bins.length-1)|0, pad.t+ph); // close along baseline to last bin center (app: pts[kBin].X)
     ctx.closePath();
-    
-    // Fill area under curve
-    ctx.fillStyle=colC2+"33"; // Add alpha for fill
-    ctx.fill();
-    
-    // Draw line on top
+
+    // Fill area under curve — app uses alpha=50/255 ≈ 0.196 for the translucent fill.
+    ctx.globalAlpha=0.196;ctx.fillStyle=colC2;ctx.fill();ctx.globalAlpha=1;
+
+    // Draw line on top (full opacity, width 2 — matches app Gdiplus::Pen(colors[i], 2.0f)).
     ctx.strokeStyle=colC2;ctx.lineWidth=2;
     ctx.beginPath();
     for(var i=0;i<sC2.bins.length;i++){
-      var x=(pad.l+(( (i-20)*10 + 200)/400)*pw)|0;
+      var x=bx(i)|0;
       var y=pad.t+ph-(sC2.bins[i]/displayMax*ph);
       if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
     }

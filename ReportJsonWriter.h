@@ -307,6 +307,13 @@ inline std::string buildReportJson(const ReportResult& report, const LapStats& l
     if (!dampers.empty()) {
         stats += (stats.empty() ? "" : ",");
         stats += "\"damperHistograms\":{" + dampers + "}";
+        // Threshold values the web page needs to render histograms identically to the app GUI:
+        // slow-speed band width, Y-axis headroom offset (%), and minimum-Y floor (%) — all from g_thresholds.
+        std::string cfg = "\"damperConfig\":{\"slowRange\":" + jsonNumber(g_thresholds.damperSlowSpeedRange, 1)
+                        + ",\"yOffsetPct\":"   + jsonNumber(g_thresholds.histogramYOffset, 1)
+                        + ",\"minYPct\":"      + jsonNumber(g_thresholds.histogramMinYPct, 1) + "}";
+        stats += ",";
+        stats += cfg;
     }
 
     out += ",\"lapStats\":{" + stats + "}}\n"; // trailing newline: friendly for log inspection
