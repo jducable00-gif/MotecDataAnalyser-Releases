@@ -284,7 +284,7 @@ object FormMotecSetup: TFormMotecSetup
         Width = 50
       end
       item
-        Text = 'V5.3'
+        Text = 'V5.4'
         Width = 50
       end>
   end
