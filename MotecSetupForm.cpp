@@ -256,6 +256,65 @@ void SaveWebServerEnabled(bool enabled)
 	}
 }
 
+// Main window geometry: persisted as [Window] Left/Top/Width/Height so the app
+// reopens at its previous size and on the same monitor in multi-screen setups.
+void SaveWindowGeometry(TForm* form)
+{
+	if (form == NULL || form->BorderStyle != bsSizeable || form->WindowState != wsNormal) // skip maximized/minimized states
+		return;
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		settings->WriteInteger("Window", "Left",   form->Left);
+		settings->WriteInteger("Window", "Top",    form->Top);
+		settings->WriteInteger("Window", "Width",  form->Width);
+		settings->WriteInteger("Window", "Height", form->Height);
+	} __finally {
+		delete settings;
+	}
+}
+
+void RestoreWindowGeometry(TForm* form)
+{
+	if (form == NULL || form->BorderStyle != bsSizeable)
+		return;
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	int left, top, width, height;
+	try {
+		left   = settings->ReadInteger("Window", "Left", 0);
+		top    = settings->ReadInteger("Window", "Top", 0);
+		width  = settings->ReadInteger("Window", "Width", 0);
+		height = settings->ReadInteger("Window", "Height", 0);
+	} __finally {
+		delete settings;
+	}
+	if (width < 400 || height < 300) // missing/corrupt entry -> keep poScreenCenter default
+		return;
+
+	TRect rect(left, top, left + width, top + height);
+
+	// Check the saved position against connected monitors via Win32. The VCL indexed
+	// Monitors property does not compile cleanly in BCC, so use MonitorFromPoint with
+	// MONITOR_DEFAULTTONULL on the window center: it returns NULL when that point is
+	// outside every physical monitor (e.g. a secondary screen was disconnected), which
+	// triggers primary-screen re-centering below.
+	bool onVisibleMonitor = true; // default trust if MonitorFromPoint fails for any reason
+	HMONITOR hMon = MonitorFromPoint(POINT{left + width / 2, top + height / 2}, MONITOR_DEFAULTTONULL);
+	if (hMon == NULL)
+		onVisibleMonitor = false;
+	if (onVisibleMonitor) {
+		form->Left   = left;
+		form->Top    = top;
+		form->Width  = width;
+		form->Height = height;
+	} else {
+		// Saved monitor was disconnected -> fall back to centering on the primary screen.
+		Vcl::Forms::TMonitor* prim = Screen->PrimaryMonitor; // indexed property in this VCL version
+		TRect workArea = prim ? prim->WorkareaRect : TRect(0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+		form->Left = (workArea.Right - workArea.Left - width) / 2 + workArea.Left;
+		form->Top  = (workArea.Bottom - workArea.Top - height) / 2 + workArea.Top;
+	}
+}
+
 // Best-effort primary LAN IPv4 address for the status-bar URL (B4).
 static String getLocalLanIp()
 {
@@ -380,6 +439,9 @@ void SaveLiveCaptureSetting(bool enabled)
 // ---------------------------------------------------------------------------
 void __fastcall TFormMotecSetup::DoFormClose(TObject *Sender, TCloseAction &Action)
 {
+	// Persist window geometry before anything else so the next launch restores it.
+	SaveWindowGeometry(this);
+
     // 0. Detach all PaintBox OnPaint handlers BEFORE any cleanup begins.
     // If a timer fires mid-teardown and triggers WM_PAINT on a control that is
     // being destroyed, the handler dereferences freed memory → AV / terminate().
@@ -907,6 +969,11 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
 	// while child controls are still alive. The destructor runs AFTER VCL has already
 	// destroyed every component — touching any control there causes an access violation.
 	OnClose = DoFormClose;
+
+	// Restore saved window size/position ([Window] in the INI). Runs after DFM load so it
+	// overrides poScreenCenter, and falls back to centering if no monitor matches (e.g. a
+	// disconnected secondary screen from last session) or no entry exists yet.
+	RestoreWindowGeometry(this);
 }
 
 void __fastcall TFormMotecSetup::TranslateUI()
