@@ -119,26 +119,6 @@ var POLL_MS = 3000;
 /* ---------- helpers ---------- */
 function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
 
-// Tyre temp colour: blue(~60) → green(~95) → red(>120), linear RGB interpolation.
-function tyreColor(t){
-  if(t==null||isNaN(t))return"#bdc3c7";
-  var r,g,b;
-  if(t<=60){r=41;g=98;b=255;}
-  else if(t<=95){var f=(t-60)/35;r=Math.round(41+(46-41)*f);g=Math.round(98+(204-98)*f);b=Math.round(255+(71-255)*f);}
-  else if(t<=120){var f=(t-95)/25;r=Math.round(46+(231-46)*f);g=Math.round(204+(76-204)*f);b=Math.round(71+(60-71)*f);}
-  else{r=231;g=76;b=60;}
-  return"rgb("+r+","+g+","+b+")";
-}
-
-function lightenColor(rgbStr){
-  var match=rgbStr.match(/rgb\((\d+),(\d+),(\d+)\)/);
-  if(!match)return rgbStr;
-  var r=parseInt(match[1]),g=parseInt(match[2]),b=parseInt(match[3]);
-  // Blend 40% with white to make it lighter
-  r=Math.round(r+(255-r)*0.4);g=Math.round(g+(255-g)*0.4);b=Math.round(b+(255-b)*0.4);
-  return"rgb("+r+","+g+","+b+")";
-}
-
 // Brake bar colour: blue→orange→red over 200–600 °C.
 function brakeColor(t){
   if(t==null||isNaN(t))return"#95a5a6";
@@ -202,21 +182,26 @@ function renderTyres(ls){
         if (b === 0) bandType = "in"; else if (b === 2) bandType = "out";
       }
 
+      // Fixed two-tone scheme matching app GUI (TireTempPaintBoxPaint):
+      //   hot side  = dark green #008000, cool side = light green #9EE69E
+      //   middle    = bright green #00C800 when between inner/outer, orange #FFA500 otherwise
       if(bandType === "in"){
         v=vIn;
         if(v==null)color="#bdc3c7";
-        else if(vOut==null||v>=vOut)color=tyreColor(v);
-        else color=lightenColor(tyreColor(v));
+        else if(vOut==null||v>=vOut)color="#008000";   // hot side → dark green
+        else color="#9EE69E";                           // cool side → light green
       }else if(bandType === "out"){
         v=vOut;
         if(v==null)color="#bdc3c7";
-        else if(vIn==null||v>=vIn)color=tyreColor(v);
-        else color=lightenColor(tyreColor(v));
+        else if(vIn==null||v>=vIn)color="#008000";     // hot side → dark green
+        else color="#9EE69E";                           // cool side → light green
       }else{ // Middle
         v=vMid;
-        if(v==null)color="#bdc3c7";
-        else if(vIn==null||vOut==null||(v>=Math.min(vIn,vOut)&&v<=Math.max(vIn,vOut)))color=tyreColor(v);
-        else color="#f39c12"; 
+        if(v==null||vIn==null||vOut==null)color="#bdc3c7";   // incomplete data → neutral
+        else {
+          var middleBetween=(v>vIn&&v<vOut)||(v<vIn&&v>vOut);
+          color=middleBetween?"#00C800":"#FFA500";     // green = normal, orange = anomaly
+        }
       }
       var bar=document.createElement("div");bar.className="tyre-bar";
       bar.style.background=color;barsWrap.appendChild(bar);
