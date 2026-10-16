@@ -1,7 +1,7 @@
 ﻿//---------------------------------------------------------------------------
 // MotecSetupForm.h — Déclaration de la fenêtre principale (TFormMotecSetup).
 //
-// Form VCL qui orchestre l'analyse : sélection des fichiers CSV / LD-LDX,
+// Form VCL qui orchestre l'analyse : sélection des fichiers LD/LDX,
 // options (rapport complet, langue, profil de canaux), barre de progression
 // et affichage du rapport dans un TMemo. Les fonctions d'analyse elles-mêmes
 // sont déclarées dans MotecSetupAnalyzer.h.
@@ -93,14 +93,9 @@ __published:
     void __fastcall LiveTimerTimer(TObject *Sender);
     void __fastcall LiveConnectTimerTimer(TObject *Sender);
 
-    // Dedicated capture thread worker
-    void captureThreadFunc();
-
+    // DFM-referenced handlers must stay in __published so VCL streaming can resolve them by name.
     void __fastcall ButtonResetSessionClick(TObject *Sender);
     void __fastcall AutoDetectTrackCheckBoxClick(TObject *Sender);
-    void __fastcall resetLiveSession();
-    void __fastcall updateResetButtonState();
-    void __fastcall TranslateUI();
 
 
 public:
@@ -116,13 +111,17 @@ public:
     __fastcall TFormMotecSetup(TComponent* Owner);
     ~TFormMotecSetup();
 
+    // Internal helpers (NOT VCL event handlers — must stay out of __published).
+    void captureThreadFunc();          // dedicated capture thread worker
+    void __fastcall resetLiveSession();// stop + clear live state, ready for a fresh session
+    void __fastcall updateResetButtonState();  // enable/disable ButtonResetSession based on liveActive
+    void __fastcall TranslateUI();     // apply language to all static labels
     // OnClose handler: performs all resource cleanup (live capture, tablet server)
     // while child controls are still alive. The destructor itself must NOT touch
     // any control because VCL destroys components before the dtor body runs.
     void __fastcall DoFormClose(TObject *Sender, TCloseAction &Action);
 
     static ReportLanguage ReadReportLanguageSetting();
-    bool __fastcall AnalyzeSelectedFile(const std::string& filePath, std::string& errorMessage);
     bool __fastcall AnalyzeSelectedLdFile(const std::string& filePath, std::string& errorMessage);
     void __fastcall resetAnalysisGraphics();
     void __fastcall stopLiveCapture(bool isShuttingDown = false);

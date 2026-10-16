@@ -120,7 +120,7 @@ object FormMotecSetup: TFormMotecSetup
     Top = 804
     Width = 120
     Height = 32
-    Caption = 'Load MoTeC CSV'
+    Caption = 'Import Motec Data'
     TabOrder = 0
     Visible = False
     OnClick = ButtonLoadClick

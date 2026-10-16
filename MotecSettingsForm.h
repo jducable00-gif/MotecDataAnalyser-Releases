@@ -119,7 +119,6 @@ __published:
     // Phase D: live start/stop on checkbox toggle (no Save needed)
     void __fastcall ChkWebServerEnabledClick(TObject *Sender);
     void __fastcall EditWebPortChange(TObject *Sender);   // keep LblWebUrl in sync while typing the port
-    void UpdateWebUrlLabel();
     // DFM-referenced handlers must stay in __published so VCL streaming can resolve them by name.
     void __fastcall EditPmrBindAddressChange(TObject *Sender);
     void __fastcall EditPmrBindAddressEnter(TObject *Sender);
@@ -134,6 +133,8 @@ public:
     void LoadFromThresholds();
     void SaveToThresholds();
     void TranslateUI();
+    // Internal helper (NOT a VCL event handler — must stay out of __published).
+    void UpdateWebUrlLabel();
 };
 
 extern TFormMotecSettings *FormMotecSettings;

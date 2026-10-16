@@ -11,7 +11,6 @@ Source file (CSV / LD-LDX) / Live capture (AMS2, AC EVO, PMR UDP)
         v
 +------------------------------------------------------+
 | PARSE                                                |
-|  parseMotecCsv()   (analyze_motec_setup.cpp)         |
 |  parseMotecLd() -> DecodeMotecLd() (MotecToCSV.cpp)  |
 |  Live: Ams2LiveCapture / AcsEvoLiveCapture           |
 |        PmrLiveCapture (UDP, no file import)          |
@@ -142,7 +141,7 @@ Inline in the core analyzer header (previously `RecommendationEngine.h/.cpp`, no
 | `MotecSettingsForm.h/.cpp/.dfm` | Threshold editor dialog (6 tabs: General, Tyre, Handling, Thermal, Suspension, Brake). Reads/writes `g_thresholds` directly |
 | `LiveChannelResolver.h/.cpp` | Table-driven live feed: `ResolvedChannelTable::build(profile)` resolves mapping.json LIVE rows into per-alias value sinks (`FeedLapFromTable(lap, rawDict, table, tSeconds)`); damper dual-write for PMR (springStrain → susTravel + damper addSample) attached at build time |
 | `MotecSetupAnalyzer.h` | Core types: `LapStats`, `DataProvider`, `AnalysisAlias`, `ChannelMapping`, `AnalysisRule`, `AnalysisRegistry`, `AnalysisResult`, `AnalysisSettings`, `Thresholds` + `g_thresholds`, 4 inline rule classes, damper-velocity detection (`evaluateDamperCorner`, `hasDamperIssue`), `CauseEntry`/`Recommendation` (disabled pipeline) |
-| `analyze_motec_setup.cpp` | CSV/LD parsing (`parseMotecCsv`, `parseMotecLd`), `buildDataProviderFromLap`, `evaluateLapWithRules`, `mapAnalysisResultToReportSection`, `saveSymptomWeights`/`loadSymptomWeights`. File-import path still uses flat alias maps (not migrated — no silent-gap risk, see plan §11 Q6) |
+| `analyze_motec_setup.cpp` | LD/LDX parsing (`parseMotecLd`), `buildDataProviderFromLap`, `evaluateLapWithRules`, `mapAnalysisResultToReportSection`, `saveSymptomWeights`/`loadSymptomWeights`. File-import path still uses flat alias maps (not migrated — no silent-gap risk, see plan §11 Q6) |
 | `RuleConfig.h/.cpp` | Singleton: symptom registry + channel alias mappings + JSON parser. `buildDefaults()`, `resolveAlias()`, `loadChannelMappings()` |
 | `LapReportGenerator.h/.cpp` | Lap selection/averaging, report section generation (`generate*`), `ReportResult` |
 | `MotecToCSV.h/.cpp` | Binary LD/LDX decoder (`DecodeMotecLd`), Bresenham resampling, beacon markers, session metadata |

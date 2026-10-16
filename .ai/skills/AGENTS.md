@@ -94,8 +94,7 @@ VCL conventions in this project:
 
 When investigating logic (not compile errors):
 
-- CSV path: `MotecSetupForm.cpp` -> `AnalyzeSelectedFile` -> `parseMotecCsv`
-- LD path: `AnalyzeSelectedLdFile` -> `parseMotecLd` -> `DecodeMotecLd`
+- File import path: `Button1Click` / `ButtonLoadClick` -> `AnalyzeSelectedLdFile` -> `parseMotecLd` -> `DecodeMotecLd`
 - Binary LD layout notes: `data/reference/ld-file-format.md`
 
 Project `IncludePath` / `ILINK_LibraryPath` still reference `..\..\..\form test\` (legacy). Prefer local files in this repo.

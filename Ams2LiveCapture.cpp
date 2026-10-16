@@ -1,4 +1,4 @@
-//---------------------------------------------------------------------------
+﻿//---------------------------------------------------------------------------
 // Ams2LiveCapture.cpp — AMS2 live capture from shared memory.
 //
 // Implements:
@@ -75,6 +75,8 @@ bool Ams2OpenSharedMemory(std::string& errorMessage)
 // ---------------------------------------------------------------------------
 // Ams2ReadFrame — double-check sequence number to avoid torn reads AND detect
 // genuinely new frames via change-detection on mSequenceNumber (plan §4).
+// refresh rate is related to graphic frame rate ( max seen around 200Hz despite physics at 300hz)
+// so better to run Vsynch off
 // ---------------------------------------------------------------------------
 FrameReadStatus Ams2ReadFrame(Ams2SharedMemory& out)
 {

@@ -4,7 +4,7 @@
 // Définit les structures de données (LapStats, histogrammes de butées,
 // statistiques de comportement), les enums (ChannelProfile, ReportLanguage),
 // la structure Thresholds (seuils configurables) et déclare les fonctions
-// d'analyse (parseMotecCsv / parseMotecLd) et de génération de rapport
+// d'analyse (parseMotecLd) et de génération de rapport
 // (buildLapReport / buildBestThreeLapReport).
 //
 // Les implémentations se trouvent dans analyze_motec_setup.cpp.
@@ -1039,7 +1039,7 @@ struct LapStats {
     StatSummary pressureLR;
     StatSummary pressureRR;
 
-    // Tyre centre temps (MoTeC CSV only provides C_SURF_TEMP_XX)
+    // Tyre centre temps
     StatSummary surfTempCFL;
     StatSummary surfTempCRF;
     StatSummary surfTempCLR;
@@ -1537,10 +1537,6 @@ std::vector<AnalysisResult> evaluateLapWithRules(const LapStats& lap,
 typedef void (*AnalysisProgressCallback)(int percent);
 std::string resolveChannelKey(const std::string& rawName,
                              ChannelProfile profile = ChannelProfile::EvoM1);
-
-bool parseMotecCsv(const std::string& path, std::vector<LapStats>& laps, std::string& errorMessage,
-                   AnalysisProgressCallback progressCallback = NULL,
-                   ChannelProfile profile = ChannelProfile::EvoM1);
 
 bool parseMotecLd(const std::string& path,
                   std::vector<LapStats>& laps,

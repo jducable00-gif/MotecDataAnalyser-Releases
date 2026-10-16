@@ -4,8 +4,6 @@
 // Lit le fichier .ld (enchainement de blocs pointes par l'en-tete), extrait
 // chaque canal (nom, unite, frequence, valeurs) et les marqueurs de balises
 // depuis le fichier .ldx.
-//
-// NB : le decodage LD est independant de l'analyse CSV (voir AGENTS.md).
 //---------------------------------------------------------------------------
 
 #pragma hdrstop

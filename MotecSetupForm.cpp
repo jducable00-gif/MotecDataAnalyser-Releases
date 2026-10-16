@@ -7,8 +7,8 @@
 //   - Chargement / création des seuils d'analyse dans
 //     MotecDataAnalyser.thresholds.ini (loadThresholds / saveDefaultThresholds).
 //   - Callbacks de progression (UpdateProgress / AnalysisProgress / ExportProgress).
-//   - Gestion des boutons : ButtonLoad (CSV) et Button1 (LD/LDX), qui appellent
-//     parseMotecCsv / parseMotecLd puis buildBestThreeLapReport.
+//   - Gestion des boutons : Button1 (LD/LDX), qui appelle
+//     parseMotecLd puis buildAverageLapReport.
 //---------------------------------------------------------------------------
 
 #include <vcl.h>
@@ -917,7 +917,7 @@ void __fastcall TFormMotecSetup::TranslateUI()
     this->Caption = isFr ? "Analyseur de Setup MoTeC" : "MoTeC Setup Analyzer";
 	LabelProfile->Caption = isFr ? "Profil :" : "Profile:";
     LabelLanguage->Caption = isFr ? "Langue :" : "Language:";
-    ButtonLoad->Caption = isFr ? "Charger CSV MoTeC" : "Load MoTeC CSV";
+    ButtonLoad->Caption = isFr ? "Importer Données Motec" : "Import Motec Data";
     Button1->Caption = isFr ? "Importer Données Motec" : "Import Motec Data";
     ButtonSettings->Caption = isFr ? "Réglages" : "Settings";
     LiveCaptureCheckBox->Caption = isFr ? "Capture Live" : "Live Capture";
@@ -2245,39 +2245,6 @@ void __fastcall TFormMotecSetup::TireTempPaintBoxPaint(TObject *Sender)
 
 
 
-bool __fastcall TFormMotecSetup::AnalyzeSelectedFile(const std::string& filePath, std::string& errorMessage)
-{
-    resetAnalysisGraphics();
-	ButtonLoad->Enabled = false;
-	UpdateProgress(0, "Analyzing CSV file...");
-	std::vector<LapStats> laps;
-	ChannelProfile profile = ChannelProfile::EvoM1;
-	if (ChannelProfileCombo != NULL)
-		profile = (ChannelProfile)ChannelProfileCombo->ItemIndex;
-	if (!parseMotecCsv(filePath, laps, errorMessage, AnalysisProgress, profile)) {
-		ButtonLoad->Enabled = true;
-		//StatusBar1->SimpleText = "CSV analysis failed";
-        return false;
-    }
-	UpdateProgress(50, "Generating report...");
-
-    ReportLanguage language = (LanguageCombo != NULL) ? (ReportLanguage)LanguageCombo->ItemIndex : ReadReportLanguageSetting();
-	ReportResult result = buildAverageLapReport(laps, language, profile);
-
-    UpdateReportTabs(result);
-    publishToTabletServer(result, laps);
-    std::vector<LapStats> validLaps = LapReportGenerator::getValidLaps(laps);
-    UpdateTireTemps(validLaps);
-    UpdateBrakeTemps(validLaps);
-    UpdateSuspension(validLaps);
-    if (TabSummary != NULL && TabSummary->Visible)
-        PageControlReport->ActivePage = TabSummary;
-    ButtonLoad->Enabled = true;
-    ProgressBarExport->Position = 100;
-	//StatusBar1->SimpleText = "CSV analysis complete";
-	return true;
-}
-
 bool __fastcall TFormMotecSetup::AnalyzeSelectedLdFile(const std::string& filePath, std::string& errorMessage)
 {
     resetAnalysisGraphics();
@@ -2316,19 +2283,23 @@ void __fastcall TFormMotecSetup::ButtonLoadClick(TObject *Sender)
 {
 	TOpenDialog* dialog = new TOpenDialog(nullptr);
 	try {
-		dialog->InitialDir = ReadLastFolder("CsvImport");
-		dialog->Filter = L"CSV files (*.csv)|*.csv|All files (*.*)|*.*";
+		ChannelProfile profile2 = ChannelProfile::EvoM1;
+		if (ChannelProfileCombo != NULL)
+			profile2 = (ChannelProfile)ChannelProfileCombo->ItemIndex;
+		String section2 = LdSectionForProfile(profile2);
+		dialog->InitialDir = ReadLastFolder(section2, "LdImport");
+		dialog->Filter = L"LD/LDX files (*.ld;*.ldx)|*.ld;*.ldx|All files (*.*)|*.*";
 		dialog->Options << ofFileMustExist;
 
 		if (dialog->Execute()) {
 			UnicodeString uPath = dialog->FileName;
-			UTF8String utf8 = uPath;          // conversion propre
+			UTF8String utf8 = uPath;
 			std::string filePath = utf8.c_str();
-			SaveLastFolder("CsvImport", ExtractFileDir(uPath));
+			SaveLastFolder(section2, ExtractFileDir(uPath));
 			//MemoReport->Lines->Add("PATH = " + String(filePath.c_str()));
 			std::string errorMessage;
-			if (!AnalyzeSelectedFile(filePath, errorMessage))
-				MemoSummary->Text = "Analysis failed.\n" + String(errorMessage.c_str());
+			if (!AnalyzeSelectedLdFile(filePath, errorMessage))
+				MemoSummary->Text = "LD/LDX analysis failed.\n" + String(errorMessage.c_str());
 		}
 
 	}

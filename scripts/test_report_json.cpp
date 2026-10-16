@@ -11,7 +11,7 @@
 // No VCL libs: analyze_motec_setup.cpp's only VCL symbols (saveSymptomWeights /
 // loadSymptomWeights) are stubbed below, so the harness stays a plain console exe.
 //
-// Usage:  test_report_json <file.csv|.ldx> [language 0=EN|1=FR] [profile 0=EvoM1|1=AMS2]
+// Usage:  test_report_json <file.ld|.ldx> [language 0=EN|1=FR] [profile 0=EvoM1|1=AMS2]
 //         optional 4th arg = output path (default report_payload.json)
 //---------------------------------------------------------------------------
 
@@ -66,7 +66,7 @@ static int estimateValidLapCount(const std::vector<LapStats>& laps) {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::fprintf(stderr, "usage: test_report_json <file.csv|.ldx> [language 0|1] [profile 0=EvoM1|1=AMS2]\n");
+        std::fprintf(stderr, "usage: test_report_json <file.ld|.ldx> [language 0|1] [profile 0=EvoM1|1=AMS2]\n");
         return 2;
     }
 
@@ -77,11 +77,7 @@ int main(int argc, char** argv) {
     std::vector<LapStats> laps;
     std::string error;
     bool ok = false;
-    if (toLower(path).find(".csv") != std::string::npos) {
-        ok = parseMotecCsv(path, laps, error);
-    } else {
-        ok = parseMotecLd(path, laps, error); // .ld / .ldx
-    }
+    ok = parseMotecLd(path, laps, error);
 
     if (!ok || laps.empty()) {
         std::fprintf(stderr, "parse failed: %s\n", error.c_str());
