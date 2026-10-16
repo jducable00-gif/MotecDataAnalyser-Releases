@@ -2896,6 +2896,16 @@ void __fastcall TFormMotecSetup::processLiveFrame(const Ams2SharedMemory& frame)
 
 	// 0. Detect pit → track transition: start a new lap if none is currently in progress
 	if (onTrack && !liveWasOnTrack && !liveLapInProgress && sessionLapCounter == 0) {
+		// Wipe all previously displayed data so the fresh run starts from a clean slate:
+		// clears tire/brake/water/oil + suspension caches and repaints every paintbox empty.
+		resetAnalysisGraphics();
+		if (MemoSummary != NULL)       MemoSummary->Lines->Clear();
+		if (MemoGeneral != NULL)       MemoGeneral->Lines->Clear();
+		if (MemoTyre != NULL)          MemoTyre->Lines->Clear();
+		if (MemoBrake != NULL)         MemoBrake->Lines->Clear();
+		if (MemoSuspension != NULL)    MemoSuspension->Lines->Clear();
+		if (MemoEngineCooling != NULL) MemoEngineCooling->Lines->Clear();
+		if (MemoHandling != NULL)      MemoHandling->Lines->Clear();
 		MemoSummary->Lines->Add("Leaving Pits");
 		sessionLapCounter = 0;
 		lastCompletedLaps = frame.mParticipantInfo[frame.mViewedParticipantIndex].mLapsCompleted;

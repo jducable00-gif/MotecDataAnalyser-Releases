@@ -549,7 +549,7 @@ public:
 					AnalysisResult result;
 					result.severity = AnalysisSeverity::Warning;
 					result.category = "Tyres";
-					result.title = pos + tr(" too much negative camber", " carrossage négatif insuffisant");
+					result.title = pos + tr(" too much negative camber", " carrossage négatif excessif");
 					result.description = pos + tr(" tyre inner band is too much hotter than the outer band.", " pneu : la bande interne est trop chaude par rapport à la bande externe.");
 					result.recommendation = tr("decrease negative camber slightly and re-check the same corner on comparable laps.", "Diminuer légèrement le carrossage négatif et revérifier le même virage sur des tours comparables.");
 					results.push_back(result);
