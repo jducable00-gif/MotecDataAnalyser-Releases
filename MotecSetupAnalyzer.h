@@ -912,12 +912,22 @@ struct DamperCornerStats {
     double lastTime = std::numeric_limits<double>::quiet_NaN();
 
     void addSample(double travelMm, double timeSeconds) {
-        if (std::isfinite(lastTravel) && std::isfinite(lastTime)) {
-            double dt = timeSeconds - lastTime;
-            if (dt > 0.0005) // ignore duplicate/near-zero timestamps
-                histogram.add((travelMm - lastTravel) / dt);
+        if (!std::isfinite(lastTravel)) {         // first sample: record baseline and return
+            lastTravel = travelMm;
+            lastTime   = timeSeconds;
+            return;
         }
-        lastTravel = travelMm;
+
+        const bool changed = std::abs(travelMm - lastTravel) > 1e-6;
+        if (!changed) return;                     // stale page — keep previous baseline intact
+
+        // dt = wall-clock elapsed since the PREVIOUS new frame (QPC precision).
+        // This naturally equals one game physics step (~3–5 ms at 270 Hz) plus small poll jitter.
+        const double dt = timeSeconds - lastTime;
+        if (!(dt > 0.001 && dt < 0.5)) return;    // sanity guard (shouldn't happen in practice)
+
+        histogram.add((travelMm - lastTravel) / dt);
+        lastTravel = travelMm;   // update baseline ONLY on a genuine new frame
         lastTime = timeSeconds;
     }
 

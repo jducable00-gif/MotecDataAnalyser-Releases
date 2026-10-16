@@ -53,6 +53,25 @@ void loadSymptomWeights(TIniFile* ini);
 TFormMotecSetup *FormMotecSetup;
 
 // ===============================
+// High-resolution wall clock for live-feed timestamps.
+// GetTickCount64() has only ~15 ms resolution (Windows 64 Hz timer tick), which
+// collapses multiple game frames into one timestamp and compresses derived
+// velocities toward zero in the damper histograms. QueryPerformanceCounter gives
+// microsecond precision so each poll gets a unique, accurate Δt matching the true
+// per-frame interval (~3–5 ms at 270 Hz sim rate).
+// ===============================
+
+static double HighResClockSeconds()
+{
+    static LARGE_INTEGER freq = {0};
+    if (freq.QuadPart == 0)
+        QueryPerformanceFrequency(&freq);
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+    return (double)now.QuadPart / (double)freq.QuadPart;
+}
+
+// ===============================
 // Chemins de base (Étape 2 — portabilité).
 // Tous les fichiers d'application sont résolus relativement à l'exécutable,
 // pour que le dossier portable fonctionne n'importe où il est décompressé.
@@ -2220,12 +2239,14 @@ void __fastcall TFormMotecSetup::TireTempPaintBoxPaint(TObject *Sender)
             s1 = tI; s2 = tM; s3 = tO;
         }
 
-        int totalW = canvas->TextWidth(s1) + canvas->TextWidth(s2) + canvas->TextWidth(s3) + 8;
+        // Center the three values as a group under the tire, with enough gap to keep 3-digit temps readable.
+        const int tempGap = 12;   // px between temperature strings (was 4 — too tight for "127.9°")
+        int totalW = canvas->TextWidth(s1) + canvas->TextWidth(s2) + canvas->TextWidth(s3) + 2 * tempGap;
         int tx = centerX - totalW / 2;
         canvas->TextOut(tx, tempY, s1);
-        tx += canvas->TextWidth(s1) + 4;
+        tx += canvas->TextWidth(s1) + tempGap;
         canvas->TextOut(tx, tempY, s2);
-        tx += canvas->TextWidth(s2) + 4;
+        tx += canvas->TextWidth(s2) + tempGap;
         canvas->TextOut(tx, tempY, s3);
 
     }
@@ -2477,8 +2498,30 @@ void __fastcall TFormMotecSetup::ButtonResetSessionClick(TObject *Sender)
 {
 	if (!liveActive) return;
 	resetLiveSession();
+
+	// Clear all report memos so no stale text remains from the previous session.
 	MemoSummary->Lines->Clear();
+	MemoGeneral->Lines->Clear();
+	MemoTyre->Lines->Clear();
+	MemoBrake->Lines->Clear();
+	MemoSuspension->Lines->Clear();
+	MemoEngineCooling->Lines->Clear();
+	MemoHandling->Lines->Clear();
 	MemoSummary->Lines->Add("Session reset — ready for new collection.");
+
+	// Hide all data tabs (they'll reappear when the next report is generated).
+	if (TabGeneral != NULL) TabGeneral->Visible = false;
+	if (TabTyre != NULL) TabTyre->Visible = false;
+	if (TabBrake != NULL) TabBrake->Visible = false;
+	if (TabSuspension != NULL) TabSuspension->Visible = false;
+	if (TabEngineCooling != NULL) TabEngineCooling->Visible = false;
+	if (TabHandling != NULL) TabHandling->Visible = false;
+
+	// Invalidate paint boxes so they redraw in their "no data" state.
+	std::vector<LapStats> emptyLaps;
+	UpdateTireTemps(emptyLaps);
+	UpdateBrakeTemps(emptyLaps);
+	UpdateSuspension(emptyLaps);
 }
 
 void __fastcall TFormMotecSetup::AutoDetectTrackCheckBoxClick(TObject *Sender)
@@ -2602,10 +2645,13 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
         resetEvoPacketJumpTracking();
         if (liveMode == LIVE_EVO)
         {
-            // Read static track name
+            // Read static track name + variant from shared memory.
+            // Combine "track" and "track_configuration" for a full display name
+            // e.g. "Silverstone" + "GP" → "Silverstone GP".
             SPageFileStaticEvo stat;
-            if (AcsEvoReadStatic(stat))
-                liveTrackName = stat.track;
+            if (AcsEvoReadStatic(stat) && strlen(stat.track) > 0)
+                liveTrackName = std::string(stat.track) +
+                    (strlen(stat.track_configuration) ? " " : "") + stat.track_configuration;
 
             MemoSummary->Lines->Add("Live: connected to AC EVO. Waiting for car to leave pits...");
 
@@ -2931,6 +2977,16 @@ void __fastcall TFormMotecSetup::LiveTimerTimer(TObject *Sender)
     }
     else if (liveMode == LIVE_EVO)
     {
+        // Retry reading the static page until we get a non-empty track name.
+        // At connect time the game may not have written it yet → one-shot read can miss it.
+        if (liveTrackName.empty())
+        {
+            SPageFileStaticEvo stat;
+            if (AcsEvoReadStatic(stat) && strlen(stat.track) > 0)
+                liveTrackName = std::string(stat.track) +
+                    (strlen(stat.track_configuration) ? " " : "") + stat.track_configuration;
+        }
+
         // Process all frames accumulated in the buffer since last tick
         std::vector<CapturedFrame> localFrames;
         {
@@ -3049,7 +3105,7 @@ void __fastcall TFormMotecSetup::processLiveFrame(const Ams2SharedMemory& frame)
     // Feed data only when on track and lap is in progress
     if (onTrack && liveLapInProgress)
     {
-		double timeSeconds = (double)GetTickCount64() / 1000.0;
+        double timeSeconds = HighResClockSeconds();
 		Ams2FeedLap(liveCurrentLap, frame, timeSeconds);
     }
 
@@ -3141,7 +3197,7 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
     // Feed data only when on track and lap is in progress. A plausibility-rejected physics page (physUsable=false) skips the feed for this tick ONLY — its values are excluded from lap stats, but npos tracking continues so line-crossing detection stays accurate.
     if (onTrack && liveLapInProgress)
     {
-        double timeSeconds = (double)GetTickCount64() / 1000.0;
+        double timeSeconds = HighResClockSeconds();   // QPC: GetTickCount64's ~15 ms resolution compressed damper velocities toward zero
         if (physUsable)
             AcsEvoFeedLap(liveCurrentLap, phys, gfx, timeSeconds);
         liveEvoPrevNPos = gfx.npos;   // track npos only while feeding a lap on-track
@@ -3234,7 +3290,7 @@ void __fastcall TFormMotecSetup::processLiveFramePmir()
     if (onTrack && liveLapInProgress) {
         const PmrVehicleTelemetryPacket* pkt = PmrLastTelemetry();
         if (pkt != nullptr) {
-            double timeSeconds = (double)GetTickCount64() / 1000.0;
+            double timeSeconds = HighResClockSeconds();   // QPC: consistent with EVO/AMS2 feed timestamps
             PmrFeedLap(liveCurrentLap, *pkt, timeSeconds);
         }
     }
@@ -3449,8 +3505,27 @@ void __fastcall TFormMotecSetup::UpdateReportTabs(const ReportResult& result)
 
 void __fastcall TFormMotecSetup::UpdateSuspension(std::vector<LapStats>& laps)
 {
-    if (laps.empty())
+    // No data: clear cached bins and repaint so the paint boxes show their empty state.
+    if (laps.empty()) {
+        for (int i = 0; i < 4; ++i) {
+            suspensionData[i].valid = false;
+            for (int b = 0; b < VelocityHistogram::kBinCount; ++b)
+                suspensionData[i].bins[b] = 0.0;
+            suspensionData[i].totalCount = 0;
+        }
+        suspensionMaxBin = 0.0;
+        const bool showCombined =
+            (DamperLayoutTabs != NULL && DamperLayoutTabs->ActivePageIndex == 1);
+        if (showCombined) {
+            if (DamperCombinedPaintBox != NULL) DamperCombinedPaintBox->Invalidate();
+        } else {
+            if (DamperFLPaintBox != NULL) DamperFLPaintBox->Invalidate();
+            if (DamperFRPaintBox != NULL) DamperFRPaintBox->Invalidate();
+            if (DamperRLPaintBox != NULL) DamperRLPaintBox->Invalidate();
+            if (DamperRRPaintBox != NULL) DamperRRPaintBox->Invalidate();
+        }
         return;
+    }
 
     LapStats avg = buildAverageLapData(laps);
 

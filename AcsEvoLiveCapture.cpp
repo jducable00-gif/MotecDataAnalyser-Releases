@@ -89,6 +89,91 @@ static void AcsEvoDumpRawDiagOnce(const SPageFilePhysics& phys, const SPageFileG
 
     fclose(f);
 }
+
+// ---------------------------------------------------------------------------
+// One-time diagnostic: record raw suspensionTravel samples over ~3 seconds so a
+// skewed damper histogram can be attributed to the game (sparse/quantized writes)
+// vs our d(travel)/dt derivation. Written next to the exe as ac_evo_travel_diag.txt;
+// delete this block once diagnosed.
+// ---------------------------------------------------------------------------
+struct TravelDiagState {
+    bool        active = false;      // armed on first call, stops after kMaxSamples changed-readings
+    double      tStartSec  = 0.0;
+    double      lastLoggedT = 0.0;   // wall-clock time of the previous logged row (for dt_ms column)
+    int         samplesWritten = 0;
+    const int   kMaxSamples = 600;   // ~3 s at a typical sim rate for CHANGED readings only
+};
+
+static void AcsEvoDumpTravelDiag(const SPageFilePhysics& phys, const SPageFileGraphicEvo& gfx, double timeSeconds) {
+    static TravelDiagState st;
+
+    auto writePathTo = [](char* out) {
+        char full[MAX_PATH] = {0};
+        GetModuleFileNameA(NULL, full, MAX_PATH);
+        char* p = full + strlen(full);
+        while (p > full && *p != '\\' && *p != '/') --p;
+        strcpy_s(p, MAX_PATH - static_cast<size_t>(p - full), "\\ac_evo_travel_diag.txt");
+        strncpy(out, full, 259); out[259] = '\0';
+    };
+
+    if (!st.active) {
+        // Arm on first call. Open the file lazily so we don't create it when not driving.
+        char path[MAX_PATH]; writePathTo(path);
+        FILE* f = NULL; fopen_s(&f, path, "w");
+        if (f) {
+            fprintf(f, "# AC EVO suspensionTravel raw sample dump\n"
+                       "# Rows are logged only on polls where at least one wheel's travel changed vs the previous poll.\n"
+                       "# dt_ms = wall-clock ms since the PREVIOUS LOGGED ROW; dXX = mm change of that wheel between those two rows.\n"
+                       "# t_sec   dt_ms     delta_time_ms(game)  FL_mm        dFL         FR_mm        dFR         LR_mm        dLR         RR_mm        dRR\n");
+            fclose(f);
+        }
+        st.active = true;
+        st.tStartSec = timeSeconds;
+        return;
+    }
+
+    if (st.samplesWritten >= st.kMaxSamples) {
+        char path[MAX_PATH]; writePathTo(path);
+        FILE* f = NULL; fopen_s(&f, path, "a");
+        if (f) { fprintf(f, "# END: %d changed samples over %.2fs\n", st.samplesWritten, timeSeconds - st.tStartSec); fclose(f); }
+        return;   // one-shot per process run
+    }
+
+    const double curMm[4] = { phys.suspensionTravel[0]*1000.0, phys.suspensionTravel[1]*1000.0,
+                              phys.suspensionTravel[2]*1000.0, phys.suspensionTravel[3]*1000.0 };
+
+    static double lastPoll[4]   = {0.0, 0.0, 0.0, 0.0};
+    static bool   haveLastPoll  = false;
+    if (!haveLastPoll) { for (int i=0;i<4;++i) lastPoll[i]=curMm[i]; haveLastPoll=true; return; }
+
+    // Log only when at least one wheel changed since the previous poll — mirrors addSample's skip rule.
+    bool anyChanged = false;
+    for (int i=0;i<4;++i) if (std::abs(curMm[i] - lastPoll[i]) > 1e-6) { anyChanged = true; break; }
+
+    // d[] is relative to the previous LOGGED row: that's what addSample() divides by dt.
+    static double lastLogged[4] = {0.0, 0.0, 0.0, 0.0};
+    if (!st.lastLoggedT) for (int i=0;i<4;++i) lastLogged[i]=curMm[i];
+
+    double d[4] = { curMm[0]-lastLogged[0], curMm[1]-lastLogged[1], curMm[2]-lastLogged[2], curMm[3]-lastLogged[3] };
+
+    for (int i=0;i<4;++i) lastPoll[i]=curMm[i];
+    if (!anyChanged) return;   // nothing moved since previous poll — addSample would skip this too
+
+    char path[MAX_PATH]; writePathTo(path);
+    FILE* f = NULL; fopen_s(&f, path, "a");
+    if (f) {
+        fprintf(f, "%.4f   %8.3f     %-9d      %.5f  %+10.6f   %.5f  %+10.6f   %.5f  %+10.6f   %.5f  %+10.6f\n",
+                timeSeconds - st.tStartSec,
+                (timeSeconds - st.lastLoggedT) * 1000.0, /* wall-clock ms since previous logged row */
+                gfx.delta_time_ms,
+                curMm[0], d[0], curMm[1], d[1], curMm[2], d[2], curMm[3], d[3]);
+        fclose(f);
+    }
+
+    for (int i=0;i<4;++i) lastLogged[i]=curMm[i];
+    st.lastLoggedT = timeSeconds;
+    ++st.samplesWritten;
+}
 // Resolved channel table for EVOM1 LIVE rows (mapping.json), built ONCE on first use.
 // Unit conversions live in mapping.json, not here: this function only extracts RAW values
 // from the shared-memory frames and lets FeedLapFromTable() apply factor/offset per row.
@@ -121,9 +206,6 @@ static LiveChannel::ResolvedChannelTable& AcsEvoGetChannelTable()
                 snprintf(key, sizeof(key), "physics.wheelAngularSpeed[%d]", i);   v.push_back(key);
                 snprintf(key, sizeof(key), "physics.brakeTemp[%d]", i);           v.push_back(key);
                 snprintf(key, sizeof(key), "physics.wheelsPressure[%d]", i);      v.push_back(key);
-                snprintf(key, sizeof(key), "physics.tyreTempI[%d]", i);           v.push_back(key);
-                snprintf(key, sizeof(key), "physics.tyreTempM[%d]", i);           v.push_back(key);
-                snprintf(key, sizeof(key), "physics.tyreTempO[%d]", i);           v.push_back(key);
                 snprintf(key, sizeof(key), "physics.brakeTorque[%d]", i);         v.push_back(key);
                 snprintf(key, sizeof(key), "physics.slipRatio[%d]", i);           v.push_back(key);
                 snprintf(key, sizeof(key), "physics.suspensionTravel[%d]", i);    v.push_back(key);
@@ -449,6 +531,7 @@ void AcsEvoFeedLap(LapStats& lap, const SPageFilePhysics& phys,
     LiveChannel::ResolvedChannelTable& table = AcsEvoGetChannelTable();
 
     AcsEvoDumpRawDiagOnce(phys, gfx);   // one-time raw-value dump -> ac_evo_diag.txt (delete after diagnosis)
+    AcsEvoDumpTravelDiag(phys, gfx, timeSeconds);  // travel sample trace -> ac_evo_travel_diag.txt (damper histogram investigation)
 
 
     // --- Raw channel dictionary (RAW values only - no unit conversion here). ---
@@ -467,9 +550,6 @@ void AcsEvoFeedLap(LapStats& lap, const SPageFilePhysics& phys,
         snprintf(key, sizeof(key), "physics.wheelAngularSpeed[%d]", i); raw[key] = phys.wheelAngularSpeed[i];  // rad/s -> km/h via table factor (r=0.33m)
         snprintf(key, sizeof(key), "physics.brakeTemp[%d]", i);         raw[key] = phys.brakeTemp[i];          // C
         snprintf(key, sizeof(key), "physics.wheelsPressure[%d]", i);    raw[key] = phys.wheelsPressure[i];     // PSI direct (f=1)
-        snprintf(key, sizeof(key), "physics.tyreTempI[%d]", i);         raw[key] = phys.tyreTempI[i];          // C inner
-        snprintf(key, sizeof(key), "physics.tyreTempM[%d]", i);         raw[key] = phys.tyreTempM[i];          // C centre (Tyre_Temp_*_Middle + Surf_Temp_*)
-        snprintf(key, sizeof(key), "physics.tyreTempO[%d]", i);         raw[key] = phys.tyreTempO[i];          // C outer
         snprintf(key, sizeof(key), "physics.brakeTorque[%d]", i);       raw[key] = phys.brakeTorque[i];        // Nm
         snprintf(key, sizeof(key), "physics.slipRatio[%d]", i);         raw[key] = phys.slipRatio[i];          // ratio -> % x100 via table (Wheel_Slip_Ratio_*)
         snprintf(key, sizeof(key), "physics.suspensionTravel[%d]", i);  raw[key] = phys.suspensionTravel[i];   // m -> mm x1000 via table
@@ -504,8 +584,9 @@ void AcsEvoFeedLap(LapStats& lap, const SPageFilePhysics& phys,
     LiveChannel::FeedLapFromTable(lap, raw, table, timeSeconds);
     lap.rideHeightUnit = RideHeightUnit::Centimeters;   // aeroHeight0/1 arrive in cm (table x10 from m) - identical to old C++ path
 
-    // --- Damper stats: addSample derives shaft velocity from travel deltas over wall-clock time.
-    // Stays post-table by design (multi-value derived sample, not a single-channel sink). ---
+    // --- Damper stats: addSample derives shaft velocity from travel deltas.
+    // Only changed readings (new game frames) produce a sample; stale polls are skipped entirely.
+    // dt = QPC wall-clock since the previous new frame ≈ one physics step at 270 Hz sim rate. ---
     double travelLF = phys.suspensionTravel[0] * 1000.0;   // m -> mm
     double travelRF = phys.suspensionTravel[1] * 1000.0;
     double travelLR = phys.suspensionTravel[2] * 1000.0;

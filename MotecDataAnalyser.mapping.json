@@ -733,16 +733,15 @@
     {"alias":"Tyre_Slip_Speed_RR","profile":"AMS2","source":"LIVE","channel":"mTyreSlipSpeed[3]","unit":"km/h","sourceUnit":"m/s","factor":3.6,"offset":0.0},
     {"alias":"Tyre_Temp_Avg_FL","profile":"AMS2","source":"LIVE","channel":"mTyreTemp[0]","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
     {"alias":"Tyre_Temp_Avg_FL","profile":"AMS2","source":"MOTEC","channel":"Tyre Temp FL","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
-    {"alias":"Tyre_Temp_Avg_FL","profile":"EVOM1","source":"LIVE","channel":"physics.tyreTemp[0]","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
+
     {"alias":"Tyre_Temp_Avg_FR","profile":"AMS2","source":"LIVE","channel":"mTyreTemp[1]","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
     {"alias":"Tyre_Temp_Avg_FR","profile":"AMS2","source":"MOTEC","channel":"Tyre Temp FR","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
-    {"alias":"Tyre_Temp_Avg_FR","profile":"EVOM1","source":"LIVE","channel":"physics.tyreTemp[1]","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
+
     {"alias":"Tyre_Temp_Avg_RL","profile":"AMS2","source":"LIVE","channel":"mTyreTemp[2]","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
     {"alias":"Tyre_Temp_Avg_RL","profile":"AMS2","source":"MOTEC","channel":"Tyre Temp RL","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
-    {"alias":"Tyre_Temp_Avg_RL","profile":"EVOM1","source":"LIVE","channel":"physics.tyreTemp[2]","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
+
     {"alias":"Tyre_Temp_Avg_RR","profile":"AMS2","source":"LIVE","channel":"mTyreTemp[3]","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
     {"alias":"Tyre_Temp_Avg_RR","profile":"AMS2","source":"MOTEC","channel":"Tyre Temp RR","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
-    {"alias":"Tyre_Temp_Avg_RR","profile":"EVOM1","source":"LIVE","channel":"physics.tyreTemp[3]","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
     {"alias":"Tyre_Temp_Centre_LF","profile":"EVOM1","source":"LIVE","channel":"graphics.tyre_lf.tyre_temperature_center","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
     {"alias":"Tyre_Temp_FL_Inner","profile":"AMS2","source":"LIVE","channel":"mTyreTempRight[0]","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
     {"alias":"Tyre_Temp_FL_Inner","profile":"AMS2","source":"MOTEC","channel":"Tyre Temp FL Inner","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
@@ -802,7 +801,7 @@
     {"alias":"Tyre_Temp_RR_Middle","profile":"PMR","source":"LIVE","channel":"wheels[3].treadMiddleC","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
     {"alias":"Tyre_Temp_RR_Outer","profile":"AMS2","source":"LIVE","channel":"mTyreTempRight[3]","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
     {"alias":"Tyre_Temp_RR_Outer","profile":"AMS2","source":"MOTEC","channel":"Tyre Temp RR Outer","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
-    {"alias":"Tyre_Temp_RR_Outer","profile":"EVOM1","source":"LIVE","channel":"graphics.tyre_rr.temp_left","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
+    {"alias":"Tyre_Temp_RR_Outer","profile":"EVOM1","source":"LIVE","channel":"graphics.tyre_rr.temp_right","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
     {"alias":"Tyre_Temp_RR_Outer","profile":"EVOM1","source":"MOTEC","channel":"R_SURF_TEMP_RR","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
     {"alias":"Tyre_Temp_RR_Outer","profile":"PMR","source":"LIVE","channel":"wheels[3].treadOuterC","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},
     {"alias":"Tyre_Temp_Right_LF","profile":"EVOM1","source":"LIVE","channel":"graphics.tyre_lf.tyre_temperature_right","unit":"C","sourceUnit":"C","factor":1.0,"offset":0.0},

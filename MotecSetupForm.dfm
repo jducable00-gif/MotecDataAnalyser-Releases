@@ -42,15 +42,15 @@ object FormMotecSetup: TFormMotecSetup
     OnPaint = BrakeTempPaintBoxPaint
   end
   object LiveLed: TShape
-    Left = 528
-    Top = 28
+    Left = 508
+    Top = 31
     Width = 14
     Height = 15
     Brush.Color = clRed
     Shape = stCircle
   end
   object LabelLiveStatus: TLabel
-    Left = 548
+    Left = 528
     Top = 28
     Width = 72
     Height = 15
@@ -341,8 +341,8 @@ object FormMotecSetup: TFormMotecSetup
     OnClick = LiveCaptureCheckBoxClick
   end
   object AutoDetectTrackCheckBox: TCheckBox
-    Left = 684
-    Top = 27
+    Left = 779
+    Top = 8
     Width = 89
     Height = 19
     Caption = 'Auto session'
