@@ -991,6 +991,17 @@ void __fastcall TFormMotecSetup::ChannelProfileComboChange(TObject *Sender)
 	const char* profileName = "AMS2";
 	if (profile == ChannelProfile::EvoM1)      profileName = "Evo";
 	else if (profile == ChannelProfile::Pmr)   profileName = "PMR";
+
+	// Wipe all previously displayed data — the old profile's results no longer apply.
+	resetAnalysisGraphics();
+	if (MemoSummary != NULL)       MemoSummary->Lines->Clear();
+	if (MemoGeneral != NULL)       MemoGeneral->Lines->Clear();
+	if (MemoTyre != NULL)          MemoTyre->Lines->Clear();
+	if (MemoBrake != NULL)         MemoBrake->Lines->Clear();
+	if (MemoSuspension != NULL)    MemoSuspension->Lines->Clear();
+	if (MemoEngineCooling != NULL) MemoEngineCooling->Lines->Clear();
+	if (MemoHandling != NULL)      MemoHandling->Lines->Clear();
+
 	MemoSummary->Lines->Add("Channel profile changed to " + String(profileName) + ".");
 
     // Reactive Live Capture logic: If live is active, reconnect to the new profile immediately.
