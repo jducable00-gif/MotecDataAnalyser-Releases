@@ -810,6 +810,124 @@ struct Recommendation {
 };
 
 // ===============================
+// Phase 1 — Diagnostic Engine Types
+// ===============================
+
+/// Declares which channels a diagnostic rule needs to run at all (required)
+/// and which improve confidence when present but are not mandatory (optional).
+struct ChannelRequirements {
+    std::vector<AnalysisAlias> required;   // ALL must be present → else abstain entirely
+    std::vector<AnalysisAlias> optional;   // missing reduces confidence, recorded on finding
+};
+
+/// A single diagnostic detection: one symptom with evidence, ranked causes and traceability.
+struct DiagnosticFinding {
+    std::string symptomId;           // matches RuleConfig catalog id (e.g. "rear_traction_loss_on_exit")
+    AnalysisSeverity severity = AnalysisSeverity::Info;
+    double confidence = 0.0;         // internal score [0..1] before label mapping
+    std::string dataQualityLabel;    // "LOW" / "MEDIUM" / "HIGH" (from g_thresholds)
+    std::vector<std::string> evidence;   // concrete measurements, tr()-localized
+    std::vector<CauseEntry> rankedCauses;// sorted by adjusted weight desc — full list always
+    std::vector<AnalysisAlias> missingChannels;  // traceability: optional channels that were absent
+    std::vector<std::string> confounders;        // e.g. "ABS active on 40% of braking samples"
+    std::string phaseWindow;         // human-readable context, e.g. "corner exit"
+
+    bool empty() const { return symptomId.empty(); }
+};
+
+/// Abstract base for Phase-1 diagnostic detectors (separate from the legacy AnalysisRule).
+class DiagnosticRule {
+public:
+    virtual ~DiagnosticRule() = default;
+    /// Channels this rule needs to evaluate. If any required channel is missing,
+    /// the detector must return an empty finding (abstain entirely — no silent gaps).
+    virtual ChannelRequirements channelRequirements() const = 0;
+    /// Returns a DiagnosticFinding with symptomId == "" if data is insufficient.
+    virtual DiagnosticFinding evaluate(const DataProvider& provider,
+                                       const AnalysisSettings& settings) const = 0;
+};
+
+/// Registry of diagnostic rules — mirrors the legacy AnalysisRegistry pattern.
+struct DiagnosticRegistry {
+    std::vector<std::unique_ptr<DiagnosticRule>> rules;
+
+    void add(std::unique_ptr<DiagnosticRule> rule) { rules.push_back(std::move(rule)); }
+
+    /// Evaluate all registered detectors against a DataProvider. Empty findings are dropped.
+    std::vector<DiagnosticFinding> evaluateAll(const DataProvider& provider,
+                                               const AnalysisSettings& settings) const {
+        std::vector<DiagnosticFinding> findings;
+        for (const auto& r : rules) {
+            DiagnosticFinding f = r->evaluate(provider, settings);
+            if (!f.empty()) findings.push_back(std::move(f));
+        }
+        return findings;
+    }
+
+    bool empty() const { return rules.empty(); }
+};
+
+// --- Confidence scoring helpers (plan §Step 5) -----------------------------
+
+/// Compute the weighted 4-component confidence score.
+/// @param thresholdProximity  min(1, |value|/threshold - 1) for primary indicator [0..1]
+/// @param sampleCount         number of samples backing the primary measurement
+/// @param lapsReproduced      how many individual laps show this symptom (>=1 if detected here)
+/// @param channelCoverage     available declared channels / total declared [0..1]
+inline double computeDiagnosticConfidence(double thresholdProximity, int sampleCount,
+                                          int lapsReproduced, double channelCoverage) {
+    const Thresholds& t = g_thresholds;
+    double proximityScore  = 40.0 * std::min(1.0, std::max(0.0, thresholdProximity));
+    double sampleScore     = 25.0 * std::min(1.0, static_cast<double>(sampleCount) / (t.minHandlingSamples > 0 ? t.minHandlingSamples : 8));
+    int minLaps            = t.minLapsForReproducibility > 0 ? t.minLapsForReproducibility : 3;
+    double reproScore      = 20.0 * std::min(1.0, static_cast<double>(lapsReproduced) / minLaps);
+    double coverageScore   = 15.0 * std::max(0.0, channelCoverage);
+
+    double score = (proximityScore + sampleScore + reproScore + coverageScore) / 100.0;
+
+    // Single-lap cap: confidence cannot exceed MEDIUM boundary with only one lap
+    if (lapsReproduced <= 1 && t.confidenceMedium > 0.0) {
+        score = std::min(score, t.confidenceMedium);
+    }
+    return score;
+}
+
+/// Map a [0..1] confidence to the LOW / MEDIUM / HIGH label from g_thresholds.
+inline const char* diagnosticConfidenceLabel(double confidence) {
+    if (confidence >= g_thresholds.confidenceHigh)   return "HIGH";
+    if (confidence >= g_thresholds.confidenceMedium) return "MEDIUM";
+    return "LOW";
+}
+
+/// Check channel requirements against a DataProvider.
+/// Returns false immediately if any REQUIRED channel is missing (abstain).
+/// On success, fills outMissingOptional with absent optional channels for traceability.
+inline bool checkChannelRequirements(const ChannelRequirements& req, const DataProvider& provider,
+                                     std::vector<AnalysisAlias>& outMissingOptional) {
+    for (const auto alias : req.required) {
+        if (!provider.hasValue(alias)) return false;  // hard gate — no silent gaps
+    }
+
+    outMissingOptional.clear();
+    for (const auto alias : req.optional) {
+        if (!provider.hasValue(alias)) outMissingOptional.push_back(alias);
+    }
+    return true;
+}
+
+/// Compute channel coverage ratio: available / total declared. Returns 1.0 when nothing is declared.
+inline double computeChannelCoverage(const ChannelRequirements& req, const DataProvider& provider) {
+    int total = static_cast<int>(req.required.size()) + static_cast<int>(req.optional.size());
+    if (total == 0) return 1.0;
+
+    int available = 0;
+    for (const auto alias : req.required)   if (provider.hasValue(alias)) ++available;
+    for (const auto alias : req.optional)   if (provider.hasValue(alias)) ++available;
+
+    return static_cast<double>(available) / total;
+}
+
+// ===============================
 // StatSummary (robuste)
 // ===============================
 struct StatSummary {

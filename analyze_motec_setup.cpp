@@ -27,6 +27,7 @@
 #include <locale>
 
 #include "MotecSetupAnalyzer.h"
+#include "DiagnosticEngine.h"
 #include "MotecToCSV.h"
 #include "RuleConfig.h"
 #include "LapReportGenerator.h"
