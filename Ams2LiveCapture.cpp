@@ -258,6 +258,16 @@ void Ams2FeedLap(LapStats& lap, const Ams2SharedMemory& frame, double timeSecond
     raw["mWaterTempCelsius"]      = frame.mWaterTempCelsius;         // C
     raw["mTrackTemperature"]      = frame.mTrackTemperature;         // C
     raw["mAmbientTemperature"]    = frame.mAmbientTemperature;       // C
+
+    // Prediction: tyre wear, fuel capacity, brake damage (increases), clutch wear.
+    for (int i = 0; i < TYRE_MAX; ++i) {
+        char key[48];
+        snprintf(key, sizeof(key), "mTyreWear[%d]", i);       raw[key] = frame.mTyreWear[i];         // native ratio -> % via table if needed
+        snprintf(key, sizeof(key), "mBrakeDamage[%d]", i);    raw[key] = frame.mBrakeDamage[i];      // 0..1 damage (increases)
+    }
+    raw["mFuelCapacity"]          = frame.mFuelCapacity;               // L tank capacity
+    if (frame.mClutchWear >= 0.0f)                                     // guard: AMS2 may report -1 when unset
+        raw["mClutchWear"]         = frame.mClutchWear;                // native ratio
     if (frame.mBrakeBias >= 0.0f)                                     // guard stays in C++: AMS2 reports -1 when unset
         raw["mBrakeBias"]         = frame.mBrakeBias;                 // 0..1 -> % x100 via table
     raw["mCarFlags_TCS"]          = (frame.mCarFlags & CAR_TCS) ? 1.0 : 0.0;   // synthetic bit-flag channel (TCS_Active)
@@ -283,7 +293,7 @@ void Ams2FeedLap(LapStats& lap, const Ams2SharedMemory& frame, double timeSecond
     double brake     = frame.mBrake * 100.0;
     double throttle  = frame.mThrottle * 100.0;
     double suspAsymmetry = (travelLF - travelRF) / 2.0;
-    lap.addHandlingSample(steer, yaw, latG, longG, brake, throttle, suspAsymmetry);
+    lap.addHandlingSample(steer, yaw, latG, longG, brake, throttle, suspAsymmetry, frame.mSpeed * 3.6);   // m/s -> km/h
     // --- Steer/Yaw correlation ---
     lap.addSteerYaw(steer, yaw);
     // --- Row count ---

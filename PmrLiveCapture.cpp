@@ -594,7 +594,8 @@ void PmrFeedLap(LapStats& lap, const PmrVehicleTelemetryPacket& pkt, double time
     const double trRF = wheels[1]->springStrain * kMToMm;   // front-right travel, mm
     const double suspAsymmetry = (trLF - trRF) * 0.5;       // front axle travel asymmetry, mm — mirrors AcsEvoFeedLap()
 
-    lap.addHandlingSample(steerDeg, yawRateDps, latG, longG, brakePedalPct, throttlePct, suspAsymmetry);
+    const double speedKmh = static_cast<double>(pkt.chassis.overallSpeed) * 3.6;   // m/s -> km/h (same conversion as the table row above)
+    lap.addHandlingSample(steerDeg, yawRateDps, latG, longG, brakePedalPct, throttlePct, suspAsymmetry, speedKmh);
     lap.addSteerYaw(steerDeg, yawRateDps);
     ++lap.rowCount;
 }

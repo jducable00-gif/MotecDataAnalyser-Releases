@@ -603,6 +603,17 @@ void saveDefaultThresholds()
 		ini->WriteFloat("Handling", "UndersteerRatioMin", g_thresholds.understeerRatioMin);
 		ini->WriteFloat("Handling", "OversteerRatioMin", g_thresholds.oversteerRatioMin);
 
+		// PhaseSegmentation
+		ini->WriteFloat("PhaseSegmentation", "phaseLatGMaxStraight", g_thresholds.phaseLatGMaxStraight);
+		ini->WriteFloat("PhaseSegmentation", "phaseLongGMinAccel", g_thresholds.phaseLongGMinAccel);
+		ini->WriteFloat("PhaseSegmentation", "phaseSteerStableMax", g_thresholds.phaseSteerStableMax);
+		ini->WriteFloat("PhaseSegmentation", "phaseLatGMidMin", g_thresholds.phaseLatGMidMin);
+		ini->WriteFloat("PhaseSegmentation", "phaseExitSteerDrop", g_thresholds.phaseExitSteerDrop);
+		ini->WriteFloat("PhaseSegmentation", "phaseExitLatGMax", g_thresholds.phaseExitLatGMax);
+		ini->WriteFloat("PhaseSegmentation", "phaseBrakeDecelPeakMin", g_thresholds.phaseBrakeDecelPeakMin);
+		ini->WriteFloat("PhaseSegmentation", "phaseSpeedDropPerSec", g_thresholds.phaseSpeedDropPerSec);
+		ini->WriteFloat("PhaseSegmentation", "phaseLayoutBiasMinRatio", g_thresholds.phaseLayoutBiasMinRatio);
+
 		// Thermal
 		ini->WriteFloat("Thermal", "WaterTempMax", g_thresholds.waterTempMax);
 		ini->WriteFloat("Thermal", "OilTempMax", g_thresholds.oilTempMax);
@@ -765,6 +776,17 @@ void loadThresholdsPart1(TIniFile* ini)
 	g_thresholds.steerChangeMaxOversteer = ini->ReadFloat("Handling", "SteerChangeMaxOversteer", g_thresholds.steerChangeMaxOversteer);
 	g_thresholds.understeerRatioMin = ini->ReadFloat("Handling", "UndersteerRatioMin", g_thresholds.understeerRatioMin);
 	g_thresholds.oversteerRatioMin = ini->ReadFloat("Handling", "OversteerRatioMin", g_thresholds.oversteerRatioMin);
+
+	// PhaseSegmentation
+	g_thresholds.phaseLatGMaxStraight   = ini->ReadFloat("PhaseSegmentation", "phaseLatGMaxStraight",   g_thresholds.phaseLatGMaxStraight);
+	g_thresholds.phaseLongGMinAccel     = ini->ReadFloat("PhaseSegmentation", "phaseLongGMinAccel",     g_thresholds.phaseLongGMinAccel);
+	g_thresholds.phaseSteerStableMax    = ini->ReadFloat("PhaseSegmentation", "phaseSteerStableMax",    g_thresholds.phaseSteerStableMax);
+	g_thresholds.phaseLatGMidMin        = ini->ReadFloat("PhaseSegmentation", "phaseLatGMidMin",        g_thresholds.phaseLatGMidMin);
+	g_thresholds.phaseExitSteerDrop     = ini->ReadFloat("PhaseSegmentation", "phaseExitSteerDrop",     g_thresholds.phaseExitSteerDrop);
+	g_thresholds.phaseExitLatGMax       = ini->ReadFloat("PhaseSegmentation", "phaseExitLatGMax",       g_thresholds.phaseExitLatGMax);
+	g_thresholds.phaseBrakeDecelPeakMin = ini->ReadFloat("PhaseSegmentation", "phaseBrakeDecelPeakMin", g_thresholds.phaseBrakeDecelPeakMin);
+	g_thresholds.phaseSpeedDropPerSec   = ini->ReadFloat("PhaseSegmentation", "phaseSpeedDropPerSec",   g_thresholds.phaseSpeedDropPerSec);
+	g_thresholds.phaseLayoutBiasMinRatio= ini->ReadFloat("PhaseSegmentation", "phaseLayoutBiasMinRatio",g_thresholds.phaseLayoutBiasMinRatio);
 }
 
 void loadThresholdsPart2(TIniFile* ini)

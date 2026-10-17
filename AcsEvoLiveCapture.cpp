@@ -613,7 +613,7 @@ void AcsEvoFeedLap(LapStats& lap, const SPageFilePhysics& phys,
     double brake     = phys.brake * 100.0;
     double throttle  = phys.gas * 100.0;
     double suspAsymmetry = (travelLF - travelRF) / 2.0;
-    lap.addHandlingSample(steer, yaw, latG, longG, brake, throttle, suspAsymmetry);
+    lap.addHandlingSample(steer, yaw, latG, longG, brake, throttle, suspAsymmetry, phys.speedKmh);   // km/h direct
 
     // --- Steer/Yaw correlation ---
     lap.addSteerYaw(steer, yaw);

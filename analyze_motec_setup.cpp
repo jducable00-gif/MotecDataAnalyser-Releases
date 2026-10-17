@@ -448,6 +448,7 @@ bool parseMotecLd(const std::string& path,
         double sampleLongG = std::numeric_limits<double>::quiet_NaN();
         double sampleBrake = 0.0;
         double sampleThrottle = 0.0;
+        double sampleSpeed = std::numeric_limits<double>::quiet_NaN();
         double suspensionFrontLeft = std::numeric_limits<double>::quiet_NaN();
         double suspensionFrontRight = std::numeric_limits<double>::quiet_NaN();
         double suspensionRearLeft = std::numeric_limits<double>::quiet_NaN();
@@ -483,7 +484,7 @@ bool parseMotecLd(const std::string& path,
                 case CH_SUS_TRAVEL_RF: suspensionFrontRight = value; currentLap.susTravelRF.add(value); currentLap.damperRF.addSample(value, timeValue); break;
                 case CH_SUS_TRAVEL_LR: suspensionRearLeft = value; currentLap.susTravelLR.add(value); currentLap.damperLR.addSample(value, timeValue); break;
                 case CH_SUS_TRAVEL_RR: suspensionRearRight = value; currentLap.susTravelRR.add(value); currentLap.damperRR.addSample(value, timeValue); break;
-                case CH_SPEED: currentLap.speed.add(value); break;
+                case CH_SPEED: sampleSpeed = value; currentLap.speed.add(value); break;
                 case CH_RPMS: currentLap.rpm.add(value); break;
                 case CH_WHEEL_SPEED_LF: currentLap.wheelSpeedLF.add(value); break;
                 case CH_WHEEL_SPEED_RF: currentLap.wheelSpeedRF.add(value); break;
@@ -562,7 +563,7 @@ bool parseMotecLd(const std::string& path,
                 std::abs(suspensionRearLeft - suspensionRearRight));
         }
         currentLap.addHandlingSample(sampleSteer, sampleYaw, sampleLatG, sampleLongG,
-                                     sampleBrake, sampleThrottle, suspensionAsymmetry);
+                                     sampleBrake, sampleThrottle, suspensionAsymmetry, sampleSpeed);
 
         previousTime = timeValue;
         previousBeacon = beacon;

@@ -127,6 +127,21 @@ void averageSummary(StatSummary& target, const StatSummary& source) {
     target.max = std::max(target.max, source.max);
 }
 
+// Accumulates a per-lap LapDelta rate into running sum/count.
+struct DeltaAccum { double sum = 0; std::size_t n = 0; };
+static void addLapDelta(DeltaAccum& acc, const LapDelta& d) {
+    if (d.valid()) { acc.sum += d.delta(); ++acc.n; }
+}
+
+// Writes the mean rate back into a LapStats field: first=0 sentinel, last=<meanRate>.
+static void writeMeanRate(LapDelta& target, const DeltaAccum& acc) {
+    if (acc.n == 0) return;
+    target.first = 0.0;
+    target.last  = acc.sum / static_cast<double>(acc.n);
+    target.count = acc.n;   // reuse count as "number of laps contributing"
+}
+
+
 LapStats averageSelectedLaps(const std::vector<const LapStats*>& selected) {
     LapStats average;
     if (selected.empty())
@@ -137,6 +152,13 @@ LapStats averageSelectedLaps(const std::vector<const LapStats*>& selected) {
     average.driverName  = selected[0]->driverName;
     average.vehicleName = selected[0]->vehicleName;
     average.trackName   = selected[0]->trackName;
+
+    // Prediction: per-lap rate accumulators (mean of first→last deltas across laps).
+    DeltaAccum accFuel, accTyreLF, accTyreRF, accTyreLR, accTyreRR;
+    DeltaAccum accPadFL, accPadFR, accPadRL, accPadRR;
+    DeltaAccum accDiscFL, accDiscFR, accDiscRL, accDiscRR;
+    DeltaAccum accBrakeDmgLF, accBrakeDmgRF, accBrakeDmgLR, accBrakeDmgRR;
+    DeltaAccum accClutch;
 
     for (std::size_t i = 0; i < selected.size(); ++i) {
         const LapStats& lap = *selected[i];
@@ -244,9 +266,36 @@ LapStats averageSelectedLaps(const std::vector<const LapStats*>& selected) {
         averageSummary(average.trackTemp, lap.trackTemp);
         averageSummary(average.ambientTemp, lap.ambientTemp);
 
+        // Prediction: accumulate per-lap first→last deltas for rate averaging.
+        addLapDelta(accFuel,       lap.fuelLevelEnds);
+        averageSummary(average.fuelCapacityL, lap.fuelCapacityL);   // constant tank size → simple mean
+        addLapDelta(accTyreLF,     lap.tyreWearLF);
+        addLapDelta(accTyreRF,     lap.tyreWearRF);
+        addLapDelta(accTyreLR,     lap.tyreWearLR);
+        addLapDelta(accTyreRR,     lap.tyreWearRR);
+        addLapDelta(accPadFL,      lap.padLifeFL);
+        addLapDelta(accPadFR,      lap.padLifeFR);
+        addLapDelta(accPadRL,      lap.padLifeRL);
+        addLapDelta(accPadRR,      lap.padLifeRR);
+        addLapDelta(accDiscFL,     lap.discLifeFL);
+        addLapDelta(accDiscFR,     lap.discLifeFR);
+        addLapDelta(accDiscRL,     lap.discLifeRL);
+        addLapDelta(accDiscRR,     lap.discLifeRR);
+        addLapDelta(accBrakeDmgLF, lap.brakeDamageLF);
+        addLapDelta(accBrakeDmgRF, lap.brakeDamageRF);
+        addLapDelta(accBrakeDmgLR, lap.brakeDamageLR);
+        addLapDelta(accBrakeDmgRR, lap.brakeDamageRR);
+        addLapDelta(accClutch,     lap.clutchWear);
+
         // Handling phase stats
         average.cornerEntry.merge(lap.cornerEntry);
         average.cornerExit.merge(lap.cornerExit);
+
+        // Driving-phase segmentation (pool per-phase accumulators + confidence counters)
+        for (int i = 0; i < kDrivingPhaseCount; ++i)
+            average.phases[i].merge(lap.phases[i]);
+        average.phaseClassifiedSamples += lap.phaseClassifiedSamples;
+        average.handlingSampleTotal    += lap.handlingSampleTotal;
 
         // Steer/yaw correlation (pool across laps)
         average.steerYawCov += lap.steerYawCov;
@@ -259,6 +308,27 @@ LapStats averageSelectedLaps(const std::vector<const LapStats*>& selected) {
 
     average.startTime /= static_cast<double>(selected.size());
     average.endTime /= static_cast<double>(selected.size());
+
+    // Prediction: write mean per-lap rates back into LapDelta fields.
+    writeMeanRate(average.fuelLevelEnds,  accFuel);
+    writeMeanRate(average.tyreWearLF,     accTyreLF);
+    writeMeanRate(average.tyreWearRF,     accTyreRF);
+    writeMeanRate(average.tyreWearLR,     accTyreLR);
+    writeMeanRate(average.tyreWearRR,     accTyreRR);
+    writeMeanRate(average.padLifeFL,      accPadFL);
+    writeMeanRate(average.padLifeFR,      accPadFR);
+    writeMeanRate(average.padLifeRL,      accPadRL);
+    writeMeanRate(average.padLifeRR,      accPadRR);
+    writeMeanRate(average.discLifeFL,     accDiscFL);
+    writeMeanRate(average.discLifeFR,     accDiscFR);
+    writeMeanRate(average.discLifeRL,     accDiscRL);
+    writeMeanRate(average.discLifeRR,     accDiscRR);
+    writeMeanRate(average.brakeDamageLF,  accBrakeDmgLF);
+    writeMeanRate(average.brakeDamageRF,  accBrakeDmgRF);
+    writeMeanRate(average.brakeDamageLR,  accBrakeDmgLR);
+    writeMeanRate(average.brakeDamageRR,  accBrakeDmgRR);
+    writeMeanRate(average.clutchWear,     accClutch);
+
     return average;
 }
 
@@ -369,6 +439,157 @@ static std::string buildDataAvailabilityText(const LapStats& lap, ReportLanguage
     return oss.str();
 }
 
+// Builds the "Predictions" block for the Summary tab: per-lap consumption/wear rates
+// and estimated remaining life, computed from averaged valid-lap LapDelta data.
+static std::string buildPredictionsBlock(const LapStats& lap, ReportLanguage lang) {
+    const bool fr = (lang == ReportLanguage::French);
+    std::ostringstream oss;
+
+    bool anyPrediction = false;
+
+    // --- Fuel consumption (both sims) ---
+    if (lap.fuelLevelEnds.valid() && lap.fuelCapacityL.count > 0) {
+        const double deltaPct   = -lap.fuelLevelEnds.delta();          // positive % consumed per lap
+        const double capacityL  = lap.fuelCapacityL.average();         // litres in tank
+        if (deltaPct > 0.0 && std::isfinite(capacityL) && capacityL > 0.0) {
+            anyPrediction = true;
+            const double lPerLap   = deltaPct / 100.0 * capacityL;     // litres per lap
+            const int    maxLaps   = static_cast<int>(100.0 / deltaPct + 0.5);
+
+            oss << "\n\n" << (fr ? "── Prévisions ──\n" : "── Predictions ──\n");
+            char buf[96];
+            snprintf(buf, sizeof(buf), fr ? "Carburant : %.2f L/tour → ~%d tours max\n"
+                                          : "Fuel: %.2f L/lap → ~%d laps max", lPerLap, maxLaps);
+            oss << buf;
+        }
+    }
+
+    // --- Tyre wear (both sims) ---
+    {
+        struct CornerWear { const char* enName; const char* frName; double ratePct; };
+        std::vector<CornerWear> corners = {
+            {"FL", "DL", lap.tyreWearLF.valid() ?  lap.tyreWearLF.delta() : 0.0},
+            {"FR", "DR", lap.tyreWearRF.valid() ?  lap.tyreWearRF.delta() : 0.0},
+            {"RL", "GA", lap.tyreWearLR.valid() ?  lap.tyreWearLR.delta() : 0.0},
+            {"RR", "GR", lap.tyreWearRR.valid() ?  lap.tyreWearRR.delta() : 0.0},
+        };
+
+        bool anyTyre = false;
+        for (auto& c : corners) { if (c.ratePct > 0.0 && std::isfinite(c.ratePct)) { anyTyre = true; break; } }
+
+        if (anyTyre) {
+            if (!anyPrediction) oss << "\n\n" << (fr ? "── Prévisions ──\n" : "── Predictions ──\n");
+            anyPrediction = true;
+
+            for (auto& c : corners) {
+                char buf[96];
+                if (!std::isfinite(c.ratePct) || c.ratePct <= 0.0) continue;
+                const int lifeLaps = static_cast<int>(100.0 / c.ratePct + 0.5);
+                snprintf(buf, sizeof(buf), fr ? "Usure pneus %s : %.2f %%/tour → ~%d tours\n"
+                                              : "Tyre wear %s: %.2f %%/lap → ~%d laps",
+                         (fr ? c.frName : c.enName), c.ratePct, lifeLaps);
+                oss << buf;
+            }
+        }
+    }
+
+    // --- EVO brake pad / disc life remaining (1→0) ---
+    {
+        struct BrakeLife { const char* enLabel; const char* frLabel; double ratePerLap; };
+        std::vector<BrakeLife> pads = {
+            {"FL", "DL", lap.padLifeFL.valid() ? -lap.padLifeFL.delta() : 0.0},   // life goes DOWN → negate delta
+            {"FR", "DR", lap.padLifeFR.valid() ? -lap.padLifeFR.delta() : 0.0},
+            {"RL", "GA", lap.padLifeRL.valid() ? -lap.padLifeRL.delta() : 0.0},
+            {"RR", "GR", lap.padLifeRR.valid() ? -lap.padLifeRR.delta() : 0.0},
+        };
+
+        bool anyPad = false;
+        for (auto& p : pads) { if (p.ratePerLap > 0.0 && std::isfinite(p.ratePerLap)) { anyPad = true; break; } }
+
+        if (anyPad) {
+            if (!anyPrediction) oss << "\n\n" << (fr ? "── Prévisions ──\n" : "── Predictions ──\n");
+            anyPrediction = true;
+
+            for (auto& p : pads) {
+                char buf[96];
+                if (!std::isfinite(p.ratePerLap) || p.ratePerLap <= 0.0) continue;
+                // rate is in ratio units per lap → convert to %/lap and estimate laps from full (1.0).
+                const double pctRate = p.ratePerLap * 100.0;
+                const int lifeLaps   = static_cast<int>(1.0 / p.ratePerLap + 0.5);
+                snprintf(buf, sizeof(buf), fr ? "Plaquettes %s : %.2f %%/tour → ~%d tours\n"
+                                              : "Brake pads %s: %.2f %%/lap → ~%d laps",
+                         (fr ? p.frLabel : p.enLabel), pctRate, lifeLaps);
+                oss << buf;
+            }
+
+            std::vector<BrakeLife> discs = {
+                {"FL", "DL", lap.discLifeFL.valid() ? -lap.discLifeFL.delta() : 0.0},
+                {"FR", "DR", lap.discLifeFR.valid() ? -lap.discLifeFR.delta() : 0.0},
+                {"RL", "GA", lap.discLifeRL.valid() ? -lap.discLifeRL.delta() : 0.0},
+                {"RR", "GR", lap.discLifeRR.valid() ? -lap.discLifeRR.delta() : 0.0},
+            };
+
+            bool anyDisc = false;
+            for (auto& d : discs) { if (d.ratePerLap > 0.0 && std::isfinite(d.ratePerLap)) { anyDisc = true; break; } }
+
+            if (anyDisc) {
+                for (auto& d : discs) {
+                    char buf[96];
+                    if (!std::isfinite(d.ratePerLap) || d.ratePerLap <= 0.0) continue;
+                    const double pctRate = d.ratePerLap * 100.0;
+                    const int lifeLaps   = static_cast<int>(1.0 / d.ratePerLap + 0.5);
+                    snprintf(buf, sizeof(buf), fr ? "Disques %s : %.2f %%/tour → ~%d tours\n"
+                                                  : "Brake discs %s: %.2f %%/lap → ~%d laps",
+                             (fr ? d.frLabel : d.enLabel), pctRate, lifeLaps);
+                    oss << buf;
+                }
+            }
+        }
+    }
+
+    // --- AMS2 brake damage (0→up) + clutch wear ---
+    {
+        struct DmgInfo { const char* enName; const char* frName; double ratePerLap; };
+        std::vector<DmgInfo> dmg = {
+            {"FL", "DL", lap.brakeDamageLF.valid() ?  lap.brakeDamageLF.delta() : 0.0},   // damage goes UP → positive delta
+            {"FR", "DR", lap.brakeDamageRF.valid() ?  lap.brakeDamageRF.delta() : 0.0},
+            {"RL", "GA", lap.brakeDamageLR.valid() ?  lap.brakeDamageLR.delta() : 0.0},
+            {"RR", "GR", lap.brakeDamageRR.valid() ?  lap.brakeDamageRR.delta() : 0.0},
+        };
+
+        bool anyDmg = false;
+        for (auto& d : dmg) { if (d.ratePerLap > 0.0 && std::isfinite(d.ratePerLap)) { anyDmg = true; break; } }
+
+        const bool clutchOk = lap.clutchWear.valid() && lap.clutchWear.delta() > 0.0
+                              && std::isfinite(lap.clutchWear.delta());
+
+        if (anyDmg || clutchOk) {
+            if (!anyPrediction) oss << "\n\n" << (fr ? "── Prévisions ──\n" : "── Predictions ──\n");
+            anyPrediction = true;
+
+            for (auto& d : dmg) {
+                char buf[96];
+                if (!std::isfinite(d.ratePerLap) || d.ratePerLap <= 0.0) continue;
+                const double pctRate = d.ratePerLap * 100.0;   // ratio → %/lap
+                snprintf(buf, sizeof(buf), fr ? "Dommage freins %s : +%.2f %%/tour\n"
+                                              : "Brake damage %s: +%.2f %%/lap",
+                         (fr ? d.frName : d.enName), pctRate);
+                oss << buf;
+            }
+
+            if (clutchOk) {
+                char buf[96];
+                const double clutchPct = lap.clutchWear.delta() * 100.0;   // ratio → %/lap
+                snprintf(buf, sizeof(buf), fr ? "Usure embrayage : +%.2f %%/tour\n"
+                                              : "Clutch wear: +%.2f %%/lap", clutchPct);
+                oss << buf;
+            }
+        }
+    }
+
+    return anyPrediction ? oss.str() : "";
+}
+
 ReportResult LapReportGenerator::generate(const LapStats& lap,
                                           ReportLanguage language, ChannelProfile profile,
                                           const LapSelectionInfo* selection) {
@@ -457,6 +678,11 @@ ReportResult LapReportGenerator::generate(const LapStats& lap,
     const std::string dataAvail = buildDataAvailabilityText(lap, language);
     if (!dataAvail.empty())
         summary << dataAvail;
+
+    // --- Predictions block (fuel / tyre wear / brake life) ---
+    const std::string predictions = buildPredictionsBlock(lap, language);
+    if (!predictions.empty())
+        summary << predictions;
 
     result[ReportSection::Summary].content = summary.str();
     result[ReportSection::Summary].hasRecommendation = !findings.empty();

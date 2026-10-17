@@ -101,6 +101,18 @@ struct Thresholds {
     double understeerRatioMin = 0.35;
     double oversteerRatioMin = 0.35;
 
+    // Phase segmentation (driving-phase classifier, spec §2). Persisted in the
+    // [PhaseSegmentation] INI section — no hardcoded universal values in logic.
+    double phaseLatGMaxStraight = 0.15;      // |latG| below this on a straight (g)
+    double phaseLongGMinAccel   = 0.08;      // longG above this counts as real acceleration (g); flat coasting stays Unknown
+    double phaseSteerStableMax  = 2.5;       // |d(steer)| per frame for "steady steering" in MidCorner (deg)
+    double phaseLatGMidMin      = 0.30;      // MinCorner: moderate lateral load lower bound (g)
+    double phaseExitSteerDrop   = 1.5;       // ExitReThrottle: steer magnitude must fall by this much vs previous frame (deg)
+    double phaseExitLatGMax     = 0.45;      // ...or latG must drop below this while accelerating out of MidCorner (g)
+    double phaseBrakeDecelPeakMin   = 1.2;   // InitialBrake: peak deceleration zone, |longG| above this while braking (g)
+    double phaseSpeedDropPerSec     = 3.0;   // BrakingApproach/InitialBrake: speed must fall by at least this vs previous frame (km/h per sample interval)
+    double phaseLayoutBiasMinRatio  = 2.5;   // L/R corner-count ratio above which the minority direction is a likely layout artifact
+
     // Thermal (C)
     double waterTempMax = 95.0;
     double oilTempMax = 115.0;
@@ -1205,6 +1217,120 @@ struct HandlingPhaseStats {
     }
 };
 
+// ===============================
+// Driving-phase segmentation (spec §2)
+// Each frame is classified into exactly one phase by LapStats::addHandlingSample().
+// Unknown = criteria not met — never guessed. All thresholds live in g_thresholds
+// ([PhaseSegmentation] INI section).
+// ===============================
+enum class DrivingPhase : unsigned char {
+    Unknown = 0,             // insufficient data to classify (spec §2: use "unknown", don't guess)
+    StraightStableAccel,     // throttle > threshold, low latG, no brake
+    BrakingApproach,         // braking + speed decreasing, pre-corner
+    InitialBrake,            // peak deceleration zone while braking
+    CornerEntryRelease,      // brake releasing / steering demand growing (existing cornerEntry bucket)
+    MidCorner,               // steady steering, moderate latG, throttle < threshold
+    ExitReThrottle           // existing cornerExit bucket: accel rising + steer decreasing
+
+};
+
+static const int kDrivingPhaseCount = 7;   // one past last phase — size of LapStats::phases[]
+
+// Per-phase signal accumulator (modeled on VelocityHistogram). Only finite values are kept.
+struct PhaseAccumulator {
+    StatSummary latG;                 // all samples of the phase
+    StatSummary steerAngle;
+    StatSummary yawRate;
+    StatSummary wheelSlipFrontAvg;   // per-frame front-axle slip average, when available
+
+    // Per-side lateral load: enables L/R comparison WITHIN comparable phases (spec §4).
+    StatSummary latGLeftHander;      // samples on left-handers (steer > cornering threshold)
+    StatSummary latGRighther;        // ...right-handers. NOTE: field name avoids the "Right" keyword clash in bcc32c.
+
+    std::size_t leftHanderSamples = 0;     // |steer| above cornering threshold, steer > 0 (left)
+    std::size_t rightHanderSamples = 0;    // ...and steer < 0 (right). Used for layout-artifact detection.
+
+    void add(double gLat, double steerDeg, double yawDps) {
+        if (!std::isfinite(gLat)) return;
+        latG.add(gLat);
+        steerAngle.add(steerDeg);     // StatSummary ignores non-finite values itself
+        yawRate.add(yawDps);
+        const bool cornering = std::abs(steerDeg) > g_thresholds.steerMinCornering && std::isfinite(steerDeg);
+        if (cornering) {
+            if (steerDeg > 0.0) { ++leftHanderSamples; latGLeftHander.add(gLat); }
+            else               { ++rightHanderSamples; latGRighther.add(gLat); }
+        }
+    }
+
+    void addWheelSlipFront(double slipPct) { wheelSlipFrontAvg.add(slipPct); }   // no-op when NaN/absent
+
+    std::size_t sampleCount() const { return latG.count; }
+
+    bool hasData(int minSamples = 1) const {
+        return static_cast<int>(latG.count) >= minSamples && minSamples > 0;
+    }
+
+    void merge(const PhaseAccumulator& other) {
+        // StatSummary is sum/min/max/count — recombine directly.
+        if (other.latG.count == 0) return;   // nothing to add (min/max stay untouched when empty)
+        latG.sum += other.latG.sum;
+        steerAngle.sum += other.steerAngle.sum;
+        yawRate.sum += other.yawRate.sum;
+        wheelSlipFrontAvg.sum += other.wheelSlipFrontAvg.sum;
+        if (other.latG.min < latG.min)  latG.min = other.latG.min;
+        if (other.latG.max > latG.max)  latG.max = other.latG.max;
+        if (other.steerAngle.count > 0 && other.steerAngle.min < steerAngle.min) steerAngle.min = other.steerAngle.min;
+        if (other.steerAngle.count > 0 && other.steerAngle.max > steerAngle.max) steerAngle.max = other.steerAngle.max;
+        if (other.yawRate.count > 0 && other.yawRate.min < yawRate.min)          yawRate.min = other.yawRate.min;
+        if (other.yawRate.count > 0 && other.yawRate.max > yawRate.max)          yawRate.max = other.yawRate.max;
+        if (other.wheelSlipFrontAvg.count > 0 && other.wheelSlipFrontAvg.min < wheelSlipFrontAvg.min) wheelSlipFrontAvg.min = other.wheelSlipFrontAvg.min;
+        if (other.wheelSlipFrontAvg.count > 0 && other.wheelSlipFrontAvg.max > wheelSlipFrontAvg.max) wheelSlipFrontAvg.max = other.wheelSlipFrontAvg.max;
+        latGLeftHander.sum += other.latGLeftHander.sum;
+        latGRighther.sum   += other.latGRighther.sum;
+        if (other.latGLeftHander.count > 0 && other.latGLeftHander.min < latGLeftHander.min) latGLeftHander.min = other.latGLeftHander.min;
+        if (other.latGLeftHander.count > 0 && other.latGLeftHander.max > latGLeftHander.max) latGLeftHander.max = other.latGLeftHander.max;
+        if (other.latGRighther.count   > 0 && other.latGRighther.min   < latGRighther.min)   latGRighther.min   = other.latGRighther.min;
+        if (other.latGRighther.count   > 0 && other.latGRighther.max   > latGRighther.max)   latGRighther.max   = other.latGRighther.max;
+        latG.count += other.latG.count;
+        steerAngle.count += other.steerAngle.count;
+        yawRate.count += other.yawRate.count;
+        wheelSlipFrontAvg.count += other.wheelSlipFrontAvg.count;
+        latGLeftHander.count += other.latGLeftHander.count;
+        latGRighther.count   += other.latGRighther.count;
+        leftHanderSamples  += other.leftHanderSamples;
+        rightHanderSamples += other.rightHanderSamples;
+    }
+
+    // Layout-balance ratio: max(L,R) / min(L+R). High value = phase data dominated by one corner direction.
+    double layoutBiasRatio() const {
+        if (leftHanderSamples + rightHanderSamples == 0) return 1.0;   // no directional info — neutral, not an artifact signal
+        const std::size_t hi = leftHanderSamples > rightHanderSamples ? leftHanderSamples : rightHanderSamples;
+        const std::size_t lo = (leftHanderSamples + rightHanderSamples) - hi;
+        if (lo == 0) return static_cast<double>(hi);   // one direction only -> maximal bias
+        return static_cast<double>(hi) / static_cast<double>(lo);
+    }
+};
+
+// Asymmetry verdicts (spec §4): a difference observed between comparable conditions,
+// one likely explained by track/phase mix, or too little data to tell.
+enum class AsymmetryVerdict {
+    InconclusiveInsufficientData = 0,   // not enough samples in the compared phases — no conclusion at all
+    LikelyLayoutPhaseArtifact,          // comparable-phase sample counts are heavily skewed (e.g., track has more R-handers)
+    RepeatedInComparableConditions      // both sides have sufficient data and the difference persists -> genuine candidate signal
+};
+
+enum class AsymmetryAxis { FrontAxle = 0, RearAxle = 1 };   // L/R comparison on one axle; front/rear uses phase averages directly
+
+struct PhaseAsymmetryResult {
+    AsymmetryVerdict verdict = AsymmetryVerdict::InconclusiveInsufficientData;
+    double leftAvg = std::numeric_limits<double>::quiet_NaN();     // metric average over left-hand corner samples of the compared phases
+    double rightAvg = std::numeric_limits<double>::quiet_NaN();    // ...right-hand
+    int leftSamples = 0;
+    int rightSamples = 0;
+
+    bool isArtifact() const { return verdict == AsymmetryVerdict::LikelyLayoutPhaseArtifact; }
+};
+
 enum class RideHeightUnit {
     Millimeters,
     Centimeters
@@ -1327,6 +1453,15 @@ struct LapStats {
     double previousHandlingSteer = 0.0;
     double previousHandlingYaw = 0.0;
 
+    // Driving-phase segmentation (spec §2): per-frame classifier state + accumulators.
+    PhaseAccumulator phases[kDrivingPhaseCount];   // indexed by static_cast<int>(phase) — size is one past ExitReThrottle
+    std::size_t phaseClassifiedSamples = 0;        // samples that met ALL criteria of a known phase (confidence numerator)
+    std::size_t handlingSampleTotal = 0;           // every sample accepted into addHandlingSample() (denominator)
+
+    DrivingPhase currentPhase = DrivingPhase::Unknown;   // previous frame's verdict — used by ExitReThrottle ("out of MidCorner")
+    double previousPhaseSpeedKmh = std::numeric_limits<double>::quiet_NaN();  // NaN until the first finite speed arrives
+    bool phaseHasPreviousSpeed = false;
+
     // Aero
     StatSummary aeroHeight0;
     StatSummary aeroHeight1;
@@ -1363,8 +1498,15 @@ struct LapStats {
     double yawSqSum = 0.0;
     std::size_t steerYawCount = 0;   // IMPORTANT : compteur ddi
 
+    // ===============================
+    // addHandlingSample (blind) + driving-phase classifier (spec §2).
+    // speedKmh is optional: when absent/NaN, phases that need a frame-to-frame
+    // speed delta degrade to Unknown — never guess. All thresholds live in
+    // g_thresholds ([PhaseSegmentation] INI section), no hardcoded values here.
+    // ===============================
     void addHandlingSample(double steer, double yaw, double latG, double longG,
-                           double brake, double throttle, double suspensionAsymmetry) {
+                           double brake, double throttle, double suspensionAsymmetry,
+                           double speedKmh = std::numeric_limits<double>::quiet_NaN()) {
         if (!std::isfinite(steer) || !std::isfinite(yaw) ||
             !std::isfinite(latG) || !std::isfinite(longG))
             return;
@@ -1387,9 +1529,59 @@ struct LapStats {
                 cornerExit.addIndicator(understeer, oversteer, false, true, suspensionAsymmetry);
         }
 
+        // ---- Driving-phase classifier (spec §2): one verdict per frame -----------------
+        // Priority: InitialBrake -> BrakingApproach -> CornerEntryRelease -> ExitReThrottle
+        //          -> MidCorner  -> StraightStableAccel -> Unknown.
+        // Every phase requires ALL of its criteria; anything not fully met stays Unknown.
+        const bool hasSpeed = std::isfinite(speedKmh);
+        double speedDropPerSec = 0.0;   // positive while decelerating (prev - cur)
+        if (hasSpeed && phaseHasPreviousSpeed)
+            speedDropPerSec = previousPhaseSpeedKmh - speedKmh;
+
+        const bool brakingNow     = brake > g_thresholds.brakePedalMin && throttle < g_thresholds.throttleMaxBraking;   // == `braking` above, kept explicit for the classifier block
+        const double absLatG      = std::abs(latG);
+        const double steerDropDeg = handlingHasPrevious ? (std::abs(previousHandlingSteer) - std::abs(steer)) : 0.0;
+
+        DrivingPhase phase = DrivingPhase::Unknown;
+        if (brakingNow && hasSpeed && speedDropPerSec >= g_thresholds.phaseSpeedDropPerSec) {
+            // Braking with a real frame-to-frame speed loss: peak zone vs approach.
+            if (std::abs(longG) > g_thresholds.phaseBrakeDecelPeakMin)
+                phase = DrivingPhase::InitialBrake;      // deep in the brake application
+            else
+                phase = DrivingPhase::BrakingApproach;   // braking, decelerating, not at peak load yet
+        } else if (!brakingNow && cornering && (currentPhase == DrivingPhase::BrakingApproach || currentPhase == DrivingPhase::InitialBrake)) {
+            phase = DrivingPhase::CornerEntryRelease;    // brake released onto steering demand
+        } else if (accelerating && !brakingNow && currentPhase == DrivingPhase::MidCorner &&
+                   (steerDropDeg >= g_thresholds.phaseExitSteerDrop || absLatG < g_thresholds.phaseExitLatGMax)) {
+            phase = DrivingPhase::ExitReThrottle;        // accel rising + steer/latG falling out of the corner
+        } else if (!brakingNow && !accelerating && cornering && absLatG >= g_thresholds.phaseLatGMidMin) {
+            const double dSteerDeg = handlingHasPrevious ? std::abs(std::abs(steer) - std::abs(previousHandlingSteer)) : 0.0;
+            if (dSteerDeg <= g_thresholds.phaseSteerStableMax)
+                phase = DrivingPhase::MidCorner;         // steady steering under moderate lateral load, no throttle/brake demand
+        } else if (!brakingNow && accelerating && absLatG <= g_thresholds.phaseLatGMaxStraight && longG >= g_thresholds.phaseLongGMinAccel) {
+            phase = DrivingPhase::StraightStableAccel;   // real acceleration on a straight (flat coasting stays Unknown)
+        }
+
+        if (phase != DrivingPhase::Unknown) {
+            ++phaseClassifiedSamples;                    // confidence numerator: criteria fully met, never guessed
+            phases[static_cast<int>(phase)].add(latG, steer, yaw);   // per-side split happens inside add() when cornering
+        }
+
         previousHandlingSteer = steer;
         previousHandlingYaw = yaw;
         handlingHasPrevious = true;
+
+        currentPhase = phase;                            // Unknown breaks transition chains (entry/exit) — by design
+        ++handlingSampleTotal;                           // confidence denominator: every accepted sample
+        if (hasSpeed) {                                  // NaN speed never poisons the previous-speed state
+            previousPhaseSpeedKmh = speedKmh;
+            phaseHasPreviousSpeed = true;
+        }
+    }
+
+    // Fraction of handling samples that met ALL criteria of a known driving phase.
+    double segmentationConfidence() const {
+        return handlingSampleTotal == 0 ? 0.0 : static_cast<double>(phaseClassifiedSamples) / static_cast<double>(handlingSampleTotal);
     }
 
     // ===============================
@@ -1435,6 +1627,55 @@ struct LapStats {
         return num / den;
     }
 };
+
+// ===============================
+// L/R asymmetry within comparable driving phases (spec §4).
+// Compares per-side lateral load accumulated in the cornering phases only — a global
+// lap average mixes straights, entries and exits of both directions and is NOT valid
+// evidence. Verdicts: inconclusive / likely layout-phase artifact / repeated difference
+// under comparable conditions. This feeds rules as EVIDENCE or CONFOUNDER ONLY; it must
+// never stand alone as a mechanical conclusion (spec §4).
+// ===============================
+inline PhaseAsymmetryResult compareLrInComparablePhases(const LapStats& lap) {
+    const int minSamples = g_thresholds.minHandlingSamples > 0 ? g_thresholds.minHandlingSamples : 8;
+
+    // Cornering phases where per-side lateral load is meaningful (no straights, no braking).
+    static const DrivingPhase kComparablePhases[] = {
+        DrivingPhase::CornerEntryRelease,
+        DrivingPhase::MidCorner,
+        DrivingPhase::ExitReThrottle
+    };
+
+    double leftSum = 0.0, rightSum = 0.0;
+    std::size_t leftCount = 0, rightCount = 0;
+    for (std::size_t i = 0; i < sizeof(kComparablePhases) / sizeof(kComparablePhases[0]); ++i) {
+        const PhaseAccumulator& p = lap.phases[static_cast<int>(kComparablePhases[i])];
+        if (p.latGLeftHander.count > 0) { leftSum += p.latGLeftHander.sum;   leftCount  += p.latGLeftHander.count; }
+        if (p.latGRighther.count   > 0) { rightSum += p.latGRighther.sum;    rightCount += p.latGRighther.count; }
+    }
+
+    PhaseAsymmetryResult result;
+    const std::size_t total = leftCount + rightCount;
+    if (total < static_cast<std::size_t>(minSamples)) {
+        return result;   // InconclusiveInsufficientData — default verdict, no conclusion at all
+    }
+
+    // Layout artifact: comparable-phase samples heavily skewed toward one corner direction.
+    const std::size_t hi = leftCount > rightCount ? leftCount : rightCount;
+    const std::size_t lo = total - hi;
+    if (lo == 0 || static_cast<double>(hi) / static_cast<double>(lo) >= g_thresholds.phaseLayoutBiasMinRatio) {
+        result.verdict = AsymmetryVerdict::LikelyLayoutPhaseArtifact;   // one-directional track mix — not a mechanical signal
+    } else if (leftCount >= static_cast<std::size_t>(minSamples) && rightCount >= static_cast<std::size_t>(minSamples)) {
+        result.verdict = AsymmetryVerdict::RepeatedInComparableConditions;  // both sides sufficient, difference persists under comparable conditions
+    }
+
+    result.leftSamples  = static_cast<int>(leftCount);
+    result.rightSamples = static_cast<int>(rightCount);
+    if (leftCount > 0)  result.leftAvg  = leftSum / static_cast<double>(leftCount);
+    if (rightCount > 0) result.rightAvg = rightSum / static_cast<double>(rightCount);
+
+    return result;
+}
 
 // ===============================
 // Analysis pipeline helpers: convert the legacy LapStats data model to the new

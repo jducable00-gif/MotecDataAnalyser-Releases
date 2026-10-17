@@ -133,9 +133,37 @@ static void SinkAbsActive(LapStats& l, double v)        { l.absActive.add(v); }
 // so this sink stays unit-agnostic either way.
 static void SinkOilTemp(LapStats& l, double v)          { l.oilTemp.add(v); }
 static void SinkWaterTemp(LapStats& l, double v)        { l.waterTemp.add(v); }
-static void SinkFuelLevel(LapStats& l, double v)        { l.fuelLevel.add(v); }
+static void SinkFuelLevel(LapStats& l, double v)        { l.fuelLevel.add(v); l.fuelLevelEnds.record(v); }
 static void SinkTrackTemp(LapStats& l, double v)        { l.trackTemp.add(v); }
 static void SinkAmbientTemp(LapStats& l, double v)      { l.ambientTemp.add(v); }
+
+// --- Prediction sinks: per-lap first/last deltas for rate calculations ---
+static void SinkFuelCapacity(LapStats& l, double v)     { l.fuelCapacityL.add(v); }
+
+static void SinkTyreWearLF(LapStats& l, double v)       { l.tyreWearLF.record(v); }
+static void SinkTyreWearRF(LapStats& l, double v)       { l.tyreWearRF.record(v); }
+static void SinkTyreWearLR(LapStats& l, double v)       { l.tyreWearLR.record(v); }
+static void SinkTyreWearRR(LapStats& l, double v)       { l.tyreWearRR.record(v); }
+
+// EVO: pad/disc life remaining (1.0 → 0.0 as they wear down).
+static void SinkPadLifeFL(LapStats& l, double v)        { l.padLifeFL.record(v); }
+static void SinkPadLifeFR(LapStats& l, double v)        { l.padLifeFR.record(v); }
+static void SinkPadLifeRL(LapStats& l, double v)        { l.padLifeRL.record(v); }
+static void SinkPadLifeRR(LapStats& l, double v)        { l.padLifeRR.record(v); }
+
+static void SinkDiscLifeFL(LapStats& l, double v)       { l.discLifeFL.record(v); }
+static void SinkDiscLifeFR(LapStats& l, double v)       { l.discLifeFR.record(v); }
+static void SinkDiscLifeRL(LapStats& l, double v)       { l.discLifeRL.record(v); }
+static void SinkDiscLifeRR(LapStats& l, double v)       { l.discLifeRR.record(v); }
+
+// AMS2: brake damage (0 → up as they wear).
+static void SinkBrakeDamageLF(LapStats& l, double v)    { l.brakeDamageLF.record(v); }
+static void SinkBrakeDamageRF(LapStats& l, double v)    { l.brakeDamageRF.record(v); }
+static void SinkBrakeDamageLR(LapStats& l, double v)    { l.brakeDamageLR.record(v); }
+static void SinkBrakeDamageRR(LapStats& l, double v)    { l.brakeDamageRR.record(v); }
+
+// AMS2: clutch wear.
+static void SinkClutchWear(LapStats& l, double v)       { l.clutchWear.record(v); }
 
 // Ride heights (aeroHeight0..3). AMS2: 4 corners in cm; EVO: front/rear only — its two
 // rows map onto aeroHeight0/1 exactly as AcsEvoFeedLap does today. Unit is recorded on
@@ -253,6 +281,32 @@ static const std::unordered_map<string, ValueSink>& AliasDispatchMapExtra() {
         LCR_ALIAS(Fuel_Level_Ratio)     = SinkFuelLevel;
         LCR_ALIAS(Track_Temp)           = SinkTrackTemp;
         LCR_ALIAS(Ambient_Temp)         = SinkAmbientTemp;
+
+        // Prediction: fuel capacity + wear/damage deltas.
+        LCR_ALIAS(Fuel_Capacity)        = SinkFuelCapacity;
+        LCR_ALIAS(Tyre_Wear_FL)         = SinkTyreWearLF;
+        LCR_ALIAS(Tyre_Wear_FR)         = SinkTyreWearRF;
+        LCR_ALIAS(Tyre_Wear_RL)         = SinkTyreWearLR;
+        LCR_ALIAS(Tyre_Wear_RR)         = SinkTyreWearRR;
+
+        // EVO: pad / disc life remaining.
+        LCR_ALIAS(Brake_Pad_Life_FL)    = SinkPadLifeFL;
+        LCR_ALIAS(Brake_Pad_Life_FR)    = SinkPadLifeFR;
+        LCR_ALIAS(Brake_Pad_Life_RL)    = SinkPadLifeRL;
+        LCR_ALIAS(Brake_Pad_Life_RR)    = SinkPadLifeRR;
+        LCR_ALIAS(Brake_Disc_Life_FL)   = SinkDiscLifeFL;
+        LCR_ALIAS(Brake_Disc_Life_FR)   = SinkDiscLifeFR;
+        LCR_ALIAS(Brake_Disc_Life_RL)   = SinkDiscLifeRL;
+        LCR_ALIAS(Brake_Disc_Life_RR)   = SinkDiscLifeRR;
+
+        // AMS2: brake damage (increases with use).
+        LCR_ALIAS(Brake_Damage_FL)      = SinkBrakeDamageLF;
+        LCR_ALIAS(Brake_Damage_FR)      = SinkBrakeDamageRF;
+        LCR_ALIAS(Brake_Damage_RL)      = SinkBrakeDamageLR;
+        LCR_ALIAS(Brake_Damage_RR)      = SinkBrakeDamageRR;
+
+        // AMS2: clutch wear.
+        LCR_ALIAS(Clutch_Wear)          = SinkClutchWear;
 
         // Ride heights (aeroHeight0..3). EVO's front/rear-only rows map onto 0/1.
         LCR_ALIAS(Ride_Height_FL)       = SinkRideHeightFL;
