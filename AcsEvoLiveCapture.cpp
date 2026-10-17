@@ -565,6 +565,15 @@ void AcsEvoFeedLap(LapStats& lap, const SPageFilePhysics& phys,
     raw["physics.rideHeight[0]"]       = phys.rideHeight[0];               // m -> cm x100 via table (aeroHeight0)
     raw["physics.rideHeight[1]"]        = phys.rideHeight[1];               // m -> cm x100 via table (aeroHeight1)
 
+    // Prediction: tyre wear, fuel capacity, pad/disc life remaining.
+    for (int i = 0; i < 4; ++i) {
+        char key[64];
+        snprintf(key, sizeof(key), "physics.tyreWear[%d]", i);   raw[key] = phys.tyreWear[i];     // native ratio -> % via table if needed
+        snprintf(key, sizeof(key), "physics.padLife[%d]", i);    raw[key] = phys.padLife[i];      // 0..1 life remaining (decreases)
+        snprintf(key, sizeof(key), "physics.discLife[%d]", i);   raw[key] = phys.discLife[i];     // 0..1 life remaining (decreases)
+    }
+    raw["graphics.max_fuel"]           = gfx.max_fuel;                        // L tank capacity
+
     // Per-band tyre temps: AC EVO writes these ONLY on the graphics page, not physics.
     // The physics arrays (tyreTempI/M/O) are always 0.0f in practice.
     raw["graphics.tyre_lf.temp_left"]   = gfx.tyre_lf.tyre_temperature_left;   // C

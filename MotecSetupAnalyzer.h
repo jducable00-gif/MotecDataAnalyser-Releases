@@ -1,4 +1,4 @@
-﻿//---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 // MotecSetupAnalyzer.h — Types et API d'analyse de la télémétrie MoTeC.
 //
 // Définit les structures de données (LapStats, histogrammes de butées,
@@ -266,7 +266,70 @@ enum class AnalysisAlias {
     RideHeightFR,
     RideHeightRL,
     RideHeightRR,
-    Rake
+    Rake,
+
+    // --- Handling evidence (Phase 0: diagnostic engine) ---
+    SteerYawCorrelation,          // Pearson r of steer vs yaw over the lap [-1..+1]
+    UndersteerIndicatorsEntryPct,   // % of corner-entry samples flagged understeer [0..100]
+    OversteerIndicatorsExitPct,     // % of corner-exit samples flagged oversteer  [0..100]
+    HandlingSampleCountEntry,       // total corner-entry indicator sample count
+    HandlingSampleCountExit,        // total corner-exit indicator sample count
+
+    // --- Per-corner wheel slip (replaces front/rear averages for diagnostics) ---
+    WheelSlipLF,
+    WheelSlipRF,
+    WheelSlipLR,
+    WheelSlipRR,
+
+    // --- Brakes ---
+    BrakeTorqueFrontAvg,          // mean of LF+RF brake torque (Nm)
+    BrakeTorqueRearAvg,           // mean of LR+RR brake torque (Nm)
+    BrakeBiasSettingAvg,          // AMS2: "Brake Bias Setting" channel average
+    TcsActivePct,                 // % of samples with TCS active [0..100]
+    AbsActivePct,                 // % of samples with ABS active  [0..100]
+
+    // --- Wheel speeds (axle averages) ---
+    WheelSpeedFrontAvg,
+    WheelSpeedRearAvg,
+
+    // --- Suspension travel & bumpstop engagement per corner ---
+    SusTravelMeanLF,
+    SusTravelMeanRF,
+    SusTravelMeanLR,
+    SusTravelMeanRR,
+    BumpStopEngagementPctLF,      // % of samples with bumpstop active [0..100]
+    BumpStopEngagementPctRF,
+    BumpStopEngagementPctLR,
+    BumpStopEngagementPctRR,
+
+    // --- Damper histogram summaries (axle-level) ---
+    DamperAsymmetryFront,         // mean bump-rebound asymmetry % across LF+RF [0..100]
+    DamperAsymmetryRear,          // mean bump-rebound asymmetry % across LR+RR
+    DamperHighSpeedShareFront,    // high-speed share % (bump+rebound) front axle
+    DamperHighSpeedShareRear,
+
+    // --- Direct suspension velocity from sim feed (AMS2 "Susp Vel XX") ---
+    SuspVelMeanLF,
+    SuspVelMeanRF,
+    SuspVelMeanLR,
+    SuspVelMeanRR,
+
+    // --- Vehicle / aero / environment ---
+    AeroBalanceAvg,               // EVO: aero balance channel average
+    LsdTorqueAvg,                 // differential locking torque (Nm)
+    LatGAvg,                      // mean lateral G over the lap
+    ThrottleAvgPct,               // mean throttle [0..100]
+    LongGAvg,                     // mean longitudinal G over the lap
+    BrakePedalAvgPct,             // mean brake pedal input [0..100]
+    FuelLevelAvg,                 // fuel level (ratio or L — profile-dependent)
+    TrackTempAvg,
+    AmbientTempAvg,
+
+    // --- Tyre air temps per corner (EVO TYRE_TAIR_XX) ---
+    TyreAirTempLF,
+    TyreAirTempRF,
+    TyreAirTempLR,
+    TyreAirTempRR
 };
 
 enum class VirtualChannelOperation {
@@ -770,6 +833,28 @@ struct StatSummary {
 };
 
 // ===============================
+// LapDelta: first/last value tracker for per-lap rate calculations
+// Used to compute consumption/wear rates from start-of-lap vs end-of-lap values.
+// ===============================
+struct LapDelta {
+    double first = 0.0;
+    double last  = 0.0;
+    std::size_t count = 0;
+
+    void record(double v) {
+        if (!std::isfinite(v)) return;
+        if (count == 0) first = v;
+        last = v;
+        ++count;
+    }
+
+    bool valid() const { return count >= 2; }
+
+    // Rate of change over the lap: positive means value increased.
+    double delta() const { return valid() ? last - first : 0.0; }
+};
+
+// ===============================
 // VelocityHistogram: distribution of damper shaft speed samples (mm/s),
 // used to evaluate whether the curve approaches an ideal bell shape.
 // ===============================
@@ -1142,6 +1227,16 @@ struct LapStats {
     StatSummary trackTemp;
     StatSummary ambientTemp;
 
+    // --- Prediction: per-lap first/last deltas for rate calculations ---
+    LapDelta fuelLevelEnds;          // start/end fuel level (ratio) -> consumption L/lap
+    StatSummary  fuelCapacityL;      // tank capacity in litres (constant, averaged)
+
+    LapDelta tyreWearLF, tyreWearRF, tyreWearLR, tyreWearRR;   // % worn per lap
+    LapDelta padLifeFL, padLifeFR, padLifeRL, padLifeRR;       // EVO: life remaining 1->0
+    LapDelta discLifeFL, discLifeFR, discLifeRL, discLifeRR;   // EVO: life remaining 1->0
+    LapDelta brakeDamageLF, brakeDamageRF, brakeDamageLR, brakeDamageRR; // AMS2: damage 0->up
+    LapDelta clutchWear;                                                    // AMS2 only
+
     // Steering/Yaw correlation
     double steerYawCov = 0.0;
     double steerSum = 0.0;
@@ -1245,10 +1340,48 @@ inline AnalysisSettings buildDefaultAnalysisSettings() {
     return settings;
 }
 
+// ===============================
+// Damper histogram metric extraction for diagnostic rules.
+// Returns asymmetry % and high-speed share % from a corner's velocity histogram,
+// using the same zone split as detail::evaluateDamperCorner().
+// Both values are 0.0 when sample count is below g_thresholds.minDamperSamples.
+// ===============================
+struct DamperMetrics {
+    double asymmetryPct = 0.0;      // (bump% - rebound%) in [−100..+100]
+    double highSpeedSharePct = 0.0; // % of samples above low-speed threshold
+};
+
+inline DamperMetrics computeDamperMetrics(const VelocityHistogram& h) {
+    if (h.totalCount < static_cast<std::size_t>(g_thresholds.minDamperSamples))
+        return DamperMetrics{};
+
+    const double lo = g_thresholds.damperLowSpeedThreshold; // mm/s (~50)
+    const double hi = VelocityHistogram::rangeMax() + 1.0;
+    const double negHi = -VelocityHistogram::rangeMax() - 1.0;
+
+    const double lowBump     = h.percentInRange(0.0, lo);
+    const double highBump    = h.percentInRange(lo, hi);
+    const double lowRebound  = h.percentInRange(-lo, 0.0);
+    const double highRebound = h.percentInRange(negHi, -lo);
+
+    DamperMetrics m;
+    m.asymmetryPct      = (lowBump + highBump) - (lowRebound + highRebound);
+    m.highSpeedSharePct = highBump + highRebound;
+    return m;
+}
+
 inline void addSummaryValue(DataProvider& provider, AnalysisAlias alias,
                            const StatSummary& summary) {
     if (summary.count > 0)
         provider.setValue(alias, summary.average());
+}
+
+// Sets an axle-average value only when BOTH corner summaries have data.
+// This ensures a missing channel on one side does not produce a half-axle average.
+inline void addAxleAverage(DataProvider& provider, AnalysisAlias alias,
+                           const StatSummary& left, const StatSummary& right) {
+    if (left.count > 0 && right.count > 0)
+        provider.setValue(alias, (left.average() + right.average()) * 0.5);
 }
 
 inline DataProvider buildDataProviderFromLap(const LapStats& lap) {
@@ -1291,6 +1424,116 @@ inline DataProvider buildDataProviderFromLap(const LapStats& lap) {
         provider.setValue(AnalysisAlias::RideHeightRL, lap.aeroHeight1.average() * rideHeightToMm);
         provider.setValue(AnalysisAlias::RideHeightRR, lap.aeroHeight1.average() * rideHeightToMm);
     }
+
+    // --- Handling evidence (Phase 0) ---
+    if (lap.steerYawCount >= static_cast<std::size_t>(g_thresholds.minSteerYawSamples)) {
+        provider.setValue(AnalysisAlias::SteerYawCorrelation, lap.steerYawCorrelation());
+    }
+
+    const auto setHandlingPct = [](DataProvider& p, AnalysisAlias alias,
+                                   std::size_t indicators, std::size_t total) {
+        if (total > 0)
+            p.setValue(alias, 100.0 * static_cast<double>(indicators) / static_cast<double>(total));
+    };
+
+    setHandlingPct(provider, AnalysisAlias::UndersteerIndicatorsEntryPct,
+                   lap.cornerEntry.understeerIndicators, lap.cornerEntry.sampleCount);
+    setHandlingPct(provider, AnalysisAlias::OversteerIndicatorsExitPct,
+                   lap.cornerExit.oversteerIndicators, lap.cornerExit.sampleCount);
+
+    if (lap.cornerEntry.sampleCount > 0)
+        provider.setValue(AnalysisAlias::HandlingSampleCountEntry,
+                          static_cast<double>(lap.cornerEntry.sampleCount));
+    if (lap.cornerExit.sampleCount > 0)
+        provider.setValue(AnalysisAlias::HandlingSampleCountExit,
+                          static_cast<double>(lap.cornerExit.sampleCount));
+
+    // --- Per-corner wheel slip (Phase 0) ---
+    addSummaryValue(provider, AnalysisAlias::WheelSlipLF, lap.wheelSlipLF);
+    addSummaryValue(provider, AnalysisAlias::WheelSlipRF, lap.wheelSlipRF);
+    addSummaryValue(provider, AnalysisAlias::WheelSlipLR, lap.wheelSlipLR);
+    addSummaryValue(provider, AnalysisAlias::WheelSlipRR, lap.wheelSlipRR);
+
+    // --- Brakes (Phase 0) ---
+    addAxleAverage(provider, AnalysisAlias::BrakeTorqueFrontAvg, lap.brakeTorqueLF, lap.brakeTorqueRF);
+    addAxleAverage(provider, AnalysisAlias::BrakeTorqueRearAvg, lap.brakeTorqueLR, lap.brakeTorqueRR);
+    addSummaryValue(provider, AnalysisAlias::BrakeBiasSettingAvg, lap.brakeBiasSetting);
+    addSummaryValue(provider, AnalysisAlias::TcsActivePct, lap.tcsActive);
+    addSummaryValue(provider, AnalysisAlias::AbsActivePct, lap.absActive);
+
+    // --- Wheel speeds (Phase 0) ---
+    addAxleAverage(provider, AnalysisAlias::WheelSpeedFrontAvg, lap.wheelSpeedLF, lap.wheelSpeedRF);
+    addAxleAverage(provider, AnalysisAlias::WheelSpeedRearAvg, lap.wheelSpeedLR, lap.wheelSpeedRR);
+
+    // --- Suspension travel & bumpstop (Phase 0) ---
+    addSummaryValue(provider, AnalysisAlias::SusTravelMeanLF, lap.susTravelLF);
+    addSummaryValue(provider, AnalysisAlias::SusTravelMeanRF, lap.susTravelRF);
+    addSummaryValue(provider, AnalysisAlias::SusTravelMeanLR, lap.susTravelLR);
+    addSummaryValue(provider, AnalysisAlias::SusTravelMeanRR, lap.susTravelRR);
+
+    // Bumpstop engagement: StatSummary stores 0/1 per sample → average = fraction active.
+    const auto setBumpStopPct = [](DataProvider& p, AnalysisAlias alias,
+                                   const StatSummary& s) {
+        if (s.count > 0)
+            p.setValue(alias, s.average() * 100.0);
+    };
+
+    setBumpStopPct(provider, AnalysisAlias::BumpStopEngagementPctLF, lap.bumpStopLF);
+    setBumpStopPct(provider, AnalysisAlias::BumpStopEngagementPctRF, lap.bumpStopRF);
+    setBumpStopPct(provider, AnalysisAlias::BumpStopEngagementPctLR, lap.bumpStopLR);
+    setBumpStopPct(provider, AnalysisAlias::BumpStopEngagementPctRR, lap.bumpStopRR);
+
+    // --- Damper histogram summaries (Phase 0) ---
+    const auto addDamperAxle = [](DataProvider& p,
+                                  AnalysisAlias asymmetryAlias, AnalysisAlias highSpeedAlias,
+                                  const VelocityHistogram& leftH, const VelocityHistogram& rightH) {
+        const bool hasLeft  = leftH.totalCount  >= static_cast<std::size_t>(g_thresholds.minDamperSamples);
+        const bool hasRight = rightH.totalCount >= static_cast<std::size_t>(g_thresholds.minDamperSamples);
+
+        if (hasLeft && hasRight) {
+            // Average both corners for a representative axle value.
+            const DamperMetrics lm = computeDamperMetrics(leftH);
+            const DamperMetrics rm = computeDamperMetrics(rightH);
+            p.setValue(asymmetryAlias,  (lm.asymmetryPct + rm.asymmetryPct) * 0.5);
+            p.setValue(highSpeedAlias,  (lm.highSpeedSharePct + rm.highSpeedSharePct) * 0.5);
+        } else if (hasLeft || hasRight) {
+            // Only one corner available — use it as-is rather than half-axle average.
+            const DamperMetrics m = computeDamperMetrics(hasLeft ? leftH : rightH);
+            p.setValue(asymmetryAlias,  m.asymmetryPct);
+            p.setValue(highSpeedAlias,  m.highSpeedSharePct);
+        }
+    };
+
+    addDamperAxle(provider,
+                  AnalysisAlias::DamperAsymmetryFront, AnalysisAlias::DamperHighSpeedShareFront,
+                  lap.damperLF.histogram, lap.damperRF.histogram);
+    addDamperAxle(provider,
+                  AnalysisAlias::DamperAsymmetryRear, AnalysisAlias::DamperHighSpeedShareRear,
+                  lap.damperLR.histogram, lap.damperRR.histogram);
+
+    // --- Direct suspension velocity from sim feed (Phase 0) ---
+    // suspVel* are VelocityHistograms — use mean directly:
+    if (lap.suspVelLF.totalCount  > 0) provider.setValue(AnalysisAlias::SuspVelMeanLF, lap.suspVelLF.mean());
+    if (lap.suspVelRF.totalCount  > 0) provider.setValue(AnalysisAlias::SuspVelMeanRF, lap.suspVelRF.mean());
+    if (lap.suspVelLR.totalCount  > 0) provider.setValue(AnalysisAlias::SuspVelMeanLR, lap.suspVelLR.mean());
+    if (lap.suspVelRR.totalCount  > 0) provider.setValue(AnalysisAlias::SuspVelMeanRR, lap.suspVelRR.mean());
+
+    // --- Vehicle / aero / environment (Phase 0) ---
+    addSummaryValue(provider, AnalysisAlias::AeroBalanceAvg, lap.aeroBalance);
+    addSummaryValue(provider, AnalysisAlias::LsdTorqueAvg,   lap.lsdTorque);
+    addSummaryValue(provider, AnalysisAlias::LatGAvg,        lap.latG);
+    addSummaryValue(provider, AnalysisAlias::ThrottleAvgPct, lap.throttle);
+    addSummaryValue(provider, AnalysisAlias::LongGAvg,       lap.longG);
+    addSummaryValue(provider, AnalysisAlias::BrakePedalAvgPct, lap.brakePedal);
+    addSummaryValue(provider, AnalysisAlias::FuelLevelAvg,   lap.fuelLevel);
+    addSummaryValue(provider, AnalysisAlias::TrackTempAvg,   lap.trackTemp);
+    addSummaryValue(provider, AnalysisAlias::AmbientTempAvg, lap.ambientTemp);
+
+    // --- Tyre air temps per corner (Phase 0) ---
+    addSummaryValue(provider, AnalysisAlias::TyreAirTempLF, lap.tyreAirTempLF);
+    addSummaryValue(provider, AnalysisAlias::TyreAirTempRF, lap.tyreAirTempRF);
+    addSummaryValue(provider, AnalysisAlias::TyreAirTempLR, lap.tyreAirTempLR);
+    addSummaryValue(provider, AnalysisAlias::TyreAirTempRR, lap.tyreAirTempRR);
 
     return provider;
 }
