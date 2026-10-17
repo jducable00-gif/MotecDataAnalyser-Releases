@@ -732,6 +732,9 @@ inline DiagnosticRegistry buildDefaultDiagnosticRegistry() {
 inline std::vector<DiagnosticFinding> evaluateLapWithDiagnostics(const LapStats& lap,
                                                                   const AnalysisSettings& settings = AnalysisSettings()) {
     DataProvider provider = buildDataProviderFromLap(lap);
+    // Phase 3 fix: inject channel mappings so virtual channels (e.g. Rake) and
+    // profile-specific aliases resolve correctly — mirrors evaluateLapWithRules().
+    provider.setChannelMappings(RuleConfig::instance().channelMappings());
     DiagnosticRegistry registry = buildDefaultDiagnosticRegistry();
     return registry.evaluateAll(provider, settings);
 }

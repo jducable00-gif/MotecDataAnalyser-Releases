@@ -3411,6 +3411,7 @@ void __fastcall TFormMotecSetup::UpdateReportTabs(const ReportResult& result)
     MemoSuspension->Lines->Clear();
     MemoEngineCooling->Lines->Clear();
     MemoHandling->Lines->Clear();
+    if (MemoDiagnostics) MemoDiagnostics->Lines->Clear();
 
     // 3. Populate content from result map
     auto formatForMemo = [](const std::string& s) -> String {
@@ -3475,6 +3476,9 @@ void __fastcall TFormMotecSetup::UpdateReportTabs(const ReportResult& result)
     if (result.count(ReportSection::Handling)) {
         MemoHandling->Text = formatForMemo(result.at(ReportSection::Handling).content);
     }
+    if (result.count(ReportSection::Diagnostics) && MemoDiagnostics) {
+        MemoDiagnostics->Text = formatForMemo(result.at(ReportSection::Diagnostics).content);
+    }
 
     // 3. Manage Tab Visibility: show a tab only when it has data and a recommendation
     auto setTabVisible = [&](TTabSheet* tab, ReportSection section) {
@@ -3498,6 +3502,7 @@ void __fastcall TFormMotecSetup::UpdateReportTabs(const ReportResult& result)
     setTabVisible(TabSuspension, ReportSection::Suspension);
     setTabVisible(TabEngineCooling, ReportSection::EngineCooling);
     setTabVisible(TabHandling, ReportSection::Handling);
+    if (TabDiagnostics) setTabVisible(TabDiagnostics, ReportSection::Diagnostics);
 
     // Summary is always visible if it has content.
     if (TabSummary != NULL) {

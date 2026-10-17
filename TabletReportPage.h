@@ -134,7 +134,7 @@ function renderSections(data){
   var wrap=document.getElementById("sectionsWrap");
   wrap.innerHTML="";
   if(!data.sections)return;
-  var keys=["Summary","General","Tyre","Brake","Suspension","EngineCooling","Handling"];
+  var keys=["Summary","General","Tyre","Brake","Suspension","EngineCooling","Handling","Diagnostics"];
   for(var i=0;i<keys.length;i++){
     var s=data.sections[keys[i]];
     if(!s||!s.content)continue;

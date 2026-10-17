@@ -21,7 +21,8 @@ enum class ReportSection {
     Brake,
     Suspension,
     EngineCooling,
-    Handling
+    Handling,
+    Diagnostics   // Phase 3: diagnostic findings + controlled-test recommendations
 };
 
 struct SectionData {

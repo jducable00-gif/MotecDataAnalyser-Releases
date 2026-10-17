@@ -51,6 +51,8 @@ __published:
     TMemo *MemoSuspension;
     TMemo *MemoEngineCooling;
     TMemo *MemoHandling;
+	TTabSheet *TabDiagnostics;
+	TMemo     *MemoDiagnostics;
 	TStatusBar *StatusBar1;
 	TButton *Button1;
     TProgressBar *ProgressBarExport;    TComboBox *ChannelProfileCombo;

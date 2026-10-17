@@ -11,6 +11,7 @@
 
 #include "MotecSetupAnalyzer.h"
 #include "LapReportGenerator.h"
+#include "DiagnosticEngine.h"   // Phase 3: diagnostic findings + recommendation gate
 
 namespace {
 
@@ -590,10 +591,305 @@ static std::string buildPredictionsBlock(const LapStats& lap, ReportLanguage lan
     return anyPrediction ? oss.str() : "";
 }
 
+// ============================================================================
+// Phase 3 — Diagnostic findings rendering + step-12 recommendation gate
+// All helpers are file-local (anonymous namespace). User-facing strings use the
+// inline ternary pattern: `fr ? "..." : "..."` consistent with this translation unit.
+// ============================================================================
+
+namespace {
+
+/// Best-effort mapping from catalog validation-channel strings to AnalysisAlias values.
+/// Returns false when no alias exists — those entries are surfaced in Limitations,
+/// never fabricated as concordant evidence (plan §Step 12 gate b).
+static bool validationStringToAlias(const std::string& s, AnalysisAlias& out) {
+    // Rear axle wheel slip → per-corner aliases; use rear average if available.
+    if (s == "rear_wheel_slip")   { out = AnalysisAlias::WheelSlipRearAvg;  return true; }
+    if (s == "front_wheel_slip")  { out = AnalysisAlias::WheelSlipFrontAvg; return true; }
+
+    // Yaw rate — direct alias exists.
+    if (s == "yaw_rate")          { out = AnalysisAlias::YawRateAvg;        return true; }
+
+    // Lateral G — direct alias exists.
+    if (s == "lateral_g" || s == "lat_g")  { out = AnalysisAlias::LatGAvg;   return true; }
+
+    // Suspension travel → use front-left as representative corner.
+    if (s == "suspension_travel") { out = AnalysisAlias::SusTravelMeanLF;   return true; }
+
+    // Damper velocity → per-corner susp vel means are the closest proxy.
+    if (s == "damper_velocity" || s == "rear_damper_velocity")  { out = AnalysisAlias::SuspVelMeanLR; return true; }
+    if (s == "front_damper_velocity")                           { out = AnalysisAlias::SuspVelMeanLF; return true; }
+
+    // Ride height → virtual Rake channel covers front/rear difference.
+    if (s == "ride_height" || s == "body_height")  { out = AnalysisAlias::RideHeightFL; return true; }
+
+    // Front wheel speed — direct alias exists.
+    if (s == "front_wheel_speed")   { out = AnalysisAlias::WheelSpeedFrontAvg; return true; }
+    if (s == "rear_wheel_speed")    { out = AnalysisAlias::WheelSpeedRearAvg;  return true; }
+
+    // Brake bias → AMS2-only channel, but the alias is declared in the enum.
+    if (s == "brake_balance" || s == "brake_bias_setting_avg")  { out = AnalysisAlias::BrakeBiasSettingAvg; return true; }
+
+    // Tyre pressure — front-left as representative corner.
+    if (s == "front_pressure" || s == "tyre_pressure_front")   { out = AnalysisAlias::TyrePressFL; return true; }
+    if (s == "rear_pressure"  || s == "tyre_pressure_rear")    { out = AnalysisAlias::TyrePressRL; return true; }
+
+    // TCS / ABS activity — direct aliases exist.
+    if (s == "tcs_active_pct")   { out = AnalysisAlias::TcsActivePct;  return true; }
+    if (s == "abs_active_pct")   { out = AnalysisAlias::AbsActivePct;  return true; }
+
+    // Aero balance → EVO-only channel, alias declared in enum.
+    if (s == "aero_balance" || s == "downforce_balance")  { out = AnalysisAlias::AeroBalanceAvg; return true; }
+
+    // --- Intentionally unmapped (no AnalysisAlias exists) — surfaced as Limitations: ---
+    // exit_speed / entry_speed : no speed alias in the enum
+    // front_slip_angle         : slip angle is not computed by any detector
+    // body_accel               : vertical acceleration channel not mapped
+    // tyre_load                : load transfer estimate not available per-corner
+    // front_dive               : derived metric, no direct alias
+    // front_brake_temp / rear_brake_temp : brake temps are in LapStats but have no AnalysisAlias
+
+    return false;   // unmapped → unverifiable
+}
+
+/// Count how many of the symptom's validation channels resolve to a present alias.
+struct ValidationCoverage {
+    int totalMapped = 0;      // strings that resolved to an alias (mappable)
+    int present     = 0;      // mappable AND provider.hasValue() == true
+    std::vector<std::string> unmapped;   // human-readable names with no alias counterpart
+
+    bool anyPresent() const { return present > 0; }
+};
+
+static ValidationCoverage checkValidationChannels(const RuleSymptom* sym,
+                                                  const DataProvider& provider) {
+    ValidationCoverage cov;
+    if (!sym) return cov;
+    for (const auto& ch : sym->validationChannels) {
+        AnalysisAlias alias;
+        if (!validationStringToAlias(ch, alias)) {
+            cov.unmapped.push_back(ch);   // no alias → unverifiable, listed in Limitations
+        } else {
+            ++cov.totalMapped;
+            if (provider.hasValue(alias)) ++cov.present;
+        }
+    }
+    return cov;
+}
+
+/// Gate condition (c): can we name a specific setting for this profile?
+/// AC EVO has a full setup menu → true. AMS2 / PMR have no mapping.json entries
+/// for the relevant parameters → false, emit "run comparative A/B test" only.
+static bool canCategorizeSetting(ChannelProfile profile) {
+    return (profile == ChannelProfile::EvoM1);   // AC EVO: full setup space available
+}
+
+// --- Human-readable cause label from snake_case id ---------------------------
+/// Converts e.g. "rear_rebound_too_high" → "Rear rebound too high".
+static std::string humanizeCauseId(const std::string& id) {
+    std::string out;
+    bool capNext = true;
+    for (char c : id) {
+        if (c == '_') { capNext = true; continue; }
+        out += (capNext && c >= 'a' && c <= 'z') ? char(c - 32) : c;   // toupper via ASCII offset
+        capNext = false;
+    }
+    return out;
+}
+
+// --- Render one DiagnosticFinding as a plain-text block ----------------------
+/// Returns the formatted text AND sets `emittedCategoricalRec` to true when the
+/// step-12 gate was fully satisfied (used for hasRecommendation on the section).
+static std::string renderDiagnosticBlock(const DiagnosticFinding& f,
+                                         const DataProvider& provider,
+                                         ChannelProfile profile,
+                                         ReportLanguage language,
+                                         bool& emittedCategoricalRec) {
+    emittedCategoricalRec = false;
+
+    const bool fr  = (language == ReportLanguage::French);
+    std::ostringstream oss;
+
+    // --- Header: symptom name + confidence label -----------------------------
+    const RuleSymptom* sym = diag::findSymptom(f.symptomId);
+    const char* confLabel  = diagnosticConfidenceLabel(f.confidence);   // "LOW"/"MEDIUM"/"HIGH"
+    oss << (fr ? "\n── Diagnostic : " : "\n── Diagnosis: ")
+        << humanizeCauseId(f.symptomId)
+        << " [" << confLabel << "]";
+
+    // --- When observed -------------------------------------------------------
+    if (!f.phaseWindow.empty()) {
+        oss << "\n" << (fr ? "Observé lors de : " : "When observed: ") << f.phaseWindow;
+    }
+
+    // --- Measurements / evidence ---------------------------------------------
+    if (!f.evidence.empty()) {
+        oss << "\n" << (fr ? "Mesures :" : "Measurements:") << "\n";
+        for (const auto& e : f.evidence)
+            oss << "  • " << e << "\n";
+    }
+
+    // --- Possible causes (ranked) --------------------------------------------
+    if (!f.rankedCauses.empty()) {
+        oss << (fr ? "\nCauses possibles (classées) :\n" : "\nPossible causes (ranked):\n");
+        int rank = 1;
+        for (const auto& c : f.rankedCauses) {
+            char wbuf[32];
+            std::snprintf(wbuf, sizeof(wbuf), "%.0f%%", c.weight * 100.0);
+            oss << "  " << rank++ << ". " << humanizeCauseId(c.cause)
+                << (fr ? " (poids " : " (weight ") << wbuf << ")"
+                << " → " << c.adjustment;
+            if (!c.direction.empty())
+                oss << " [" << c.direction << "]";
+            oss << "\n";
+        }
+    }
+
+    // --- Step-12 recommendation gate ------------------------------------------
+    const bool gateA = (f.confidence >= g_thresholds.confidenceMedium);   // confidence ≥ MEDIUM
+    ValidationCoverage cov = checkValidationChannels(sym, provider);      // gate b: distinguishable?
+    const bool gateB = cov.anyPresent();                                  // at least one mappable channel present
+    const bool gateC = canCategorizeSetting(profile);                     // profile has setup space
+
+    if (gateA && gateB && gateC) {
+        emittedCategoricalRec = true;   // all three gates satisfied → categorical recommendation
+
+        oss << "\n" << (fr ? "Test suggéré :\n" : "Suggested test:\n");
+
+        const CauseEntry& topCause = f.rankedCauses.front();
+        oss << "  " << (fr ? "Réglage à tester : " : "Setting to test: ")
+            << humanizeCauseId(topCause.adjustment) << "\n";
+
+        if (!topCause.direction.empty()) {
+            // Direction label in the report language.
+            const char* dirLabel = topCause.direction.c_str();   // raw direction string from catalog
+            oss << "  " << (fr ? "Direction : " : "Direction: ") << dirLabel << "\n";
+        }
+
+        if (!f.evidence.empty()) {
+            oss << "  " << (fr ? "Raison : " : "Reason: ");
+            // Use the first evidence item as the primary supporting measurement.
+            oss << f.evidence.front() << "\n";
+        }
+
+        // Risks / side effects — generic per direction to avoid over-claiming.
+        if (!topCause.direction.empty()) {
+            const std::string& d = topCause.direction;
+            if (d == "softer")
+                oss << "  " << (fr ? "Effets secondaires : risque de sur-sollicitation en appui prolongé.\n"
+                                   : "Side effects: risk of increased body roll under sustained load.\n");
+            else if (d == "stiffer")
+                oss << "  " << (fr ? "Effets secondaires : perte d'adhésion sur revêtement irrégulier possible.\n"
+                                   : "Side effects: potential loss of grip on irregular surfaces.\n");
+        }
+
+    } else {
+        // Gate not fully satisfied → comparative A/B framing only.
+        oss << "\n" << (fr ? "Test suggéré :\n" : "Suggested test:\n")
+            << "  " << (fr ? "Preuve insuffisante pour un réglage catégorique — effectuer un essai comparatif A/B.\n"
+                           : "Insufficient evidence for a categorical setting change — run comparative A/B test.\n");
+
+        if (!gateA) {
+            oss << "  " << (fr ? "(Confiance trop faible : " : "(Confidence too low: ")
+                << confLabel << ")" << "\n";
+        }
+    }
+
+    // --- Watch next run -------------------------------------------------------
+    if (sym && !sym->validationChannels.empty()) {
+        oss << "  " << (fr ? "À surveiller au prochain passage : " : "Watch next run: ");
+        bool first = true;
+        for (const auto& ch : sym->validationChannels) {
+            if (!first) oss << ", ";
+            oss << ch;
+            first = false;
+        }
+        oss << "\n";
+
+        // Confirm / reject criteria — only when categorical rec was emitted.
+        if (emittedCategoricalRec && !f.rankedCauses.empty()) {
+            const CauseEntry& topCause = f.rankedCauses.front();
+            oss << "  " << (fr ? "Confirmer si : " : "Confirm if: ")
+                << humanizeCauseId(topCause.cause)
+                << (fr ? " s'améliore après le changement.\n"
+                       : " improves after the change.\n");
+        }
+    }
+
+    // --- Limitations ----------------------------------------------------------
+    bool hasLimitation = false;
+    if (!f.missingChannels.empty()) {
+        oss << "\n" << (fr ? "Limites :\n  • Canaux manquants : " : "Limitations:\n  • Missing channels: ");
+        for (std::size_t i = 0; i < f.missingChannels.size(); ++i) {
+            if (i > 0) oss << ", ";
+            // AnalysisAlias → short name via a minimal switch. We don't have an alias→string table,
+            // so we emit the enum ordinal as a stable identifier for traceability.
+            char abuf[16];
+            std::snprintf(abuf, sizeof(abuf), "alias#%d", static_cast<int>(f.missingChannels[i]));
+            oss << abuf;
+        }
+        hasLimitation = true;
+    }
+
+    if (!cov.unmapped.empty()) {
+        if (hasLimitation) oss << "\n";
+        else               oss << "\n" << (fr ? "Limites :\n" : "Limitations:\n");
+        oss << "  • " << (fr ? "Signaux de validation non vérifiables :" 
+                             : "Unverifiable validation signals: ");
+        for (std::size_t i = 0; i < cov.unmapped.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << cov.unmapped[i];
+        }
+    }
+
+    return oss.str();
+}   // renderDiagnosticBlock
+
+/// Build the full Diagnostics section content from a list of findings.
+/// Returns empty string when there are no findings at all (tab stays hidden).
+static std::string buildDiagnosticsSection(const std::vector<DiagnosticFinding>& diagFindings,
+                                           const DataProvider& provider,
+                                           ChannelProfile profile,
+                                           ReportLanguage language) {
+    if (diagFindings.empty()) return "";
+
+    bool anyCategoricalRec = false;
+    std::string out;
+    for (const auto& f : diagFindings) {
+        bool rec = false;
+        std::string block = renderDiagnosticBlock(f, provider, profile, language, rec);
+        if (!block.empty()) {
+            anyCategoricalRec |= rec;   // track across all findings
+            if (!out.empty()) out += "\n";
+            out += block;
+        }
+    }
+
+    (void)anyCategoricalRec;   // hasRecommendation is set by the caller via a separate pass.
+    return out;
+}
+
+// --- Helper: re-run gate check to determine if ANY finding emitted a categorical rec --
+static bool anyFindingHasCategoricalRec(const std::vector<DiagnosticFinding>& diagFindings,
+                                        const DataProvider& provider,
+                                        ChannelProfile profile) {
+    for (const auto& f : diagFindings) {
+        bool gateA = (f.confidence >= g_thresholds.confidenceMedium);
+        if (!gateA) continue;
+
+        ValidationCoverage cov = checkValidationChannels(diag::findSymptom(f.symptomId), provider);
+        if (cov.anyPresent() && canCategorizeSetting(profile)) return true;
+    }
+    return false;
+}   // anyFindingHasCategoricalRec
+
+}   // anonymous namespace — Phase 3 helpers end here
+
+
 ReportResult LapReportGenerator::generate(const LapStats& lap,
                                           ReportLanguage language, ChannelProfile profile,
                                           const LapSelectionInfo* selection) {
-    (void)profile;
+    // Phase 3: profile is now used for the step-12 gate condition (c).
 
     ReportResult result;
     AnalysisSettings settings = buildDefaultAnalysisSettings();
@@ -628,6 +924,22 @@ ReportResult LapReportGenerator::generate(const LapStats& lap,
                 data.content += rec + "\n";
                 data.hasRecommendation = true;
             }
+        }
+    }
+
+    // --- Phase 3: Diagnostic findings → Diagnostics section (step-12 gate) ---
+    {
+        DataProvider diagProvider = buildDataProviderFromLap(lap);
+        diagProvider.setChannelMappings(RuleConfig::instance().channelMappings());
+
+        const std::vector<DiagnosticFinding> diagFindings =
+            diag::buildDefaultDiagnosticRegistry()
+                .evaluateAll(diagProvider, settings);
+
+        if (!diagFindings.empty()) {
+            SectionData& ddata = result[ReportSection::Diagnostics];
+            ddata.content         = buildDiagnosticsSection(diagFindings, diagProvider, profile, language);
+            ddata.hasRecommendation = anyFindingHasCategoricalRec(diagFindings, diagProvider, profile);
         }
     }
 

@@ -272,6 +272,26 @@ object FormMotecSetup: TFormMotecSetup
         TabOrder = 0
       end
     end
+    object TabDiagnostics: TTabSheet
+      Caption = 'Diagnostics'
+      object MemoDiagnostics: TMemo
+        Left = 0
+        Top = 0
+        Width = 1061
+        Height = 287
+        Align = alClient
+        Color = clWhite
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -13
+        Font.Name = 'Consolas'
+        Font.Style = []
+        ParentFont = False
+        ReadOnly = True
+        ScrollBars = ssVertical
+        TabOrder = 0
+      end
+    end
   end
   object StatusBar1: TStatusBar
     Left = 0

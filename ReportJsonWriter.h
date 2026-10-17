@@ -177,9 +177,11 @@ inline void appendDamperHistogram(std::string& out, const char* cornerKey,
 // `versionOverride`: pass an incremented counter (Phase B5) so polling tablets detect change;
 // -1 keeps kSchemaVersion for standalone harness use.
 inline std::string buildReportJson(const ReportResult& report, const LapStats& lap, int lapsIncluded = 0, int versionOverride = -1) {
+    static const int kSections = 8;   // must match the ReportSection enum count (Phase 3 added Diagnostics)
+
     // meta.hasData: at least one section carries content AND we have real numbers to show.
     bool anySectionContent = false;
-    for (int i = 0; i < 7 && !anySectionContent; ++i) {
+    for (int i = 0; i < kSections && !anySectionContent; ++i) {
         auto it = report.find(static_cast<ReportSection>(i));
         if (it != report.end() && !it->second.content.empty())
             anySectionContent = true;
@@ -229,12 +231,12 @@ inline std::string buildReportJson(const ReportResult& report, const LapStats& l
     out += std::string("\"hasData\":") + (hasData ? "true" : "false"); // hasData last — no trailing comma
     out += "}";
 
-    // sections — ALL seven keys always present, in enum order. Missing entry -> empty content.
-    static const char* sectionKeys[7] = {
-        "Summary", "General", "Tyre", "Brake", "Suspension", "EngineCooling", "Handling"
+    // sections — ALL keys always present, in enum order. Missing entry -> empty content.
+    static const char* sectionKeys[kSections] = {
+        "Summary", "General", "Tyre", "Brake", "Suspension", "EngineCooling", "Handling", "Diagnostics"
     };
     out += ",\"sections\":{";
-    for (int i = 0; i < 7; ++i) {
+    for (int i = 0; i < kSections; ++i) {
         auto it = report.find(static_cast<ReportSection>(i));
         if (it != report.end()) {
             const SectionData& sd = it->second;
@@ -247,7 +249,7 @@ inline std::string buildReportJson(const ReportResult& report, const LapStats& l
             out += sectionKeys[i];
             out += "\":{\"content\":\"\",\"hasRecommendation\":false}"; // close section object
         }
-        if (i < 6) out += ",";
+        if (i < kSections - 1) out += ",";
     }
     out += "}";
 
