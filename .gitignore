@@ -3,6 +3,8 @@ Win32/
 __history/
 __recovery/
 *.obj
+scripts/*.exe
+scripts/*.o
 build_log.txt
 
 # IDE / project local files

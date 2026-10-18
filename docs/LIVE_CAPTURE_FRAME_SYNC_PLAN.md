@@ -1,7 +1,7 @@
 # Live Capture — Frame Synchronisation Plan (seq / packetId change-detection)
 
-**Status:** Draft plan (not yet implemented).
-**Scope:** `Ams2LiveCapture`, `AcsEvoLiveCapture` (+ their call site in `MotecSetupForm.cpp`). PMR UDP is out of scope.
+**Status:** Implemented (commit `45c3f02`); all sections §4–§10 are in the codebase as described below.
+**Scope:** `Ams2LiveCapture`, `AcsEvoLiveCapture` (+ their call site in `MotecSetupForm.cpp`). PMR UDP is out of scope (§7: no changes needed).
 
 ---
 
