@@ -53,6 +53,12 @@ __published:
     TMemo *MemoHandling;
 	TTabSheet *TabDiagnostics;
 	TMemo     *MemoDiagnostics;
+	// Phase 4 — Before/After comparison mode (see ComparisonEngine.h)
+	TTabSheet *TabCompare;
+	TButton   *ButtonCompareBefore;
+	TButton   *ButtonCompareAfter;
+	TEdit     *EditSetupDelta;
+	TMemo     *MemoCompare;
 	TStatusBar *StatusBar1;
 	TButton *Button1;
     TProgressBar *ProgressBarExport;    TComboBox *ChannelProfileCombo;
@@ -99,6 +105,10 @@ __published:
     void __fastcall ButtonResetSessionClick(TObject *Sender);
     void __fastcall AutoDetectTrackCheckBoxClick(TObject *Sender);
 
+    // Phase 4 — Before/After comparison mode (DFM-referenced, keep in __published).
+    void __fastcall ButtonCompareBeforeClick(TObject *Sender);
+    void __fastcall ButtonCompareAfterClick(TObject *Sender);
+
 
 public:
     struct SuspensionCornerData {
@@ -125,6 +135,8 @@ public:
 
     static ReportLanguage ReadReportLanguageSetting();
     bool __fastcall AnalyzeSelectedLdFile(const std::string& filePath, std::string& errorMessage);
+    // Phase 4 — Before/After comparison mode (see ComparisonEngine.h).
+    void runComparison();              // compare the two selected groups and render into MemoCompare
     void __fastcall resetAnalysisGraphics();
     void __fastcall stopLiveCapture(bool isShuttingDown = false);
     void __fastcall processLiveFrame(const Ams2SharedMemory& frame);
@@ -222,6 +234,13 @@ public:
     bool liveLapInProgress = false;
     LapStats liveCurrentLap;
     std::vector<LapStats> liveLaps;
+
+    // Phase 4 — Before/After comparison mode: the two selected lap groups.
+    // Populated by ButtonCompareBeforeClick / ButtonCompareAfterClick via parseMotecLd,
+    // independent of the main report pipeline (AnalyzeSelectedLdFile).
+    std::vector<LapStats> compareLapsBefore;
+    std::vector<LapStats> compareLapsAfter;
+
     int liveLapNumber = 0;
     double liveLapStartTime = 0.0;
     bool liveWasOnTrack = false;
