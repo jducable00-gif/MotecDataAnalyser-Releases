@@ -29,7 +29,6 @@
 #include "MotecSetupForm.h"
 #include "MotecToCSV.h"
 #include "RuleConfig.h"
-#include "ComparisonEngine.h"   // Phase 4 — before/after comparison mode (namespace diag)
 #include "ReportJsonWriter.h"
 #include "MotecSettingsForm.h"
 #include <gdiplus.h>
@@ -700,11 +699,6 @@ void saveDefaultThresholds()
 		ini->WriteFloat("Confidence", "High", g_thresholds.confidenceHigh);
 		ini->WriteInteger("Confidence", "MinLapsForReproducibility", g_thresholds.minLapsForReproducibility);
 
-		// Before/after comparison confounder tolerances (Phase 4)
-		ini->WriteFloat("Comparison", "FuelLevelChangeMaxPct", g_thresholds.comparisonFuelLevelChangeMaxPct);
-		ini->WriteFloat("Comparison", "AmbientTempDiffMaxC", g_thresholds.comparisonAmbientTempDiffMaxC);
-		ini->WriteFloat("Comparison", "StyleVarianceMin", g_thresholds.comparisonStyleVarianceMin);
-
 		// Symptom cause weights (Phase F)
 		saveSymptomWeights(ini);
 	} __finally {
@@ -884,10 +878,6 @@ void loadThresholdsPart2(TIniFile* ini)
 	g_thresholds.confidenceHigh = ini->ReadFloat("Confidence", "High", g_thresholds.confidenceHigh);
 	g_thresholds.minLapsForReproducibility = ini->ReadInteger("Confidence", "MinLapsForReproducibility", g_thresholds.minLapsForReproducibility);
 
-	// Before/after comparison confounder tolerances (Phase 4)
-	g_thresholds.comparisonFuelLevelChangeMaxPct = ini->ReadFloat("Comparison", "FuelLevelChangeMaxPct", g_thresholds.comparisonFuelLevelChangeMaxPct);
-	g_thresholds.comparisonAmbientTempDiffMaxC   = ini->ReadFloat("Comparison", "AmbientTempDiffMaxC", g_thresholds.comparisonAmbientTempDiffMaxC);
-	g_thresholds.comparisonStyleVarianceMin      = ini->ReadFloat("Comparison", "StyleVarianceMin", g_thresholds.comparisonStyleVarianceMin);
 }
 
 void loadThresholds()
@@ -1054,18 +1044,7 @@ void __fastcall TFormMotecSetup::TranslateUI()
     TabSuspension->Caption = isFr ? "Suspensions" : "Suspension";
     TabEngineCooling->Caption = isFr ? "Moteur & Refroidissement" : "Engine & Cooling";
     TabHandling->Caption = isFr ? "Comportement" : "Handling";
-    // Phase 4 — Before/After comparison mode.
-    if (TabCompare != NULL) {
-        TabDiagnostics->Caption = isFr ? "Diagnostic" : "Diagnostics";
-        TabCompare->Caption = isFr ? "Comparaison" : "Compare";
-        ButtonCompareBefore->Caption = isFr ? "Sélectionner fichier AVANT" : "Select BEFORE file";
-        ButtonCompareAfter->Caption = isFr ? "Sélectionner fichier APRÈS" : "Select AFTER file";
-        if (EditSetupDelta != NULL) {
-            EditSetupDelta->Hint = isFr
-                ? L"Modifications de setup connues entre les deux passages, séparées par des virgules."
-                : L"Known setup changes between the two runs, comma-separated.";
-        }
-    }
+    TabDiagnostics->Caption = isFr ? "Diagnostic" : "Diagnostics";
 
     // Re-apply ● indicator for tabs that have content (preserves dots across language switch)
     auto applyDot = [](TTabSheet* tab, TMemo* memo) {
@@ -2487,75 +2466,7 @@ void __fastcall TFormMotecSetup::Button1Click(TObject *Sender)
 }
 
 
-//---------------------------------------------------------------------------
-// Phase 4 — Before/After comparison mode (see ComparisonEngine.h).
-// Each button opens a file picker, parses the LD/LDX into its group vector and
-// re-runs the comparison when both groups are populated. The two groups live in
-// compareLapsBefore / compareLapsAfter — deliberately separate from the main
-// report pipeline so selecting files here does not disturb the other tabs.
-//---------------------------------------------------------------------------
 
-// groupSection: distinct INI section per comparison slot ("Compare_Before" / "Compare_After") so each
-// remembers its own folder. Falls back to the profile's normal LdImport folder on first use.
-static void selectComparisonGroupFile(TFormMotecSetup* form, const String& groupSection, std::vector<LapStats>& group)
-{
-	TOpenDialog *dialog = new TOpenDialog(form);
-	try {
-		ChannelProfile profile;
-		if (form->ChannelProfileCombo != NULL && form->ChannelProfileCombo->ItemIndex >= 0)
-			profile = (ChannelProfile)(form->ChannelProfileCombo->ItemIndex); // combo items "Evo"/"AMS2"/"PMR" map to enum values 0..2 directly
-
-		String section = LdSectionForProfile(profile);
-		dialog->InitialDir = ReadLastFolder(groupSection, section);
-		if (!dialog->Execute()) return;
-
-		SaveLastFolder(groupSection, ExtractFileDir(dialog->FileName));
-
-		std::string filePath(UTF8String(dialog->FileName).c_str());
-		std::string errorMessage;
-		bool ok = parseMotecLd(filePath, group, errorMessage); // default profile: comparison is alias-driven via DataProvider
-		if (!ok) {
-			form->MemoCompare->Lines->Text = UnicodeString(UTF8String(errorMessage.c_str())); // UTF-8 -> wide, keeps accented French intact
-		} else {
-			char info[128];
-			snprintf(info, sizeof(info), "Loaded %zu laps from: %s", group.size(), filePath.c_str());
-			form->StatusBar1->SimpleText = String(UTF8String(info));
-		}
-	} __finally {
-		delete dialog; // __finally ensures this runs even on exception
-	}
-}
-
-void TFormMotecSetup::ButtonCompareBeforeClick(TObject *Sender)
-{
-	selectComparisonGroupFile(this, "Compare_Before", compareLapsBefore);
-	runComparison();
-}
-
-void TFormMotecSetup::ButtonCompareAfterClick(TObject *Sender)
-{
-	selectComparisonGroupFile(this, "Compare_After", compareLapsAfter);
-	runComparison();
-}
-
-// Runs the before/after comparison over the two selected groups and renders the
-// result into MemoCompare. Called after each group selection (auto-refresh).
-void TFormMotecSetup::runComparison()
-{
-	ReportLanguage lang = ReadReportLanguageSetting();
-	if (LanguageCombo != NULL && LanguageCombo->ItemIndex >= 0)
-		lang = (ReportLanguage)(LanguageCombo->ItemIndex);
-
-	// Text is Unicode (WideChar*) in this build — convert to UTF-8 before handing it to the engine.
-	std::string setupDelta(EditSetupDelta ? std::string(UTF8String(EditSetupDelta->Text).c_str()) : "");
-	diag::GroupComparisonResult cmp = diag::compareLapGroups(compareLapsBefore, compareLapsAfter, lang);
-	std::string section = diag::buildComparisonSection(cmp, setupDelta, lang);
-
-	if (MemoCompare == NULL) return;
-	// buildComparisonSection returns "" only when the result is invalid with an empty reason.
-	// Assigning TStrings.Text replaces all existing lines, so no explicit Clear() needed.
-	MemoCompare->Lines->Text = String(UTF8String(section.c_str()));
-}
 
 //---------------------------------------------------------------------------
 // Live capture from AMS2 shared memory

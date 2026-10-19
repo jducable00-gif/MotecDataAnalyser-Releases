@@ -292,50 +292,6 @@ object FormMotecSetup: TFormMotecSetup
         TabOrder = 0
       end
     end
-    object TabCompare: TTabSheet
-      Caption = 'Compare'
-      object ButtonCompareBefore: TButton
-        Left = 4
-        Top = 6
-        Width = 150
-        Height = 26
-        Caption = 'Select BEFORE file'
-        TabOrder = 0
-        OnClick = ButtonCompareBeforeClick
-      end
-      object ButtonCompareAfter: TButton
-        Left = 160
-        Top = 6
-        Width = 150
-        Height = 26
-        Caption = 'Select AFTER file'
-        TabOrder = 1
-        OnClick = ButtonCompareAfterClick
-      end
-      object EditSetupDelta: TEdit
-        Left = 318
-        Top = 7
-        Width = 740
-        Height = 23
-        TabOrder = 2
-      end
-      object MemoCompare: TMemo
-        Left = 4
-        Top = 38
-        Width = 1056
-        Height = 245
-        Color = clWhite
-        Font.Charset = DEFAULT_CHARSET
-        Font.Color = clWindowText
-        Font.Height = -13
-        Font.Name = 'Consolas'
-        Font.Style = []
-        ParentFont = False
-        ReadOnly = True
-        ScrollBars = ssVertical
-        TabOrder = 3
-      end
-    end
   end
   object StatusBar1: TStatusBar
     Left = 0

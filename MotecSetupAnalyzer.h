@@ -206,11 +206,6 @@ struct Thresholds {
     double histogramMinYPct = 20.0;   // Minimum displayed Y-axis range (%) — floor so small data isn't stretched to full scale
 	double damperSlowSpeedRange = 25.0; // Symmetrical range around 0 to highlight slow damper section
 
-    // Before/after comparison (Phase 4) — confounder tolerances for compareLapGroups()
-    double comparisonFuelLevelChangeMaxPct = 5.0;   // max |mean per-lap fuel delta A - B| (%) before flagging a weight-change confounder
-    double comparisonAmbientTempDiffMaxC   = 3.0;   // ambient temperature difference (C) that invalidates verdicts between groups
-    double comparisonStyleVarianceMin      = 0.15;  // segmentation-confidence spread considered driving-style variance
-
     // Per-profile accessors
     double pressureLow(ChannelProfile) const {
         return pressureLowPsi;

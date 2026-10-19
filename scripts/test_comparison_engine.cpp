@@ -10,12 +10,9 @@
 //       0.30 / 0.60 / 0.85 (rankCauses modulation x1.25 / none / x0.75).
 //    D. L/R asymmetry verdicts: comparable -> repeated; track bias -> artifact;
 //       insufficient data -> inconclusive.
-//    E. Before/after comparison with confounders (fuel drop, ambient temp) is
-//       forced Inconclusive — never a false "improvement" claim. Clean pairs
-//       yield correct Improvement / Degradation verdicts + per-phase deltas.
-//    F. Gate-logic primitives: single-lap confidence cap at MEDIUM(0.60), label
+//    E. Gate-logic primitives: single-lap confidence cap at MEDIUM(0.60), label
 //       boundaries, and the categorical-gate predicate (MEDIUM+ AND EVO profile).
-//    G. Non-regression of the 4 legacy rules on a fixture lap set (identical
+//    F. Non-regression of the 4 legacy rules on a fixture lap set (identical
 //       AnalysisResult vectors) + clean-lap no-finding case.
 //
 //  Pure ASCII on purpose (bcc32c encodes narrow literals as CP1252; French text
@@ -34,7 +31,6 @@
 
 #include "MotecSetupAnalyzer.h"   // LapStats, StatSummary, g_thresholds, rules, DataProvider
 #include "DiagnosticEngine.h"     // diag:: detectors, rankCauses, evaluateLapWithDiagnostics
-#include "ComparisonEngine.h"     // diag:: compareLapGroups / buildComparisonSection
 #include "VehicleDb.h"            // Ams2VehicleDb -- base vehicules AMS2 embarquee (Layer 1)
 #include "LapReportGenerator.h"   // LapReportGenerator::generate, ReportResult, ReportSection
 
@@ -101,14 +97,6 @@ static void fill(StatSummary& s, double value, int n = 10) {
 // Find a diagnostic finding by id in a vector.
 static const diag::DiagnosticFinding* findById(const std::vector<diag::DiagnosticFinding>& v,
                                                const char* id) {
-    for (std::size_t i = 0; i < v.size(); ++i)
-        if (v[i].symptomId == id) return &v[i];
-    return nullptr;
-}
-
-// Find a symptom comparison by id.
-static const diag::SymptomComparison* findSc(const std::vector<diag::SymptomComparison>& v,
-                                             const char* id) {
     for (std::size_t i = 0; i < v.size(); ++i)
         if (v[i].symptomId == id) return &v[i];
     return nullptr;
@@ -321,125 +309,13 @@ static void testLRAsymmetryVerdicts() {
     std::printf("   L/R verdicts: comparable/artifact/insufficient OK\n");
 }
 
-// ===========================================================================
-// E. Before/after comparison — confounders force Inconclusive; clean pairs give
-//    correct Improvement / Degradation + per-phase deltas.
-// ===========================================================================
-static void testBeforeAfterComparison() {
-    section("E: Before/after comparison (confounders + verdicts)");
-
-    // --- E1. Clean improvement: rear-slip symptom present before, gone after --
-    std::vector<LapStats> gA, gB;
-    for (int i = 0; i < 2; ++i) { LapStats l = makeValidLap(i+1); fill(l.wheelSlipLR, 20.0); fill(l.wheelSlipRR, 18.0); gA.push_back(l); }
-    for (int i = 0; i < 2; ++i) { LapStats l = makeValidLap(i+3); fill(l.wheelSlipLR, 5.0);  fill(l.wheelSlipRR, 4.0);  gB.push_back(l); }
-
-    diag::GroupComparisonResult cmp1 = diag::compareLapGroups(gA, gB, ReportLanguage::English);
-    CHECK(cmp1.valid == true);
-    CHECK_MSG(!cmp1.hasBlockingFactors(), "clean pair must have no blocking factors");
-    const diag::SymptomComparison* sc1 = findSc(cmp1.symptoms, "rear_traction_loss_on_exit");
-    CHECK_MSG(sc1 != nullptr, "expected rear traction symptom in comparison output");
-    if (sc1) {
-        CHECK(sc1->beforePresent == true);
-        CHECK(sc1->afterPresent  == false);
-        CHECK(sc1->verdict       == diag::ComparisonVerdict::ProbableImprovement);
-    }
-
-    // --- E2. Clean degradation: symptom absent before, present after ----------
-    std::vector<LapStats> gC, gD;
-    for (int i = 0; i < 2; ++i) { LapStats l = makeValidLap(i+1); fill(l.wheelSlipLR, 5.0); fill(l.wheelSlipRR, 4.0); gC.push_back(l); }
-    for (int i = 0; i < 2; ++i) { LapStats l = makeValidLap(i+3); fill(l.wheelSlipLR, 25.0);fill(l.wheelSlipRR, 24.0);gD.push_back(l); }
-
-    diag::GroupComparisonResult cmp2 = diag::compareLapGroups(gC, gD, ReportLanguage::English);
-    CHECK(cmp2.valid == true);
-    const diag::SymptomComparison* sc2 = findSc(cmp2.symptoms, "rear_traction_loss_on_exit");
-    CHECK_MSG(sc2 != nullptr, "expected rear traction symptom (degradation case)");
-    if (sc2) {
-        CHECK(sc2->beforePresent == false);
-        CHECK(sc2->afterPresent  == true);
-        CHECK(sc2->verdict       == diag::ComparisonVerdict::ProbableDegradation);
-    }
-
-    // --- E3. Fuel-level confounder forces Inconclusive (would-be improvement) --
-    std::vector<LapStats> gE, gF;
-    for (int i = 0; i < 2; ++i) {   // before: symptom present + large fuel drop per lap (-0.30 ratio)
-        LapStats l = makeValidLap(i+1); fill(l.wheelSlipLR, 20.0); fill(l.wheelSlipRR, 18.0);
-        l.fuelLevelEnds.record(1.00); l.fuelLevelEnds.record(0.70);   // delta = -0.30 -> faPct=-30
-        gE.push_back(l);
-    }
-    for (int i = 0; i < 2; ++i) {   // after: symptom gone + STABLE fuel (delta=0). Both groups must have
-        LapStats l = makeValidLap(i+3); fill(l.wheelSlipLR, 5.0); fill(l.wheelSlipRR, 4.0);            // >=1 valid lap for the engine to compare; stable fuel is realistic.
-        l.fuelLevelEnds.record(1.00); l.fuelLevelEnds.record(1.00);   // delta = 0 -> fbPct=0
-        gF.push_back(l);            // |(-30)-0| = 30 > comparisonFuelLevelChangeMaxPct(5) => confounder fires
-    }
-
-    diag::GroupComparisonResult cmp3 = diag::compareLapGroups(gE, gF, ReportLanguage::English);
-    CHECK(cmp3.valid == true);
-    CHECK_MSG(!cmp3.globalConfounders.empty(), "fuel drop must register a global confounder");
-    bool fuelFlagged = false;
-    for (std::size_t i = 0; i < cmp3.globalConfounders.size(); ++i)
-        if (cmp3.globalConfounders[i].find("fuel level change") != std::string::npos) fuelFlagged = true;
-    CHECK_MSG(fuelFlagged, "expected 'fuel level change' confounder text");
-    const diag::SymptomComparison* sc3 = findSc(cmp3.symptoms, "rear_traction_loss_on_exit");
-    if (sc3) {   // present before / gone after would be Improvement IF unblocked...
-        CHECK_MSG(sc3->verdict == diag::ComparisonVerdict::Inconclusive,
-                  "confounded pair must NOT claim improvement -> Inconclusive");
-        CHECK(!sc3->confounders.empty());   // per-symptom confounder list populated from globals
-    }
-
-    // --- E4. Ambient-temp confounder forces Inconclusive ----------------------
-    std::vector<LapStats> gG, gH;
-    for (int i = 0; i < 2; ++i) {   // before: symptom present + ambient 10C
-        LapStats l = makeValidLap(i+1); fill(l.wheelSlipLR, 20.0); fill(l.wheelSlipRR, 18.0);
-        fill(l.ambientTemp, 10.0); gG.push_back(l);
-    }
-    for (int i = 0; i < 2; ++i) {   // after: symptom gone + ambient 25C -> diff 15 > max(3)
-        LapStats l = makeValidLap(i+3); fill(l.wheelSlipLR, 5.0); fill(l.wheelSlipRR, 4.0);
-        fill(l.ambientTemp, 25.0); gH.push_back(l);
-    }
-
-    diag::GroupComparisonResult cmp4 = diag::compareLapGroups(gG, gH, ReportLanguage::English);
-    CHECK(cmp4.valid == true);
-    bool ambFlagged = false;
-    for (std::size_t i = 0; i < cmp4.globalConfounders.size(); ++i)
-        if (cmp4.globalConfounders[i].find("ambient temperature change") != std::string::npos) ambFlagged = true;
-    CHECK_MSG(ambFlagged, "expected 'ambient temperature change' confounder text");
-    const diag::SymptomComparison* sc4 = findSc(cmp4.symptoms, "rear_traction_loss_on_exit");
-    if (sc4) {
-        CHECK(sc4->verdict == diag::ComparisonVerdict::Inconclusive);   // blocked by ambient change
-    }
-
-    // --- E5. Per-phase metric delta is populated for phases with data ---------
-    std::vector<LapStats> gI, gJ;
-    for (int i = 0; i < 2; ++i) { LapStats l = makeValidLap(i+1); fill(l.wheelSlipLR, 5.0); 
-        // give MidCorner(5) a lateral-G sample so the phase table has data on this side
-        for (int k=0;k<3;++k) l.phases[static_cast<int>(DrivingPhase::MidCorner)].latG.add(0.6); gI.push_back(l);}
-    for (int i = 0; i < 2; ++i) { LapStats l = makeValidLap(i+3); fill(l.wheelSlipLR, 5.0); 
-        for (int k=0;k<3;++k) l.phases[static_cast<int>(DrivingPhase::MidCorner)].latG.add(0.9); gJ.push_back(l);}
-    diag::GroupComparisonResult cmp5 = diag::compareLapGroups(gI, gJ, ReportLanguage::English);
-    CHECK(cmp5.valid == true);
-    bool midFound = false; double beforeLat=0.0, afterLat=0.0;
-    for (std::size_t i = 0; i < cmp5.phases.size(); ++i) {
-        if (cmp5.phases[i].phaseIndex == static_cast<int>(DrivingPhase::MidCorner)) {
-            midFound = true; beforeLat = cmp5.phases[i].beforeLatGMean; afterLat = cmp5.phases[i].afterLatGMean;
-        }
-    }
-    CHECK_MSG(midFound, "expected MidCorner phase row in per-phase delta table");
-    if (midFound) {
-        CHECK(std::fabs(beforeLat - 0.6) < 1e-9);   // averaged latG for before group
-        CHECK(std::fabs(afterLat  - 0.9) < 1e-9);   // ...and after group
-    }
-
-    std::printf("   comparison: improvement/degradation/fuel/ambient/per-phase OK\n");
-}
-
-// ===========================================================================
-// F. Gate-logic primitives (single-lap confidence cap + label boundaries).
+// E. Gate-logic primitives (single-lap confidence cap + label boundaries).
 // NOTE: the full step-12 categorical gate (renderDiagnosticBlock / canCategorizeSetting)
 // is file-static inside LapReportGenerator.cpp and exercised by integration tests;
 // here we validate its constituent predicates that a standalone harness CAN reach.
 // ===========================================================================
 static void testGateLogicPrimitives() {
-    section("F: Gate-logic primitives (confidence cap + label boundaries)");
+    section("E: Gate-logic primitives (confidence cap + label boundaries)");
 
     // Single-lap evaluation can NEVER exceed the MEDIUM(0.60) confidence cap, so it
     // can never be labelled HIGH and can never trigger the x1.25 top-cause boost via a
@@ -472,10 +348,10 @@ static void testGateLogicPrimitives() {
 }
 
 // ===========================================================================
-// G. Non-regression of the 4 legacy rules on a fixture lap set.
+// F. Non-regression of the 4 legacy rules on a fixture lap set.
 // =============================================================================
 static void testLegacyRuleNonRegression() {
-    section("G: Legacy rule non-regression (identical AnalysisResult vectors)");
+    section("F: Legacy rule non-regression (identical AnalysisResult vectors)");
 
     // --- G1. Clean lap -> zero findings from all four legacy rules -----------
     LapStats clean = makeValidLap(1);   // no channels set at all
@@ -554,9 +430,10 @@ static void testLegacyRuleNonRegression() {
     std::printf("   legacy rules: clean/engine/pressure/slip/determinism OK\n");
 }
 
+// G. Embedded AMS2 vehicle database sanity checks (Layer 1).
 // ===========================================================================
 static void testVehicleDb() {
-    std::printf("H. Vehicle DB (embedded AMS2 data, Layer 1)\n");
+    section("G: Vehicle DB (embedded AMS2 data, Layer 1)");
 
     const Ams2VehicleDb& db = Ams2VehicleDb::instance();
 
@@ -604,10 +481,10 @@ static void testVehicleDb() {
 }
 
 // ===========================================================================
-// I. Engine cooling per-car thresholds + optimal oil temp info line (Layer 1).
+// H. Engine cooling per-car thresholds + optimal oil temp info line (Layer 1).
 // =============================================================================
 static void testEngineCoolingPerCar() {
-    section("I: Engine cooling per-vehicle override (AMS2 Layer 1)");
+    section("H: Engine cooling per-vehicle override (AMS2 Layer 1)");
 
     const Ams2VehicleDb& db = Ams2VehicleDb::instance();
     VehicleInfo alpine;
@@ -728,10 +605,10 @@ static void testEngineCoolingPerCar() {
 }
 
 // ===========================================================================
-// J. Brake disc temperature per-vehicle fade window (Layer 1).
+// I. Brake disc temperature per-vehicle fade window (Layer 1).
 // =============================================================================
 static void testBrakePerCar() {
-    section("J: Brake temp per-vehicle fade window (AMS2 Layer 1)");
+    section("I: Brake temp per-vehicle fade window (AMS2 Layer 1)");
 
     const Ams2VehicleDb& db = Ams2VehicleDb::instance();
     VehicleInfo alpine;
@@ -840,7 +717,7 @@ static void testBrakePerCar() {
 
 // ===========================================================================
 int main() {
-    std::printf("Phase 4 diagnostic-engine + comparison test harness\n");
+    std::printf("Phase 4 diagnostic-engine test harness\n");
     std::printf("-----------------------------------------------\n");
 
     // Sanity-assert the INI-driven thresholds we rely on (defaults when no INI present).
@@ -852,7 +729,6 @@ int main() {
     testChannelAbsentMatrix();
     testCauseRankingAndLabels();
     testLRAsymmetryVerdicts();
-    testBeforeAfterComparison();
     testGateLogicPrimitives();
     testLegacyRuleNonRegression();
     testVehicleDb();

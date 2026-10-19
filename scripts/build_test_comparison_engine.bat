@@ -1,7 +1,7 @@
 @echo off
 rem =============================================================================
 rem  build_test_comparison_engine.bat - Phase 4 standalone harness for the
-rem  diagnostic engine + before/after comparison mode (ComparisonEngine.h).
+rem  diagnostic engine.
 rem  Pure ASCII on purpose (PowerShell/cmd ANSI quirks). Run from anywhere:
 rem      scripts\build_test_comparison_engine.bat [Clean]
 rem =============================================================================
