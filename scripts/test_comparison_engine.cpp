@@ -728,6 +728,117 @@ static void testEngineCoolingPerCar() {
 }
 
 // ===========================================================================
+// J. Brake disc temperature per-vehicle fade window (Layer 1).
+// =============================================================================
+static void testBrakePerCar() {
+    section("J: Brake temp per-vehicle fade window (AMS2 Layer 1)");
+
+    const Ams2VehicleDb& db = Ams2VehicleDb::instance();
+    VehicleInfo alpine;
+    if (!db.find("Alpine_A110_GT4_Evo", alpine)) {
+        std::printf("   SKIP: Alpine not in DB\n");
+        return;
+    }
+
+    // J0. Disc temp INSIDE the per-car fade window (350-850 C for Alpine) -> no finding,
+    //     even though 500C would be "hot" by any universal standard. Documents that there is
+    //     NO global default: without vehicle data this rule emits nothing at all.
+    LapStats lapInWindow = makeValidLap(1);
+    fill(lapInWindow.brakeTempLF, 500.0);   // inside Alpine's [350, 850] window
+    lapInWindow.vehicleName = "Alpine_A110_GT4_Evo";
+
+    ReportResult rrInWindow = LapReportGenerator::generate(
+        lapInWindow, ReportLanguage::English, ChannelProfile::AMS2);
+    const SectionData& brakeSecWin = rrInWindow[ReportSection::Brake];
+    bool inWindowFindingSeen = (brakeSecWin.content.find("FL brake temperature") != std::string::npos);
+    CHECK_MSG(!inWindowFindingSeen, "J0: disc at 500C inside per-car fade window must NOT raise a finding");
+
+    // J1. Same extreme temp WITHOUT vehicleName -> has* flags stay false -> NO finding at all.
+    //     (Contrast with engine I1 which DOES trigger on the global default.) This documents
+    //     the no-universal-default design for absolute disc temperatures.
+    LapStats lapNoVehicle = makeValidLap(1);
+    fill(lapNoVehicle.brakeTempLF, 900.0);   // above Alpine's fade-high (850) but...
+    lapNoVehicle.vehicleName.clear();
+
+    ReportResult rrNoVehicle = LapReportGenerator::generate(
+        lapNoVehicle, ReportLanguage::English, ChannelProfile::AMS2);
+    const SectionData& brakeSecNV = rrNoVehicle[ReportSection::Brake];
+    bool noVehicleFindingSeen = (brakeSecNV.content.find("FL brake temperature") != std::string::npos);
+    CHECK_MSG(!noVehicleFindingSeen, "J1: without vehicleName the rule must emit nothing (no universal default)");
+
+    // J2. Disc ABOVE the per-car fade-high threshold -> Critical finding with effective threshold shown.
+    LapStats lapHot = makeValidLap(1);
+    fill(lapHot.brakeTempLF, 900.0);   // > Alpine's FadeRangeAbove (850)
+    lapHot.vehicleName = "Alpine_A110_GT4_Evo";
+
+    ReportResult rrHot = LapReportGenerator::generate(
+        lapHot, ReportLanguage::English, ChannelProfile::AMS2);
+    const SectionData& brakeSecHot = rrHot[ReportSection::Brake];
+    bool hotFindingSeen = (brakeSecHot.content.find("FL brake temperature high") != std::string::npos);
+    CHECK_MSG(hotFindingSeen, "J2: disc at 900C > per-car fade-high 850 must raise a finding");
+
+    // J2b. The expected-value line shows the effective (per-car) threshold of 850.0.
+    bool hotShowsPerCarThreshold = brakeSecHot.content.find("exceeds the fade-high threshold of 850.0") != std::string::npos;
+    CHECK_MSG(hotShowsPerCarThreshold, "J2b: finding must display the per-car fade-high threshold (850.0)");
+
+    // J3. Disc BELOW the per-car fade-low threshold -> Warning finding with effective threshold shown.
+    LapStats lapCold = makeValidLap(1);
+    fill(lapCold.brakeTempLF, 300.0);   // < Alpine's FadeRangeBelow (350)
+    lapCold.vehicleName = "Alpine_A110_GT4_Evo";
+
+    ReportResult rrCold = LapReportGenerator::generate(
+        lapCold, ReportLanguage::English, ChannelProfile::AMS2);
+    const SectionData& brakeSecCold = rrCold[ReportSection::Brake];
+    bool coldFindingSeen = (brakeSecCold.content.find("FL brake temperature low") != std::string::npos);
+    CHECK_MSG(coldFindingSeen, "J3: disc at 300C < per-car fade-low 350 must raise a finding");
+
+    // J3b. The expected-value line shows the effective (per-car) threshold of 350.0.
+    bool coldShowsPerCarThreshold = brakeSecCold.content.find("fade-low threshold of 350.0") != std::string::npos;
+    CHECK_MSG(coldShowsPerCarThreshold, "J3b: finding must display the per-car fade-low threshold (350.0)");
+
+    // J4. Unknown vehicle name -> no override applied -> NO finding even at extreme temp.
+    LapStats lapUnknown = makeValidLap(1);
+    fill(lapUnknown.brakeTempLF, 900.0);   // would exceed Alpine's window if it were matched
+    lapUnknown.vehicleName = "Totally_Fake_Car_999";
+
+    ReportResult rrUnknown = LapReportGenerator::generate(
+        lapUnknown, ReportLanguage::English, ChannelProfile::AMS2);
+    const SectionData& brakeSecUnk = rrUnknown[ReportSection::Brake];
+    bool unkFindingSeen = (brakeSecUnk.content.find("FL brake temperature") != std::string::npos);
+    CHECK_MSG(!unkFindingSeen, "J4: unknown vehicleName must NOT apply per-car fade window");
+
+    // J5. Only the wheel with data is checked; other wheels stay silent even when out of range.
+    LapStats lapOneWheel = makeValidLap(1);
+    fill(lapOneWheel.brakeTempLF, 900.0);   // hot -> finding for FL only
+    lapOneWheel.vehicleName = "Alpine_A110_GT4_Evo";
+
+    ReportResult rrOneWheel = LapReportGenerator::generate(
+        lapOneWheel, ReportLanguage::English, ChannelProfile::AMS2);
+    const SectionData& brakeSecOW = rrOneWheel[ReportSection::Brake];
+    bool flSeen = (brakeSecOW.content.find("FL brake temperature high") != std::string::npos);
+    bool otherWheelsSilent = (brakeSecOW.content.find("FR brake temperature") == std::string::npos)
+                          && (brakeSecOW.content.find("RL brake temperature") == std::string::npos)
+                          && (brakeSecOW.content.find("RR brake temperature") == std::string::npos);
+    CHECK_MSG(flSeen, "J5: hot FL disc must raise a finding");
+    CHECK_MSG(otherWheelsSilent, "J5b: wheels without measured data must stay silent");
+
+    // J6. French language variant produces the French title (ASCII-safe check).
+    LapStats lapFr = makeValidLap(1);
+    fill(lapFr.brakeTempLF, 900.0);   // > Alpine's fade-high -> finding in FR too
+    lapFr.vehicleName = "Alpine_A110_GT4_Evo";
+
+    ReportResult rrFr = LapReportGenerator::generate(
+        lapFr, ReportLanguage::French, ChannelProfile::AMS2);
+    const SectionData& brakeSecFr = rrFr[ReportSection::Brake];
+    // The French title contains accented chars ("température", "élevée"), so we match on the
+    // pure-ASCII parenthetical "(risque de fadage)" which only appears in the FR variant.
+    bool frTitleSeen = (brakeSecFr.content.find("(risque de fadage)") != std::string::npos);
+    CHECK_MSG(frTitleSeen, "J6: French finding title must appear for hot disc");
+
+    std::printf("   brake temp per-car fade window OK\n");
+}
+
+// ===========================================================================
 int main() {
     std::printf("Phase 4 diagnostic-engine + comparison test harness\n");
     std::printf("-----------------------------------------------\n");
@@ -746,6 +857,7 @@ int main() {
     testLegacyRuleNonRegression();
     testVehicleDb();
     testEngineCoolingPerCar();
+    testBrakePerCar();
 
     std::printf("\n-----------------------------------------------\n");
     if (g_failures == 0) {

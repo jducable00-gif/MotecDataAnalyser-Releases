@@ -903,6 +903,20 @@ ReportResult LapReportGenerator::generate(const LapStats& lap,
     if (hasVehicleRef) {
         if (vehicleRef.engine.hasOilWarningTemp)
             settings.engine.oilTempWarnC = vehicleRef.engine.oilWarningTempC;
+
+        // Per-wheel brake fade window from the embedded AMS2 DB. brakes[] index order is
+        // {FL, FR, RL, RR} — identical to BrakeThresholds::wheels[]. Only copy a wheel when
+        // its section exists AND carries explicit FadeRange temps; otherwise leave has* false
+        // so that wheel simply produces no finding (no silent gap).
+        for (int w = 0; w < 4; ++w) {
+            const WheelBrakeData& wb = vehicleRef.chassis.brakes[w];
+            if (!wb.present || !wb.hasFadeTemps)
+                continue;
+            settings.brakes.wheels[w].hasFadeLow  = true;
+            settings.brakes.wheels[w].fadeLowC    = wb.fadeRangeBelowC;
+            settings.brakes.wheels[w].hasFadeHigh = true;
+            settings.brakes.wheels[w].fadeHighC   = wb.fadeRangeAboveC;
+        }
         if (vehicleRef.engine.hasWaterWarningTemp)
             settings.engine.waterTempWarnC = vehicleRef.engine.waterWarningTempC;
     }

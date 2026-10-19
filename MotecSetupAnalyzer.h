@@ -250,6 +250,25 @@ struct EngineThresholds {
     double oilTempWarnC = 110.0;
 };
 
+// Per-wheel brake fade window (deg C). Unlike engine cooling, there is no sane
+// universal default for absolute disc temperature — it varies wildly by car
+// (~350-850 deg C) and only exists in the per-car VehicleDb reference data. So
+// both flags start false: with an unknown vehicle the rule produces NO finding
+// (no silent-gap risk), exactly like a stricter engine-cooling override. The
+// LapReportGenerator populates these from Ams2VehicleDb when the car is known.
+struct WheelBrakeTemps {
+    bool   hasFadeLow  = false;   // FadeRangeBelow present ?
+    double fadeLowC    = 0.0;     // below this -> disc too cold to be in its operating window (cold-side efficiency loss)
+    bool   hasFadeHigh = false;   // FadeRangeAbove present ?
+    double fadeHighC   = 0.0;     // above this -> overheating / thermal fade
+
+    WheelBrakeTemps() {}          // C++Builder: constructeur explicite vide requis
+};
+
+struct BrakeThresholds {
+    WheelBrakeTemps wheels[4];    // [FL, FR, RL, RR] -- index: kWheelFl=0..kWheelRr=3
+};
+
 struct HandlingThresholds {
     double wheelSlipMax = 15.0;
     double steerMinCornering = 5.0;
@@ -261,9 +280,11 @@ struct HandlingThresholds {
 struct AnalysisSettings {
     TyreThresholds tyres;
     EngineThresholds engine;
+    BrakeThresholds brakes;       // per-wheel fade window (populated from VehicleDb when car is known)
     HandlingThresholds handling;
     bool tyreAnalysisEnabled = true;
     bool engineAnalysisEnabled = true;
+    bool brakeTempAnalysisEnabled = true;   // gate for the absolute disc-temp rule
     bool pressureAnalysisEnabled = true;
     ReportLanguage language = ReportLanguage::English;
 };
@@ -316,6 +337,10 @@ enum class AnalysisAlias {
     BrakeBiasSettingAvg,          // AMS2: "Brake Bias Setting" channel average
     TcsActivePct,                 // % of samples with TCS active [0..100]
     AbsActivePct,                 // % of samples with ABS active  [0..100]
+    BrakeTempLF,                  // front-left brake/disc temperature (deg C)
+    BrakeTempRF,                  // front-right brake/disc temperature (deg C)
+    BrakeTempLR,                  // rear-left brake/disc temperature (deg C)
+    BrakeTempRR,                  // rear-right brake/disc temperature (deg C)
 
     // --- Wheel speeds (axle averages) ---
     WheelSpeedFrontAvg,
@@ -583,6 +608,85 @@ public:
                 result.title = tr("Oil temperature high", "Température d'huile élevée");
                 result.description = tr("Oil temperature exceeds the warning threshold.", "La température de l'huile dépasse le seuil d'alerte.");
                 result.recommendation = tr("Verify oil cooling and reduce sustained load.", "Vérifier le refroidissement de l'huile et réduire la charge soutenue.");
+                results.push_back(result);
+            }
+        }
+
+        return results;
+    }
+};
+
+// Absolute per-wheel disc temperature vs the car's fade window (VehicleDb Layer 1).
+// Mirrors EngineTemperatureRule: a finding is only produced when BOTH the measured
+// value AND an effective threshold exist for that wheel. With no vehicle reference
+// data, every has* flag stays false and this rule emits nothing — so there is never
+// a silent gap from comparing against a made-up universal number.
+class BrakeTemperatureRule : public AnalysisRule {
+public:
+    std::vector<AnalysisAlias> requiredInputs() const override {
+        return std::vector<AnalysisAlias>{
+            AnalysisAlias::BrakeTempLF, AnalysisAlias::BrakeTempRF,
+            AnalysisAlias::BrakeTempLR, AnalysisAlias::BrakeTempRR
+        };
+    }
+
+    std::vector<AnalysisResult> evaluate(const DataProvider& provider,
+                                        const AnalysisSettings& settings) const override {
+        std::vector<AnalysisResult> results;
+
+        if (!settings.brakeTempAnalysisEnabled)
+            return results;
+
+        auto tr = [&](const std::string& en, const std::string& fr) -> std::string {
+            return settings.language == ReportLanguage::French ? fr : en;
+        };
+
+        // Locale-independent number formatting for the expected-value sentences.
+        auto fmtC = [](double v) -> std::string {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%.1f", v);
+            return std::string(buf);
+        };
+
+        static const char* positions[] = { "FL", "FR", "RL", "RR" };
+        static const AnalysisAlias tempAliases[] = {
+            AnalysisAlias::BrakeTempLF, AnalysisAlias::BrakeTempRF,
+            AnalysisAlias::BrakeTempLR, AnalysisAlias::BrakeTempRR
+        };
+
+        for (std::size_t i = 0; i < 4; ++i) {
+            const std::string pos = positions[i];
+            double temp = 0.0;
+            if (!provider.getValue(tempAliases[i], temp))
+                continue;   // no measured value on this wheel -> nothing to compare
+
+            const WheelBrakeTemps& wbt = settings.brakes.wheels[i];
+
+            // High side: disc above the fade-high window -> overheating / thermal fade.
+            if (wbt.hasFadeHigh && temp > wbt.fadeHighC) {
+                AnalysisResult result;
+                result.severity = AnalysisSeverity::Critical;
+                result.category = "Brake";   // maps to ReportSection::Brake via mapAnalysisResultToReportSection
+                result.expectedValue = tr(pos + " disc at ", pos + " frein à ") + fmtC(temp)
+                    + tr(" deg C exceeds the fade-high threshold of ", " deg C depasse le seuil de fadage haut de ")
+                    + fmtC(wbt.fadeHighC) + tr(" deg C", " deg C");
+                result.title = pos + tr(" brake temperature high (fade risk)", " température frein élevée (risque de fadage)");
+                result.description = pos + tr(" disc is running above the vehicle's fade-high window; braking efficiency will drop.", " disque au-dessus de la plage haute du véhicule ; l'efficacité du freinage va chuter.");
+                result.recommendation = tr("Reduce sustained hard-braking load, check brake cooling and consider a higher-temperature pad compound.", "Réduire les phases de fort freinage soutenu, vérifier le refroidissement des freins et envisager un garnissage haute température.");
+                results.push_back(result);
+            }
+
+            // Low side: disc below the fade-low window -> too cold to be in its operating range.
+            if (wbt.hasFadeLow && temp < wbt.fadeLowC) {
+                AnalysisResult result;
+                result.severity = AnalysisSeverity::Warning;
+                result.category = "Brake";   // maps to ReportSection::Brake via mapAnalysisResultToReportSection
+                result.expectedValue = tr(pos + " disc at ", pos + " frein à ") + fmtC(temp)
+                    + tr(" deg C is below the fade-low threshold of ", " deg C est sous le seuil de fadage bas de ")
+                    + fmtC(wbt.fadeLowC) + tr(" deg C", " deg C");
+                result.title = pos + tr(" brake temperature low (cold)", " température frein basse (froid)");
+                result.description = pos + tr(" disc is below the vehicle's operating window; pads are not at full efficiency.", " disque sous la plage de fonctionnement du véhicule ; les garnissages ne sont pas à pleine efficacité.");
+                result.recommendation = tr("Warm up the brakes with a few medium stops before pushing, and check for restricted brake cooling ducts.", "Chauffer les freins avec quelques arrêts modérés avant d'attaquer et vérifier que les entrées de refroidissement ne sont pas obstruées.");
                 results.push_back(result);
             }
         }
@@ -1898,6 +2002,11 @@ inline DataProvider buildDataProviderFromLap(const LapStats& lap) {
     // --- Brakes (Phase 0) ---
     addAxleAverage(provider, AnalysisAlias::BrakeTorqueFrontAvg, lap.brakeTorqueLF, lap.brakeTorqueRF);
     addAxleAverage(provider, AnalysisAlias::BrakeTorqueRearAvg, lap.brakeTorqueLR, lap.brakeTorqueRR);
+    // Per-wheel disc temperature (deg C) — consumed by BrakeTemperatureRule.
+    addSummaryValue(provider, AnalysisAlias::BrakeTempLF, lap.brakeTempLF);
+    addSummaryValue(provider, AnalysisAlias::BrakeTempRF, lap.brakeTempRF);
+    addSummaryValue(provider, AnalysisAlias::BrakeTempLR, lap.brakeTempLR);
+    addSummaryValue(provider, AnalysisAlias::BrakeTempRR, lap.brakeTempRR);
     addSummaryValue(provider, AnalysisAlias::BrakeBiasSettingAvg, lap.brakeBiasSetting);
     addSummaryValue(provider, AnalysisAlias::TcsActivePct, lap.tcsActive);
     addSummaryValue(provider, AnalysisAlias::AbsActivePct, lap.absActive);
@@ -1982,6 +2091,7 @@ inline DataProvider buildDataProviderFromLap(const LapStats& lap) {
 inline AnalysisRegistry buildDefaultAnalysisRegistry() {
     AnalysisRegistry registry;
     registry.addRule(std::unique_ptr<AnalysisRule>(new EngineTemperatureRule()));
+    registry.addRule(std::unique_ptr<AnalysisRule>(new BrakeTemperatureRule()));   // per-wheel disc temp vs VehicleDb fade window (Brake tab)
     registry.addRule(std::unique_ptr<AnalysisRule>(new TyreTemperatureRule()));
     registry.addRule(std::unique_ptr<AnalysisRule>(new TyreSuspensionBalanceRule()));   // rear vs front outer temp -> suspension balance (Tyre tab)
     registry.addRule(std::unique_ptr<AnalysisRule>(new HandlingBalanceRule()));
