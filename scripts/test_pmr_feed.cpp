@@ -227,7 +227,7 @@ static void testFeed() {
         {AnalysisAlias::YawRateAvg,         -0.1  * kDegPerRad},
         {AnalysisAlias::WheelSlipFrontAvg,   87.0},    // = wheelSlipLF (not a front average)
         {AnalysisAlias::WheelSlipRearAvg,    89.0},    // = wheelSlipLR
-        // TyrePressureRule inputs:
+        // Tyre pressure inputs (per-wheel):
         {AnalysisAlias::TyrePressFL,         2.40 * kBarToPsi},
         {AnalysisAlias::TyrePressFR,         2.45 * kBarToPsi},
         {AnalysisAlias::TyrePressRL,         2.50 * kBarToPsi},

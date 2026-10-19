@@ -101,7 +101,7 @@ Defined inline in `MotecSetupAnalyzer.h`, registered by `buildDefaultAnalysisReg
 |------|----------|-------|
 | `EngineTemperatureRule` | Engine/Cooling | Water/oil temp vs `waterTempMax`/`oilTempMax` -> Critical |
 | `TyreTemperatureRule` | Tyre | Inner<=Outer -> camber; Middle vs shoulders -> pressure |
-| `TyrePressureRule` | Tyre | L/R pressures per axle + cross-axle disagreement |
+| `TyreSuspensionBalanceRule` | Tyres | Rear outer vs front outer temp diff → rear suspension too stiff (> threshold) or too soft (< 0 °C) |
 | `HandlingBalanceRule` | Handling | Wheel slip vs max; steer/yaw combos -> under/oversteer |
 
 Each rule implements `AnalysisRule`:

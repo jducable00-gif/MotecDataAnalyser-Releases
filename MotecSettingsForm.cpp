@@ -92,11 +92,13 @@ void TFormMotecSettings::LoadFromThresholds()
     // Pressure (psi)
     EditPressLow->Text = FloatToStr(g_thresholds.pressureLowPsi);
     EditPressHigh->Text = FloatToStr(g_thresholds.pressureHighPsi);
-    EditPressFrontRearDiffMax->Text = FloatToStr(g_thresholds.pressureFrontRearDiffMax);
 
-    // Tyre temp spread (C)
-	EditCamberMinSpread->Text = FloatToStr(g_thresholds.camberMinSpread);
-    EditCamberMaxSpread->Text = FloatToStr(g_thresholds.camberMaxSpread);
+    // Tyre temp spread (C) - per axle
+    EditFrontMinSpread->Text  = FloatToStr(g_thresholds.camberMinSpreadFront);
+    EditFrontMaxSpread->Text  = FloatToStr(g_thresholds.camberMaxSpreadFront);
+    EditRearMinSpread->Text   = FloatToStr(g_thresholds.camberMinSpreadRear);
+    EditRearMaxSpread->Text   = FloatToStr(g_thresholds.camberMaxSpreadRear);
+    EditRearOuterVsFrontStiffC->Text = FloatToStr(g_thresholds.rearOuterVsFrontStiffC);
 
     // Damper 4-zone targets (%)
     // Damper 4-zone targets (%)
@@ -178,10 +180,12 @@ void TFormMotecSettings::SaveToThresholds()
 
         g_thresholds.pressureLowPsi = StrToFloat(EditPressLow->Text);
         g_thresholds.pressureHighPsi = StrToFloat(EditPressHigh->Text);
-        g_thresholds.pressureFrontRearDiffMax = StrToFloat(EditPressFrontRearDiffMax->Text);
 
-        g_thresholds.camberMinSpread = StrToFloat(EditCamberMinSpread->Text);
-        g_thresholds.camberMaxSpread = StrToFloat(EditCamberMaxSpread->Text);
+        g_thresholds.camberMinSpreadFront  = StrToFloatDef(EditFrontMinSpread->Text,  g_thresholds.camberMinSpreadFront);
+        g_thresholds.camberMaxSpreadFront  = StrToFloatDef(EditFrontMaxSpread->Text,  g_thresholds.camberMaxSpreadFront);
+        g_thresholds.camberMinSpreadRear   = StrToFloatDef(EditRearMinSpread->Text,   g_thresholds.camberMinSpreadRear);
+        g_thresholds.camberMaxSpreadRear   = StrToFloatDef(EditRearMaxSpread->Text,   g_thresholds.camberMaxSpreadRear);
+        g_thresholds.rearOuterVsFrontStiffC = StrToFloat(EditRearOuterVsFrontStiffC->Text);
 
         // Damper 4-zone targets (%)
         // Damper 4-zone targets (%)
@@ -222,10 +226,12 @@ void __fastcall TFormMotecSettings::ButtonSaveClick(TObject *Sender)
 
             ini->WriteFloat("Pressure", "Low", g_thresholds.pressureLowPsi);
             ini->WriteFloat("Pressure", "High", g_thresholds.pressureHighPsi);
-            ini->WriteFloat("Pressure", "FrontRearDiffMax", g_thresholds.pressureFrontRearDiffMax);
 
-            ini->WriteFloat("TyreTemp", "CamberMinSpread", g_thresholds.camberMinSpread);
-            ini->WriteFloat("TyreTemp", "CamberMaxSpread", g_thresholds.camberMaxSpread);
+            ini->WriteFloat("TyreTemp", "CamberMinSpreadFront",  g_thresholds.camberMinSpreadFront);
+            ini->WriteFloat("TyreTemp", "CamberMaxSpreadFront",  g_thresholds.camberMaxSpreadFront);
+            ini->WriteFloat("TyreTemp", "CamberMinSpreadRear",   g_thresholds.camberMinSpreadRear);
+            ini->WriteFloat("TyreTemp", "CamberMaxSpreadRear",   g_thresholds.camberMaxSpreadRear);
+            ini->WriteFloat("TyreTemp", "RearOuterVsFrontStiffC", g_thresholds.rearOuterVsFrontStiffC);
 
 
 
@@ -345,11 +351,13 @@ void TFormMotecSettings::TranslateUI()
     GroupTyrePressure->Caption = isFr ? "Pression (psi)" : "Pressure (psi)";
     LblPressLow->Caption = isFr ? "Minimum :" : "Low:";
     LblPressHigh->Caption = isFr ? "Maximum :" : "High:";
-    LblPressFrontRearDiffMax->Caption = isFr ? "Diff pression Max Avant/Arrière :" : "Max Front/Rear Pressure Diff:";
 
     GroupTyreTemp->Caption = isFr ? "Température (C)" : "Temperature (C)";
-    LblCamberMinSpread->Caption = isFr ? "Écart Intérieur/Extérieur Min :" : "Min Inner/Outer Spread:";
-    LblCamberMaxSpread->Caption = isFr ? "Écart Intérieur/Extérieur Max :" : "Max Inner/Outer Spread:";
+    LblFrontMinSpread->Caption  = isFr ? "Écart Int/Ext Avant Min :" : "Front Inner/Outer Spread Min:";
+    LblFrontMaxSpread->Caption  = isFr ? "Écart Int/Ext Avant Max :" : "Front Inner/Outer Spread Max:";
+    LblRearMinSpread->Caption   = isFr ? "Écart Int/Ext Arrière Min :" : "Rear Inner/Outer Spread Min:";
+    LblRearMaxSpread->Caption   = isFr ? "Écart Int/Ext Arrière Max :" : "Rear Inner/Outer Spread Max:";
+    LblRearOuterVsFrontStiffC->Caption = isFr ? "Écart externe Arrière vs Avant (°C) :" : "Rear Outer vs Front Temp Diff:";
 
     GroupDamperZones->Caption = isFr ? "Cibles 4 Zones Amortisseur (%)" : "Damper 4-Zone Targets (%)";
     LblHscTarget->Caption = isFr ? "Comp. Haute :" : "Hi Comp:";

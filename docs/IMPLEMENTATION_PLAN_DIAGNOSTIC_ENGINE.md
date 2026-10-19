@@ -14,7 +14,7 @@
 | Dead-pipeline structs: `Recommendation`, `CauseEntry` in `MotecSetupAnalyzer.h`; confidence formula documented in README_FR.md; thresholds still in `g_thresholds` (`confidenceLow/Medium/High = 0.30/0.60/0.85`, `minLapsForReproducibility=3`) | Re-wired **cause ranking + confidence scoring** producing LOW/MEDIUM/HIGH labels (no numeric %) |
 | Per-frame phase classification: `LapStats::addHandlingSample()` runs on all 3 ingestion paths, already buckets cornerEntry/cornerExit with understeer/oversteer indicators | Extended to full driving-phase enum (straight / braking approach / initial brake / entry / mid-corner / exit) + per-phase accumulators |
 | Rich `LapStats` evidence: 4× damper velocity histograms (`VelocityHistogram`, 41 bins), steer/yaw Pearson correlation, suspension asymmetry sums, wheel slip ×4, brake torque/bias/TCS-ABS, aero/LSD, pitch/roll (EVO) | Exposed through **new `AnalysisAlias` values** + extended `buildDataProviderFromLap()` so rules can read them via the provider contract |
-| 4 active rules (`EngineTemperatureRule`, `TyreTemperatureRule`, `TyrePressureRule`, `HandlingBalanceRule`) registered in `buildDefaultAnalysisRegistry()` | New **separate diagnostic registry** — existing 4 rules untouched, non-regression guaranteed |
+| 4 active rules (`EngineTemperatureRule`, `TyreTemperatureRule`, `TyreSuspensionBalanceRule`, `HandlingBalanceRule`) registered in `buildDefaultAnalysisRegistry()` | New **separate diagnostic registry** — existing 4 rules untouched, non-regression guaranteed |
 | Report pipeline: `ReportSection` enum (7 values), `UpdateReportTabs()`, tablet JSON writer | New `ReportSection::Diagnostics` + plain-text tab following the existing memo pattern |
 
 ---

@@ -92,7 +92,7 @@ object FormMotecSettings: TFormMotecSettings
         Left = 16
         Top = 16
         Width = 552
-        Height = 180
+         Height = 96
         Caption = 'Pressure (psi)'
         TabOrder = 0
         object LblPressLow: TLabel
@@ -108,13 +108,6 @@ object FormMotecSettings: TFormMotecSettings
           Width = 29
           Height = 15
           Caption = 'High:'
-        end
-        object LblPressFrontRearDiffMax: TLabel
-          Left = 220
-          Top = 32
-          Width = 154
-          Height = 15
-          Caption = 'Max Front/Rear Pressure Diff:'
         end
         object EditPressLow: TEdit
           Left = 64
@@ -132,51 +125,89 @@ object FormMotecSettings: TFormMotecSettings
           TabOrder = 1
           Text = '33.0'
         end
-        object EditPressFrontRearDiffMax: TEdit
-          Left = 386
+      end
+      object GroupTyreTemp: TGroupBox
+        Left = 16
+         Top = 120
+        Width = 552
+        Height = 210
+        Caption = 'Temperature (C)'
+        TabOrder = 1
+        object LblFrontMinSpread: TLabel
+          Left = 12
+          Top = 32
+          Width = 80
+          Height = 15
+          Caption = 'Front Min:'
+        end
+        object EditFrontMinSpread: TEdit
+          Left = 165
+          Top = 28
+          Width = 60
+          Height = 23
+          TabOrder = 0
+          Text = '4.0'
+        end
+        object LblFrontMaxSpread: TLabel
+          Left = 12
+          Top = 61
+          Width = 80
+          Height = 15
+          Caption = 'Front Max:'
+        end
+        object EditFrontMaxSpread: TEdit
+          Left = 165
+          Top = 57
+          Width = 60
+          Height = 23
+          TabOrder = 1
+          Text = '10.0'
+        end
+        object LblRearMinSpread: TLabel
+          Left = 340
+          Top = 32
+          Width = 80
+          Height = 15
+          Caption = 'Rear Min:'
+        end
+        object EditRearMinSpread: TEdit
+          Left = 460
           Top = 28
           Width = 60
           Height = 23
           TabOrder = 2
           Text = '2.0'
         end
-      end
-      object GroupTyreTemp: TGroupBox
-        Left = 16
-        Top = 204
-        Width = 552
-        Height = 210
-        Caption = 'Temperature (C)'
-        TabOrder = 1
-        object LblCamberMinSpread: TLabel
-          Left = 12
-          Top = 32
-          Width = 128
-          Height = 15
-          Caption = 'Min Inner/Outer Spread:'
-        end
-        object LblCamberMaxSpread: TLabel
-          Left = 12
+        object LblRearMaxSpread: TLabel
+          Left = 340
           Top = 61
-          Width = 130
+          Width = 80
           Height = 15
-          Caption = 'Max Inner/Outer Spread:'
+          Caption = 'Rear Max:'
         end
-        object EditCamberMinSpread: TEdit
-          Left = 165
-          Top = 28
-          Width = 60
-          Height = 23
-          TabOrder = 0
-          Text = '3.5'
-        end
-        object EditCamberMaxSpread: TEdit
-          Left = 165
+        object EditRearMaxSpread: TEdit
+          Left = 460
           Top = 57
           Width = 60
           Height = 23
-          TabOrder = 1
-          Text = '6.5'
+          TabOrder = 3
+          Text = '7.0'
+        end
+        object LblRearOuterVsFrontStiffC: TLabel
+          Left = 12
+          Top = 92
+          Width = 248
+          Height = 15
+          Caption = 'Rear Outer vs Front Temp Diff:'
+        end
+
+        object EditRearOuterVsFrontStiffC: TEdit
+          Left = 300
+          Top = 88
+          Width = 60
+          Height = 23
+          TabOrder = 4
+          Text = '5.0'
         end
       end
     end

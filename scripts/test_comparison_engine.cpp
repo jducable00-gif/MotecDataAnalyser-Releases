@@ -492,19 +492,43 @@ static void testLegacyRuleNonRegression() {
     CHECK_MSG(engCriticals >= 1, "expected a Critical Engine finding for 105C water");
     CHECK(waterTitleSeen);
 
-    // --- G3. Front/rear pressure mismatch -> one Warning 'Tyre' finding -------
-    LapStats press = makeValidLap(1);
-    fill(press.pressureLF, 28.0); fill(press.pressureRF, 29.0);   // front avg ~28.5
-    fill(press.pressureLR, 24.0); fill(press.pressureRR, 23.0);   // rear  avg ~23.5 -> diff 5 > max(2)
-    const std::vector<AnalysisResult> rPress = evaluateLapWithRules(press, AnalysisSettings());
-    bool frMismatchSeen = false; int tyreWarnings = 0;
-    for (std::size_t i = 0; i < rPress.size(); ++i) {
-        // TyrePressureRule sets category "Tyres" (plural).
-        if (rPress[i].severity == AnalysisSeverity::Warning && rPress[i].category == "Tyres") ++tyreWarnings;
-        if (rPress[i].title.find("Front/rear pressure mismatch") != std::string::npos) frMismatchSeen = true;
+    // --- G3. Rear outer vs front outer temp -> suspension balance (Tyre tab) --
+    LapStats stiff = makeValidLap(1);
+    fill(stiff.tyreOuterTempLF, 90.0); fill(stiff.tyreOuterTempRF, 92.0);   // front avg ~91
+    fill(stiff.tyreOuterTempLR, 105.0); fill(stiff.tyreOuterTempRR, 107.0); // rear  avg ~106 -> diff +15 > max(5)
+    const std::vector<AnalysisResult> rStiff = evaluateLapWithRules(stiff, AnalysisSettings());
+    bool stiffSeen = false; int brakeWarnings = 0;
+    for (std::size_t i = 0; i < rStiff.size(); ++i) {
+        if (rStiff[i].severity == AnalysisSeverity::Warning && rStiff[i].category == "Tyres") ++brakeWarnings;
+        if (rStiff[i].title.find("Rear suspension may be too stiff") != std::string::npos) stiffSeen = true;
     }
-    CHECK_MSG(frMismatchSeen, "expected 'Front/rear pressure mismatch' finding");
-    CHECK(tyreWarnings >= 1);
+    CHECK_MSG(stiffSeen, "expected 'Rear suspension may be too stiff' finding");
+    CHECK(brakeWarnings >= 1);
+
+    // --- G3b. Rear cooler than front -> rear suspension may be too soft -------
+    LapStats softLap = makeValidLap(2);
+    fill(softLap.tyreOuterTempLF, 95.0); fill(softLap.tyreOuterTempRF, 97.0);   // front avg ~96
+    fill(softLap.tyreOuterTempLR, 82.0); fill(softLap.tyreOuterTempRR, 84.0);   // rear  avg ~83 -> diff -13 < 0
+    const std::vector<AnalysisResult> rSoft = evaluateLapWithRules(softLap, AnalysisSettings());
+    bool softSeen = false; int brakeWarnings2 = 0;
+    for (std::size_t i = 0; i < rSoft.size(); ++i) {
+        if (rSoft[i].severity == AnalysisSeverity::Warning && rSoft[i].category == "Tyres") ++brakeWarnings2;
+        if (rSoft[i].title.find("Rear suspension may be too soft") != std::string::npos) softSeen = true;
+    }
+    CHECK_MSG(softSeen, "expected 'Rear suspension may be too soft' finding");
+    CHECK(brakeWarnings2 >= 1);
+
+    // --- G3c. Rear only slightly hotter (within threshold) -> NO Brakes -------
+    LapStats balLap = makeValidLap(3);
+    fill(balLap.tyreOuterTempLF, 90.0); fill(balLap.tyreOuterTempRF, 92.0);   // front avg ~91
+    fill(balLap.tyreOuterTempLR, 93.0); fill(balLap.tyreOuterTempRR, 95.0);   // rear  avg ~94 -> diff +3 (<= max)
+    const std::vector<AnalysisResult> rBal = evaluateLapWithRules(balLap, AnalysisSettings());
+    int suspensionFindings = 0;
+    for (std::size_t i = 0; i < rBal.size(); ++i) {
+        if (rBal[i].category == "Tyres" &&
+            rBal[i].title.find("suspension") != std::string::npos) ++suspensionFindings;
+    }
+    CHECK_MSG(suspensionFindings == 0, "balanced tyre temps must yield NO suspension balance findings");
 
     // --- G4. High rear wheel slip -> one Warning 'Handling' finding -----------
     LapStats slipLap = makeValidLap(1);

@@ -156,7 +156,7 @@ A proposed rule is NOT ready for implementation until it passes ALL of these:
 |------|--------|-----------------|
 | `EngineTemperatureRule` | Water/oil over max → Critical | No trend detection (slow creep vs sudden spike treated same); no ambient normalization |
 | `TyreTemperatureRule` | Camber (inner≤outer) + Pressure (middle vs shoulders) | Single-snapshot per lap average; doesn't distinguish "warming up" from "at steady state"; no L/R asymmetry check for mechanical issues |
-| `TyrePressureRule` | L/R pressure disagreement per axle + cross-axle | AMS2 only has LIVE pressures; EVO infers from temps (indirect); PMR unverified |
+| `TyreSuspensionBalanceRule` | Rear outer vs front outer tyre temp → rear suspension stiff/soft hint (Tyre tab) | Uses FLOuter/FROuter/RLOuter/RROuter aliases; threshold configurable via `[TyreTemp] RearOuterVsFrontStiffC` in thresholds.ini |
 | `HandlingBalanceRule` | Slip-based under/oversteer detection | No speed gating below ~80 km/h; doesn't distinguish power-over vs corner-entry oversteer; no multi-lap confirmation window |
 
 ### High-Value Gaps (candidates for next rules, in priority order)

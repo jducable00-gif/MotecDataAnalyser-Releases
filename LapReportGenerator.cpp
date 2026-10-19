@@ -901,6 +901,11 @@ ReportResult LapReportGenerator::generate(const LapStats& lap,
         SectionData& data = result[section];
         if (!data.content.empty())
             data.content += "\n";
+        // First sentence of the tab entry: the logic/expected value that triggered the finding.
+        if (!finding.expectedValue.empty()) {
+            data.content += (language == ReportLanguage::French ? "Attendu : " : "Expected: ")
+                           + finding.expectedValue + "\n";
+        }
         data.content += severityLabel(finding.severity, language) + finding.title + "\n";
         if (!finding.description.empty())
             data.content += finding.description + "\n";

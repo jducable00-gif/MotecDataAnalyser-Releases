@@ -53,11 +53,18 @@ struct Thresholds {
     double pressureLowPsi = 23.0;
     double pressureHighPsi = 33.0;
     double pressureSideDiffMax = 1.5;
-    double pressureFrontRearDiffMax = 2.0;   // front/rear axle average difference (psi)
 
-    // Camber target band (C): inner - outer should be within [min, max]
-    double camberMinSpread = 3.5;
-    double camberMaxSpread = 6.5;
+    // Rear vs front OUTER tyre temp diff for suspension balance check (deg C).
+    // rearOuterAvg > frontOuterAvg + this value -> "rear too stiff".
+    // rearOuterAvg <  frontOuterAvg             -> "rear too soft" (any negative triggers it).
+    double rearOuterVsFrontStiffC = 5.0;
+
+    // Camber target band (C): inner - outer spread per axle.
+    // Front tyres run a wider acceptable window than rear tyres.
+    double camberMinSpreadFront = 4.0;   // front: min inner-outer spread
+    double camberMaxSpreadFront = 10.0;  // front: max inner-outer spread
+    double camberMinSpreadRear  = 2.0;   // rear:  min inner-outer spread
+    double camberMaxSpreadRear  = 7.0;   // rear:  max inner-outer spread
 
     // Tyre temperature left/right imbalance (C)
     double tyreCentreTempLrDiffMax = 8.0;   // centre surface temp L/R difference
@@ -226,11 +233,16 @@ extern Thresholds g_thresholds;
 // keeps the rule layer independent from the UI and simulator-specific code.
 // ===============================
 struct TyreThresholds {
-    double camberMinSpread = 3.5;
-    double camberMaxSpread = 6.5;
+    // Per-axle inner/outer temp spread band (C)
+    double camberMinSpreadFront = 4.0;   // front: min
+    double camberMaxSpreadFront = 10.0;  // front: max
+    double camberMinSpreadRear  = 2.0;   // rear:  min
+    double camberMaxSpreadRear  = 7.0;   // rear:  max
     double innerOuterSpreadC = 5.0;
     double sideImbalanceMaxC = 8.0;
-    double pressureFrontRearDiffPsiMax = 2.0;
+
+    // Rear vs front OUTER tyre temp diff (deg C) -> suspension balance check on Tyre tab.
+    double rearOuterVsFrontStiffC = 5.0;
 };
 
 struct EngineThresholds {
@@ -468,6 +480,7 @@ enum class AnalysisSeverity {
 struct AnalysisResult {
     AnalysisSeverity severity = AnalysisSeverity::Info;
     std::string category;
+    std::string expectedValue;   // logic sentence: the condition/thresholds that triggered this finding (rendered first)
     std::string title;
     std::string description;
     std::string recommendation;
@@ -588,6 +601,13 @@ public:
             return settings.language == ReportLanguage::French ? fr : en;
         };
 
+        // Locale-independent number formatting for the expected-value sentences.
+        auto fmtC = [](double v) -> std::string {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%.1f", v);
+            return std::string(buf);
+        };
+
         static const char* positions[] = { "FL", "FR", "RL", "RR" };
         static const AnalysisAlias innerAliases[] = {
             AnalysisAlias::TyreTempFLInner, AnalysisAlias::TyreTempFRInner,
@@ -604,19 +624,28 @@ public:
 
         for (std::size_t i = 0; i < 4; ++i) {
             const std::string pos = positions[i];
-            double inner = 0.0;
+
+            // Per-axle spread thresholds: front tyres use a wider window than rear.
+            // Positions array order is {FL, FR, RL, RR} → indices 0/1 are front axle.
+            const bool   isFrontAxle = (i < 2);
+            const double minSpread   = isFrontAxle ? g_thresholds.camberMinSpreadFront : g_thresholds.camberMinSpreadRear;
+            const double maxSpread   = isFrontAxle ? g_thresholds.camberMaxSpreadFront : g_thresholds.camberMaxSpreadRear;
+
+            double inner  = 0.0;
             double middle = 0.0;
-            double outer = 0.0;
+            double outer  = 0.0;
 
             const bool hasInner = provider.getValue(innerAliases[i], inner);
             const bool hasMiddle = provider.getValue(middleAliases[i], middle);
             const bool hasOuter = provider.getValue(outerAliases[i], outer);
 
 			if (hasInner && hasOuter) {
-				if (inner <= outer+g_thresholds.camberMinSpread) {
+				if (inner <= outer + minSpread) {
 					AnalysisResult result;
 					result.severity = AnalysisSeverity::Warning;
 					result.category = "Tyres";
+					result.expectedValue = tr("Expected value for inner-outer temp spread more than ",
+				                                "Valeur attendue pour l'écart de température interne/externe supérieur à ") + fmtC(minSpread) + tr(" C", " °C");
 					result.title = pos + tr(" insufficient negative camber", " carrossage négatif insuffisant");
 					result.description = pos + tr(" tyre inner band is not hotter than the outer band.", " pneu : la bande interne n'est pas plus chaude que la bande externe.");
 					result.recommendation = tr("Increase negative camber slightly and re-check the same corner on comparable laps.", "Augmenter légèrement le carrossage négatif et revérifier le même virage sur des tours comparables.");
@@ -625,10 +654,12 @@ public:
 			}
 
 			if (hasInner && hasOuter) {
-				if (inner >= outer+g_thresholds.camberMaxSpread) {
+				if (inner >= outer + maxSpread) {
 					AnalysisResult result;
 					result.severity = AnalysisSeverity::Warning;
 					result.category = "Tyres";
+					result.expectedValue = tr("Expected value for inner-outer temp spread less than ",
+				                                "Valeur attendue pour l'écart de température interne/externe inférieur à ") + fmtC(maxSpread) + tr(" C", " °C");
 					result.title = pos + tr(" too much negative camber", " carrossage négatif excessif");
 					result.description = pos + tr(" tyre inner band is too much hotter than the outer band.", " pneu : la bande interne est trop chaude par rapport à la bande externe.");
 					result.recommendation = tr("decrease negative camber slightly and re-check the same corner on comparable laps.", "Diminuer légèrement le carrossage négatif et revérifier le même virage sur des tours comparables.");
@@ -644,6 +675,8 @@ public:
                     AnalysisResult result;
                     result.severity = AnalysisSeverity::Warning;
                     result.category = "Tyres";
+                    result.expectedValue = tr("Expected value for center band temperature between both shoulders (inner and outer).",
+                                                "Valeur attendue : la bande centrale doit se situer entre les deux épaules (interne et externe).");
                     result.title = pos + tr(" center band below shoulders", " bande centrale sous les épaules");
                     result.description = pos + tr(" tyre center band is not strictly between the inner and outer bands; both shoulders are as hot or hotter.", " pneu : la bande centrale n'est pas strictement entre les bandes interne et externe ; les deux épaules sont aussi chaudes ou plus chaudes.");
                     result.recommendation = tr("Raise the starting pressure slightly and re-check the hot tyre pressure and temperature profile.", "Augmenter légèrement la pression de départ et revérifier la pression et le profil de température du pneu à chaud.");
@@ -652,6 +685,8 @@ public:
                     AnalysisResult result;
                     result.severity = AnalysisSeverity::Warning;
                     result.category = "Tyres";
+                    result.expectedValue = tr("Expected value for center band temperature between both shoulders (inner and outer).",
+                                                "Valeur attendue : la bande centrale doit se situer entre les deux épaules (interne et externe).");
                     result.title = pos + tr(" center band above shoulders", " bande centrale au-dessus des épaules");
                     result.description = pos + tr(" tyre center band is not strictly between the inner and outer bands; the center is as hot or hotter.", " pneu : la bande centrale n'est pas strictement entre les bandes interne et externe ; le centre est aussi chaud ou plus chaud.");
                     result.recommendation = tr("Reduce the starting pressure slightly and re-check the hot tyre pressure and temperature profile.", "Réduire légèrement la pression de départ et revérifier la pression et le profil de température du pneu à chaud.");
@@ -664,12 +699,12 @@ public:
     }
 };
 
-class TyrePressureRule : public AnalysisRule {
+class TyreSuspensionBalanceRule : public AnalysisRule {
 public:
     std::vector<AnalysisAlias> requiredInputs() const override {
         return std::vector<AnalysisAlias>{
-            AnalysisAlias::TyrePressFL, AnalysisAlias::TyrePressFR,
-            AnalysisAlias::TyrePressRL, AnalysisAlias::TyrePressRR
+            AnalysisAlias::TyreTempFLOuter, AnalysisAlias::TyreTempFROuter,
+            AnalysisAlias::TyreTempRLOuter, AnalysisAlias::TyreTempRROuter
         };
     }
 
@@ -681,34 +716,60 @@ public:
             return settings.language == ReportLanguage::French ? fr : en;
         };
 
-        if (!settings.tyreAnalysisEnabled || !settings.pressureAnalysisEnabled)
+        if (!settings.tyreAnalysisEnabled)
             return results;
 
         double fl = 0.0;
         double fr = 0.0;
         double rl = 0.0;
         double rr = 0.0;
-        bool hasFl = provider.getValue(AnalysisAlias::TyrePressFL, fl);
-        bool hasFr = provider.getValue(AnalysisAlias::TyrePressFR, fr);
-        bool hasRl = provider.getValue(AnalysisAlias::TyrePressRL, rl);
-        bool hasRr = provider.getValue(AnalysisAlias::TyrePressRR, rr);
+        bool hasFl = provider.getValue(AnalysisAlias::TyreTempFLOuter, fl);
+        bool hasFr = provider.getValue(AnalysisAlias::TyreTempFROuter, fr);
+        bool hasRl = provider.getValue(AnalysisAlias::TyreTempRLOuter, rl);
+        bool hasRr = provider.getValue(AnalysisAlias::TyreTempRROuter, rr);
 
         if (!hasFl || !hasFr || !hasRl || !hasRr)
             return results;
 
-        // L/R pressure split is intentionally used to compensate contact patch vs camber — no imbalance warning.
+        const double frontOuterAvg = (fl + fr) * 0.5;
+        const double rearOuterAvg  = (rl + rr) * 0.5;
+        const double diffC         = rearOuterAvg - frontOuterAvg;
 
-        const double frontAvg = (fl + fr) * 0.5;
-        const double rearAvg = (rl + rr) * 0.5;
-        if (std::abs(frontAvg - rearAvg) > settings.tyres.pressureFrontRearDiffPsiMax) {
+        if (diffC > settings.tyres.rearOuterVsFrontStiffC) {
             AnalysisResult result;
             result.severity = AnalysisSeverity::Warning;
             result.category = "Tyres";
-            result.title = tr("Front/rear pressure mismatch", "Désaccord de pression avant/arrière");
-            result.description = tr("Front and rear axle pressures are unevenly distributed.",
-                                    "Les pressions des essieux avant et arrière sont inégalement réparties.");
-            result.recommendation = tr("Reduce the axle pressure difference to improve balance.",
-                                       "Réduire l'écart de pression entre les essieux pour améliorer l'équilibre.");
+            result.title = tr("Rear suspension may be too stiff",
+                              "Suspension arrière peut-être trop dure");
+            char descEn[160];
+            snprintf(descEn, sizeof(descEn),
+                     "Rear outer tyre temperature is %.1f C higher than the front (%.1f C vs %.1f C).",
+                     diffC, rearOuterAvg, frontOuterAvg);
+            char descFr[200];
+            snprintf(descFr, sizeof(descFr),
+                     "La température externe des pneus arrière est %.1f C plus élevée que l'avant (%.1f C vs %.1f C).",
+                     diffC, rearOuterAvg, frontOuterAvg);
+            result.description = tr(descEn, descFr);
+            result.recommendation = tr("Soften the rear suspension (spring rate / damper) to bring rear tyre temps in line with the front.",
+                                       "Adoucir la suspension arrière (taux de ressort / amortisseur) pour aligner les températures des pneus arrière sur l'avant.");
+            results.push_back(result);
+        } else if (diffC < 0.0) {
+            AnalysisResult result;
+            result.severity = AnalysisSeverity::Warning;
+            result.category = "Tyres";
+            result.title = tr("Rear suspension may be too soft",
+                              "Suspension arrière peut-être trop molle");
+            char descEn[160];
+            snprintf(descEn, sizeof(descEn),
+                     "Rear outer tyre temperature is %.1f C lower than the front (%.1f C vs %.1f C).",
+                     -diffC, rearOuterAvg, frontOuterAvg);
+            char descFr[200];
+            snprintf(descFr, sizeof(descFr),
+                     "La température externe des pneus arrière est %.1f C plus basse que l'avant (%.1f C vs %.1f C).",
+                     -diffC, rearOuterAvg, frontOuterAvg);
+            result.description = tr(descEn, descFr);
+            result.recommendation = tr("Stiffen the rear suspension (spring rate / damper) to bring rear tyre temps in line with the front.",
+                                       "Resserrer la suspension arrière (taux de ressort / amortisseur) pour aligner les températures des pneus arrière sur l'avant.");
             results.push_back(result);
         }
 
@@ -1689,11 +1750,15 @@ inline PhaseAsymmetryResult compareLrInComparablePhases(const LapStats& lap) {
 // ===============================
 inline AnalysisSettings buildDefaultAnalysisSettings() {
     AnalysisSettings settings;
-    settings.tyres.camberMinSpread = g_thresholds.camberMinSpread;
-    settings.tyres.camberMaxSpread = g_thresholds.camberMaxSpread;
-    settings.tyres.innerOuterSpreadC = g_thresholds.camberMaxSpread;
+    // Per-axle inner/outer spread thresholds (front vs rear)
+    settings.tyres.camberMinSpreadFront = g_thresholds.camberMinSpreadFront;
+    settings.tyres.camberMaxSpreadFront = g_thresholds.camberMaxSpreadFront;
+    settings.tyres.camberMinSpreadRear  = g_thresholds.camberMinSpreadRear;
+    settings.tyres.camberMaxSpreadRear  = g_thresholds.camberMaxSpreadRear;
+    // Legacy single-value field kept for backward compatibility (uses front max)
+    settings.tyres.innerOuterSpreadC = g_thresholds.camberMaxSpreadFront;
     settings.tyres.sideImbalanceMaxC = g_thresholds.tyreCentreTempLrDiffMax;
-    settings.tyres.pressureFrontRearDiffPsiMax = g_thresholds.pressureFrontRearDiffMax;
+    settings.tyres.rearOuterVsFrontStiffC     = g_thresholds.rearOuterVsFrontStiffC;
     settings.engine.waterTempWarnC = g_thresholds.waterTempMax;
     settings.engine.oilTempWarnC = g_thresholds.oilTempMax;
     settings.handling.wheelSlipMax = g_thresholds.wheelSlipMax;
@@ -1906,7 +1971,7 @@ inline AnalysisRegistry buildDefaultAnalysisRegistry() {
     AnalysisRegistry registry;
     registry.addRule(std::unique_ptr<AnalysisRule>(new EngineTemperatureRule()));
     registry.addRule(std::unique_ptr<AnalysisRule>(new TyreTemperatureRule()));
-    registry.addRule(std::unique_ptr<AnalysisRule>(new TyrePressureRule()));
+    registry.addRule(std::unique_ptr<AnalysisRule>(new TyreSuspensionBalanceRule()));   // rear vs front outer temp -> suspension balance (Tyre tab)
     registry.addRule(std::unique_ptr<AnalysisRule>(new HandlingBalanceRule()));
     return registry;
 }

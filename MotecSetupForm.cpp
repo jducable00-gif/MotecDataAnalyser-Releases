@@ -567,13 +567,15 @@ void saveDefaultThresholds()
         ini->WriteFloat("Pressure", "Low", g_thresholds.pressureLowPsi);
         ini->WriteFloat("Pressure", "High", g_thresholds.pressureHighPsi);
 		ini->WriteFloat("Pressure", "SideDiffMax", g_thresholds.pressureSideDiffMax);
-		ini->WriteFloat("Pressure", "FrontRearDiffMax", g_thresholds.pressureFrontRearDiffMax);
 
-		// Tyre temp spread (C)
-		ini->WriteFloat("TyreTemp", "CamberMinSpread", g_thresholds.camberMinSpread);
-		ini->WriteFloat("TyreTemp", "CamberMaxSpread", g_thresholds.camberMaxSpread);
+		// Tyre temp spread (C) — per axle
+		ini->WriteFloat("TyreTemp", "CamberMinSpreadFront", g_thresholds.camberMinSpreadFront);
+		ini->WriteFloat("TyreTemp", "CamberMaxSpreadFront", g_thresholds.camberMaxSpreadFront);
+		ini->WriteFloat("TyreTemp", "CamberMinSpreadRear",  g_thresholds.camberMinSpreadRear);
+		ini->WriteFloat("TyreTemp", "CamberMaxSpreadRear",  g_thresholds.camberMaxSpreadRear);
 		ini->WriteFloat("TyreTemp", "CentreLrDiffMax", g_thresholds.tyreCentreTempLrDiffMax);
 		ini->WriteFloat("TyreTemp", "AirLrDiffMax", g_thresholds.tyreAirTempLrDiffMax);
+          ini->WriteFloat("TyreTemp", "RearOuterVsFrontStiffC", g_thresholds.rearOuterVsFrontStiffC);
 
 		// LSD
 		ini->WriteFloat("LSD", "HighEvo", g_thresholds.lsdHighEvo);
@@ -724,13 +726,15 @@ void loadThresholdsPart1(TIniFile* ini)
     g_thresholds.pressureHighPsi = ini->ReadFloat("Pressure", "High",
         ini->ReadFloat("Pressure", "HighEvo", ini->ReadFloat("Pressure", "HighAms2", g_thresholds.pressureHighPsi)));
 	g_thresholds.pressureSideDiffMax = ini->ReadFloat("Pressure", "SideDiffMax", g_thresholds.pressureSideDiffMax);
-	g_thresholds.pressureFrontRearDiffMax = ini->ReadFloat("Pressure", "FrontRearDiffMax", g_thresholds.pressureFrontRearDiffMax);
 
-	// Tyre temp spread (C)
-	g_thresholds.camberMinSpread = ini->ReadFloat("TyreTemp", "CamberMinSpread", g_thresholds.camberMinSpread);
-	g_thresholds.camberMaxSpread = ini->ReadFloat("TyreTemp", "CamberMaxSpread", g_thresholds.camberMaxSpread);
+	// Tyre temp spread (C) — per axle
+	g_thresholds.camberMinSpreadFront = ini->ReadFloat("TyreTemp", "CamberMinSpreadFront", g_thresholds.camberMinSpreadFront);
+	g_thresholds.camberMaxSpreadFront = ini->ReadFloat("TyreTemp", "CamberMaxSpreadFront", g_thresholds.camberMaxSpreadFront);
+	g_thresholds.camberMinSpreadRear  = ini->ReadFloat("TyreTemp", "CamberMinSpreadRear",  g_thresholds.camberMinSpreadRear);
+	g_thresholds.camberMaxSpreadRear  = ini->ReadFloat("TyreTemp", "CamberMaxSpreadRear",  g_thresholds.camberMaxSpreadRear);
 	g_thresholds.tyreCentreTempLrDiffMax = ini->ReadFloat("TyreTemp", "CentreLrDiffMax", g_thresholds.tyreCentreTempLrDiffMax);
 	g_thresholds.tyreAirTempLrDiffMax = ini->ReadFloat("TyreTemp", "AirLrDiffMax", g_thresholds.tyreAirTempLrDiffMax);
+  g_thresholds.rearOuterVsFrontStiffC = ini->ReadFloat("TyreTemp", "RearOuterVsFrontStiffC", g_thresholds.rearOuterVsFrontStiffC);
 
 	// LSD
 	g_thresholds.lsdHighEvo = ini->ReadFloat("LSD", "HighEvo", g_thresholds.lsdHighEvo);
@@ -2180,7 +2184,7 @@ void __fastcall TFormMotecSetup::TireTempPaintBoxPaint(TObject *Sender)
     const int rowGap = 20;
     const int totalBlockH = 2 * contentH + rowGap;
     int startY = 5;
-    const int aeroW = 115;
+    const int aeroW = 70;
     const int tireAreaW = boxW - aeroW;
     const int cellW = tireAreaW / 2;
 
@@ -2270,7 +2274,7 @@ void __fastcall TFormMotecSetup::TireTempPaintBoxPaint(TObject *Sender)
         int tempY = tireY + tireH + 4;
         canvas->Brush->Color = clWhite;
         canvas->Font->Color = clBlack;
-        canvas->Font->Size = 8;
+        canvas->Font->Size = 7;
         canvas->Font->Style = TFontStyles();
         String tI = FloatToStrF(tireTemps[t].inner, ffFixed, 4, 1) + L"\u00B0";
         String tM = FloatToStrF(tireTemps[t].middle, ffFixed, 4, 1) + L"\u00B0";
@@ -2304,7 +2308,7 @@ void __fastcall TFormMotecSetup::TireTempPaintBoxPaint(TObject *Sender)
         // Title above the indicator
         canvas->Brush->Color = clWhite;
         canvas->Font->Name = "Segoe UI";
-        canvas->Font->Size = 9;
+        canvas->Font->Size = 7;
         TFontStyles titleBold;
         titleBold << fsBold;
         canvas->Font->Style = titleBold;

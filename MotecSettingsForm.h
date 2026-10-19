@@ -41,14 +41,21 @@ __published:
     TEdit *EditPressLow;
     TLabel *LblPressHigh;
     TEdit *EditPressHigh;
-    TLabel *LblPressFrontRearDiffMax;
-    TEdit *EditPressFrontRearDiffMax;
 
     TGroupBox *GroupTyreTemp;
-    TLabel *LblCamberMinSpread;
-    TEdit *EditCamberMinSpread;
-    TLabel *LblCamberMaxSpread;
-    TEdit *EditCamberMaxSpread;
+    // Front axle
+    TLabel *LblFrontMinSpread;
+    TEdit  *EditFrontMinSpread;
+    TLabel *LblFrontMaxSpread;
+    TEdit  *EditFrontMaxSpread;
+    // Rear axle
+    TLabel *LblRearMinSpread;
+    TEdit  *EditRearMinSpread;
+    TLabel *LblRearMaxSpread;
+    TEdit  *EditRearMaxSpread;
+    // Rear outer vs front outer temp diff (deg C): suspension balance check.
+    TLabel *LblRearOuterVsFrontStiffC;
+    TEdit  *EditRearOuterVsFrontStiffC;
 
     // Damper 4-Zone Targets Tab
     TGroupBox *GroupDamperZones;

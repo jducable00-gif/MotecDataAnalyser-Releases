@@ -125,7 +125,7 @@ inline AnalysisRegistry buildDefaultAnalysisRegistry() {
     AnalysisRegistry registry;
     registry.addRule(std::unique_ptr<AnalysisRule>(new EngineTemperatureRule()));
     registry.addRule(std::unique_ptr<AnalysisRule>(new TyreTemperatureRule()));
-    registry.addRule(std::unique_ptr<AnalysisRule>(new TyrePressureRule()));
+    registry.addRule(std::unique_ptr<AnalysisRule>(new TyreSuspensionBalanceRule()));
     registry.addRule(std::unique_ptr<AnalysisRule>(new HandlingBalanceRule()));
     // Add your new rule here:
     registry.addRule(std::unique_ptr<AnalysisRule>(new MyNewRule()));
