@@ -11,6 +11,7 @@
 
 #include "MotecSetupAnalyzer.h"
 #include "LapReportGenerator.h"
+#include "VehicleDb.h"          // Layer 1: per-vehicle reference data (AMS2)
 #include "DiagnosticEngine.h"   // Phase 3: diagnostic findings + recommendation gate
 
 namespace {
@@ -894,6 +895,18 @@ ReportResult LapReportGenerator::generate(const LapStats& lap,
     ReportResult result;
     AnalysisSettings settings = buildDefaultAnalysisSettings();
     settings.language = language;
+
+    // --- Layer 1: per-vehicle threshold override (AMS2 only) ---
+    VehicleInfo vehicleRef;
+    const bool hasVehicleRef = !lap.vehicleName.empty() && lap.vehicleName != "Unknown vehicle"
+        && Ams2VehicleDb::instance().find(lap.vehicleName, vehicleRef);
+    if (hasVehicleRef) {
+        if (vehicleRef.engine.hasOilWarningTemp)
+            settings.engine.oilTempWarnC = vehicleRef.engine.oilWarningTempC;
+        if (vehicleRef.engine.hasWaterWarningTemp)
+            settings.engine.waterTempWarnC = vehicleRef.engine.waterWarningTempC;
+    }
+
     const std::vector<AnalysisResult> findings = evaluateLapWithRules(lap, settings);
     for (std::size_t i = 0; i < findings.size(); ++i) {
         const AnalysisResult& finding = findings[i];
@@ -914,6 +927,21 @@ ReportResult LapReportGenerator::generate(const LapStats& lap,
             data.content += finding.recommendation + "\n";
         }
         data.hasRecommendation = true;
+    }
+
+    // --- Layer 1: optimal oil temperature info line (Engine Cooling tab) ---
+    if (hasVehicleRef && vehicleRef.engine.hasOptOilTemp) {
+        std::ostringstream oss;
+        oss << (language == ReportLanguage::French ? "Temperature d'huile optimale (" : "Optimal oil temperature (")
+            << lap.vehicleName << ") : ";
+        // Round to integer for display.
+        const int optC = static_cast<int>(vehicleRef.engine.optOilTempC + 0.5);
+        oss << optC;
+        oss << " deg C";   // ASCII-safe (bcc32c encodes narrow literals as CP1252)
+        SectionData& data = result[ReportSection::EngineCooling];
+        if (!data.content.empty())
+            data.content += "\n\n";
+        data.content += oss.str() + "\n";
     }
 
     // --- Damper-velocity recommendations (Suspension section) ---

@@ -280,6 +280,16 @@
         <None Include="TabletReportPage.h">
             <BuildOrder>25</BuildOrder>
         </None>
+        <CppCompile Include="VehicleDb.cpp">
+            <DependentOn>VehicleDb.h</DependentOn>
+            <BuildOrder>30</BuildOrder>
+        </CppCompile>
+        <None Include="VehicleDb.generated.inc">
+            <BuildOrder>29</BuildOrder>
+        </None>
+        <None Include="VehicleDb.h">
+            <BuildOrder>28</BuildOrder>
+        </None>
         <FormResources Include="MotecSetupForm.dfm"/>
         <FormResources Include="MotecSettingsForm.dfm"/>
         <BuildConfiguration Include="Base">

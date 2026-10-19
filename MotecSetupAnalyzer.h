@@ -552,11 +552,20 @@ public:
         };
 
         if (settings.engineAnalysisEnabled) {
+            auto fmtC = [](double v) -> std::string {
+                char buf[32];
+                snprintf(buf, sizeof(buf), "%.1f", v);
+                return std::string(buf);
+            };
+
             double waterTemp = 0.0;
             if (provider.getValue(AnalysisAlias::WaterTemp, waterTemp) && waterTemp > settings.engine.waterTempWarnC) {
                 AnalysisResult result;
                 result.severity = AnalysisSeverity::Critical;
                 result.category = "Engine";
+                result.expectedValue = tr("Water at ", "Eau à ") + fmtC(waterTemp)
+                    + tr(" deg C exceeds warning threshold of ", " deg C depasse le seuil d'alerte de ")
+                    + fmtC(settings.engine.waterTempWarnC) + tr(" deg C", " deg C");
                 result.title = tr("Water temperature high", "Température d'eau élevée");
                 result.description = tr("Water temperature exceeds the warning threshold.", "La température de l'eau dépasse le seuil d'alerte.");
                 result.recommendation = tr("Check radiator flow, coolant level and fan operation.", "Vérifier le flux du radiateur, le niveau de liquide de refroidissement et le fonctionnement du ventilateur.");
@@ -568,6 +577,9 @@ public:
                 AnalysisResult result;
                 result.severity = AnalysisSeverity::Critical;
                 result.category = "Engine";
+                result.expectedValue = tr("Oil at ", "Huile à ") + fmtC(oilTemp)
+                    + tr(" deg C exceeds warning threshold of ", " deg C depasse le seuil d'alerte de ")
+                    + fmtC(settings.engine.oilTempWarnC) + tr(" deg C", " deg C");
                 result.title = tr("Oil temperature high", "Température d'huile élevée");
                 result.description = tr("Oil temperature exceeds the warning threshold.", "La température de l'huile dépasse le seuil d'alerte.");
                 result.recommendation = tr("Verify oil cooling and reduce sustained load.", "Vérifier le refroidissement de l'huile et réduire la charge soutenue.");

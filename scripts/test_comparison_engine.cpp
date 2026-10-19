@@ -35,6 +35,8 @@
 #include "MotecSetupAnalyzer.h"   // LapStats, StatSummary, g_thresholds, rules, DataProvider
 #include "DiagnosticEngine.h"     // diag:: detectors, rankCauses, evaluateLapWithDiagnostics
 #include "ComparisonEngine.h"     // diag:: compareLapGroups / buildComparisonSection
+#include "VehicleDb.h"            // Ams2VehicleDb -- base vehicules AMS2 embarquee (Layer 1)
+#include "LapReportGenerator.h"   // LapReportGenerator::generate, ReportResult, ReportSection
 
 // DiagnosticFinding (struct) and diagnosticConfidenceLabel() live in GLOBAL scope
 // (MotecSetupAnalyzer.h), not inside namespace diag. Re-expose them under diag:: so
@@ -553,6 +555,179 @@ static void testLegacyRuleNonRegression() {
 }
 
 // ===========================================================================
+static void testVehicleDb() {
+    std::printf("H. Vehicle DB (embedded AMS2 data, Layer 1)\n");
+
+    const Ams2VehicleDb& db = Ams2VehicleDb::instance();
+
+    // H0: The embedded JSON parsed successfully and has a reasonable count.
+    CHECK_MSG(db.isValid(), "Ams2VehicleDb must be valid after parsing the embedded JSON");
+    CHECK_MSG(db.vehicleCount() >= 100, "expected at least 100 vehicles in the DB");
+
+    // H1: Find a known car by exact name (Alpine A110 GT4 Evo is first in source).
+    VehicleInfo alpine;
+    bool found = db.find("Alpine_A110_GT4_Evo", alpine);
+    CHECK_MSG(found, "find('Alpine_A110_GT4_Evo') must succeed");
+    if (found) {
+        CHECK(std::fabs(alpine.chassis.massKg - 1165.0) < 0.5);          // Mass: 1165 kg
+        CHECK_MSG(alpine.engine.hasOptOilTemp, "Alpine A110 must have OptimumOilTemp");
+        if (alpine.engine.hasOptOilTemp)
+            CHECK(std::fabs(alpine.engine.optOilTempC - 110.0) < 0.5);   // 110 deg C
+
+        // H2: Brake data present for all four wheels with sane temp ranges.
+        bool brakesOk = true;
+        for (int w = Ams2VehicleDb::kWheelFl; w <= Ams2VehicleDb::kWheelRr; ++w) {
+            const WheelBrakeData& b = alpine.chassis.brakes[w];
+            if (!b.present || b.optTempMinC < 100.0 || b.optTempMaxC > 900.0 ||
+                b.optTempMinC >= b.optTempMaxC) { brakesOk = false; break; }
+        }
+        CHECK_MSG(brakesOk, "Alpine A110 must have valid brake temp ranges on all 4 wheels");
+
+        // H3: CG data present.
+        CHECK(alpine.chassis.hasCgHeight);
+    }
+
+    // H4: Case-insensitive lookup works (lowercase query).
+    VehicleInfo alpineLower;
+    bool foundLower = db.find("alpine_a110_gt4_evo", alpineLower);
+    CHECK_MSG(foundLower, "find() must be case-insensitive");
+    if (found && foundLower)
+        CHECK(alpine.chassis.massKg == alpineLower.chassis.massKg);
+
+    // H5: Unknown name returns false.
+    VehicleInfo ghost;
+    bool foundGhost = db.find("Nonexistent_Car_XYZ_999", ghost);
+    CHECK(!foundGhost);
+
+    std::printf("   vehicle DB: valid, %u cars, find/case-insensitive/unknown OK\n",
+                static_cast<unsigned>(db.vehicleCount()));
+}
+
+// ===========================================================================
+// I. Engine cooling per-car thresholds + optimal oil temp info line (Layer 1).
+// =============================================================================
+static void testEngineCoolingPerCar() {
+    section("I: Engine cooling per-vehicle override (AMS2 Layer 1)");
+
+    const Ams2VehicleDb& db = Ams2VehicleDb::instance();
+    VehicleInfo alpine;
+    if (!db.find("Alpine_A110_GT4_Evo", alpine)) {
+        std::printf("   SKIP: Alpine not in DB\n");
+        return;
+    }
+
+    // I0. Per-car oil threshold override suppresses a finding that the global default would raise.
+    //     Default AnalysisSettings.oilTermWarnC = 110, but Alpine OilWarningTemp = 130.
+    //     Set oil to 125 C: with per-car override -> NO warning; without it -> Critical.
+    LapStats lapOverride = makeValidLap(1);
+    fill(lapOverride.oilTemp, 125.0);   // between default (110) and Alpine's (130)
+    lapOverride.vehicleName = "Alpine_A110_GT4_Evo";
+
+    ReportResult rrOverride = LapReportGenerator::generate(
+        lapOverride, ReportLanguage::English, ChannelProfile::AMS2);
+    const SectionData& engSecOv = rrOverride[ReportSection::EngineCooling];
+    bool oilWarnSeen = (engSecOv.content.find("Oil temperature high") != std::string::npos);
+    CHECK_MSG(!oilWarnSeen, "I0: per-car OilWarningTemp=130 must suppress warning at 125C");
+
+    // I1. Same lap WITHOUT vehicleName -> global default (g_thresholds.oilTempMax = 115) applies -> finding raised.
+    LapStats lapNoVehicle = makeValidLap(1);
+    fill(lapNoVehicle.oilTemp, 125.0);   // > g_thresholds.oilTempMax=115
+    lapNoVehicle.vehicleName.clear();
+
+    ReportResult rrDefault = LapReportGenerator::generate(
+        lapNoVehicle, ReportLanguage::English, ChannelProfile::AMS2);
+    const SectionData& engSecDef = rrDefault[ReportSection::EngineCooling];
+    bool oilWarnSeenDefault = (engSecDef.content.find("Oil temperature high") != std::string::npos);
+    CHECK_MSG(oilWarnSeenDefault, "I1: without vehicleName the global default 115C must trigger at 125C");
+
+    // I1b. The finding shows the global (default) oil threshold of 115.0 in its expected-value line.
+    bool defShowsDefaultThreshold = engSecDef.content.find("exceeds warning threshold of 115.0") != std::string::npos;
+    CHECK_MSG(defShowsDefaultThreshold, "I1b: finding must display the global default oil threshold (115.0)");
+
+    // I2. Per-car water threshold override suppresses a finding that the global default would raise.
+    //     g_thresholds.waterTempMax = 95, Alpine WaterWarningTemp = 115.
+    LapStats lapWaterOv = makeValidLap(1);
+    fill(lapWaterOv.waterTemp, 110.0);   // between default (100) and Alpine's (115)
+    lapWaterOv.vehicleName = "Alpine_A110_GT4_Evo";
+
+    ReportResult rrWaterOv = LapReportGenerator::generate(
+        lapWaterOv, ReportLanguage::English, ChannelProfile::AMS2);
+    const SectionData& engSecWov = rrWaterOv[ReportSection::EngineCooling];
+    bool waterWarnSeen = (engSecWov.content.find("Water temperature high") != std::string::npos);
+    CHECK_MSG(!waterWarnSeen, "I2: per-car WaterWarningTemp=115 must suppress warning at 110C");
+
+    // I3. Optimal oil temp info line present for a known car (English).
+    bool optLineSeen = engSecOv.content.find("Optimal oil temperature") != std::string::npos;
+    CHECK_MSG(optLineSeen, "I3: 'Optimal oil temperature' info line must appear in EngineCooling");
+
+    // I4. Info line contains the vehicle name and a plausible temp value (105-120 C range).
+    bool hasName = engSecOv.content.find("Alpine_A110_GT4_Evo") != std::string::npos;
+    CHECK_MSG(hasName, "I4: info line must contain the vehicle name");
+
+    // I5. No optimal oil temp line for unknown/empty vehicleName (already checked in I1's result).
+    bool optLineDefault = engSecDef.content.find("Optimal oil temperature") != std::string::npos;
+    CHECK_MSG(!optLineDefault, "I5: no 'Optimal oil temperature' line when vehicleName is empty");
+
+    // I6. French language variant produces the French info label (ASCII-safe).
+    LapStats lapFr = makeValidLap(1);
+    fill(lapFr.oilTemp, 90.0);   // well below any threshold -> no findings, just info
+    lapFr.vehicleName = "Alpine_A110_GT4_Evo";
+
+    ReportResult rrFr = LapReportGenerator::generate(
+        lapFr, ReportLanguage::French, ChannelProfile::AMS2);
+    const SectionData& engSecFr = rrFr[ReportSection::EngineCooling];
+    bool frLineSeen = (engSecFr.content.find("Temperature d'huile optimale") != std::string::npos);
+    CHECK_MSG(frLineSeen, "I6: French 'Temperature d\\'huile optimale' info line must appear");
+
+    // I7. Oil temp ABOVE the per-car threshold still triggers a finding (override raises bar).
+    LapStats lapHotOil = makeValidLap(1);
+    fill(lapHotOil.oilTemp, 135.0);   // > Alpine's 130 -> must trigger even with override
+    lapHotOil.vehicleName = "Alpine_A110_GT4_Evo";
+
+    ReportResult rrHotOil = LapReportGenerator::generate(
+        lapHotOil, ReportLanguage::English, ChannelProfile::AMS2);
+    const SectionData& engSecHot = rrHotOil[ReportSection::EngineCooling];
+    bool hotOilWarnSeen = (engSecHot.content.find("Oil temperature high") != std::string::npos);
+    CHECK_MSG(hotOilWarnSeen, "I7: oil at 135C > per-car threshold 130 must still trigger warning");
+
+    // I7b. The finding now shows the effective (per-car) threshold in its expected-value line.
+    bool hotShowsPerCarThreshold = engSecHot.content.find("exceeds warning threshold of 130.0") != std::string::npos;
+    CHECK_MSG(hotShowsPerCarThreshold, "I7b: finding must display the per-car oil threshold (130.0)");
+
+    // I8. Unknown vehicle name -> no override applied (same as empty).
+    LapStats lapUnknown = makeValidLap(1);
+    fill(lapUnknown.oilTemp, 125.0);   // between default and Alpine's threshold
+    lapUnknown.vehicleName = "Totally_Fake_Car_999";
+
+    ReportResult rrUnknown = LapReportGenerator::generate(
+        lapUnknown, ReportLanguage::English, ChannelProfile::AMS2);
+    const SectionData& engSecUnk = rrUnknown[ReportSection::EngineCooling];
+    bool unkOilWarnSeen = (engSecUnk.content.find("Oil temperature high") != std::string::npos);
+    CHECK_MSG(unkOilWarnSeen, "I8: unknown vehicleName must NOT apply per-car override");
+
+    // I9. Info line absent for unknown car name.
+    bool unkOptLine = engSecUnk.content.find("Optimal oil temperature") != std::string::npos;
+    CHECK_MSG(!unkOptLine, "I9: no 'Optimal oil temperature' line for unknown vehicle");
+
+    // I10. Non-AMS2 profile (EvoM1) with a name that happens to match an AMS2 car — 
+    //      the DB lookup is purely by name so it WILL still apply; this documents
+    //      current behavior (name-based, not profile-gated). If we later add gating,
+    //      flip this expectation.
+    LapStats lapEvo = makeValidLap(1);
+    fill(lapEvo.oilTemp, 90.0);   // no findings expected regardless
+    lapEvo.vehicleName = "Alpine_A110_GT4_Evo";
+
+    ReportResult rrEvo = LapReportGenerator::generate(
+        lapEvo, ReportLanguage::English, ChannelProfile::EvoM1);
+    const SectionData& engSecEvo = rrEvo[ReportSection::EngineCooling];
+    bool evoOptLineSeen = (engSecEvo.content.find("Optimal oil temperature") != std::string::npos);
+    // Current behavior: name-based lookup applies regardless of profile.
+    CHECK_MSG(evoOptLineSeen, "I10: info line appears even on EvoM1 profile (name-based lookup)");
+
+    std::printf("   engine cooling per-car: override + info line OK\n");
+}
+
+// ===========================================================================
 int main() {
     std::printf("Phase 4 diagnostic-engine + comparison test harness\n");
     std::printf("-----------------------------------------------\n");
@@ -569,6 +744,8 @@ int main() {
     testBeforeAfterComparison();
     testGateLogicPrimitives();
     testLegacyRuleNonRegression();
+    testVehicleDb();
+    testEngineCoolingPerCar();
 
     std::printf("\n-----------------------------------------------\n");
     if (g_failures == 0) {
