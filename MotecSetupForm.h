@@ -25,6 +25,7 @@
 #include "AcsEvoLiveCapture.h"
 #include "PmrLiveCapture.h"
 #include "LapReportGenerator.h"
+#include "VehicleDb.h"    // Ams2VehicleDb -- per-wheel brake fade thresholds (AMS2 only)
 #include "HttpServer.h"   // Phase B: embedded tablet report server
 #include <map>
 
@@ -178,6 +179,12 @@ public:
     };
     BrakeTempData brakeTemps[4]; // 0=FL, 1=FR, 2=RL, 3=RR
     bool hasBrakeTempData = false;
+
+    // Per-wheel fade threshold (deg C) from the embedded AMS2 vehicle DB.
+    // valid[i] == true only when the current car is known AND its wheel entry
+    // carries a FadeRangeAbove value. Filled in UpdateBrakeTemps().
+    double brakeFadeThresholdC[4];   // 0=FL, 1=FR, 2=RL, 3=RR (kWheelFl..kWheelRr order)
+    bool brakeFadeValid[4] = { false, false, false, false };
 
     struct FluidTempData {
         double avg = 0.0;

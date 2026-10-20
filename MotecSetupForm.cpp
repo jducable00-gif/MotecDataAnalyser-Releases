@@ -1066,7 +1066,6 @@ void __fastcall TFormMotecSetup::TranslateUI()
 	OnResize = FormResize;
 	FormResize(this);
 
-	MemoSummary->Lines->Add("Select a Motec file to analyze.");
 	// DetectMotecInstallation();
 }
 
@@ -1129,7 +1128,8 @@ void __fastcall TFormMotecSetup::ChannelProfileComboChange(TObject *Sender)
 
         // LED red = not connected yet (reconnecting)
         LiveLed->Brush->Color = clRed;
-        LabelLiveStatus->Caption = "Connecting...";
+        const bool isFrConn = ReadReportLanguageSetting() == ReportLanguage::French;
+        LabelLiveStatus->Caption = isFrConn ? String(L"Connexion...") : String("Connecting...");
 
         // Start the connection timer to begin looking for shared memory/process
         LiveConnectTimer->Enabled = true;
@@ -1269,6 +1269,8 @@ void __fastcall TFormMotecSetup::BrakeTempPaintBoxPaint(TObject *Sender)
 {
     if (BrakeTempPaintBox == NULL) return;
 
+    const bool isFr = ReadReportLanguageSetting() == ReportLanguage::French;
+
     TCanvas* canvas = BrakeTempPaintBox->Canvas;
     int width = BrakeTempPaintBox->Width;
     int height = BrakeTempPaintBox->Height;
@@ -1289,7 +1291,7 @@ void __fastcall TFormMotecSetup::BrakeTempPaintBoxPaint(TObject *Sender)
         phFmt.SetAlignment(Gdiplus::StringAlignmentCenter);
         phFmt.SetLineAlignment(Gdiplus::StringAlignmentCenter);
         Gdiplus::RectF layoutRect(0.0f, 0.0f, (Gdiplus::REAL)width, (Gdiplus::REAL)height);
-        graphics.DrawString(L"No brake data", -1, &phFont, layoutRect, &phFmt, &phTextBrush);
+        graphics.DrawString(isFr ? L"Aucune donn\u00e9e frein" : L"No brake data", -1, &phFont, layoutRect, &phFmt, &phTextBrush);
         return;
     }
 
@@ -1310,10 +1312,10 @@ void __fastcall TFormMotecSetup::BrakeTempPaintBoxPaint(TObject *Sender)
 
     struct IconPos { int x, y; String label; };
     IconPos pos[4] = {
-        { leftPad,          topY0, "FL" }, // 0: FL (top-left)
-        { leftPad + colW,   topY0, "FR" }, // 1: FR (top-right)
-        { leftPad,          topY1, "RL" }, // 2: RL (bottom-left)
-        { leftPad + colW,   topY1, "RR" }  // 3: RR (bottom-right)
+        { leftPad,          topY0, isFr ? "AV G" : "FL" }, // 0: FL (top-left)
+        { leftPad + colW,   topY0, isFr ? "AV D" : "FR" }, // 1: FR (top-right)
+        { leftPad,          topY1, isFr ? "AR G" : "RL" }, // 2: RL (bottom-left)
+        { leftPad + colW,   topY1, isFr ? "AR D" : "RR" }  // 3: RR (bottom-right)
     };
 
     // --- Disk-brake rendering brushes/pens (shared across the four corners) ---
@@ -1384,8 +1386,8 @@ void __fastcall TFormMotecSetup::BrakeTempPaintBoxPaint(TObject *Sender)
         // Avg / Max temps BELOW the disc, centered on it. Build wide buffers via swprintf.
         wchar_t avgBuf[32];
         wchar_t maxBuf[32];
-        swprintf(avgBuf, 32, L"Avg: %.0fC", brakeTemps[i].avg);
-        swprintf(maxBuf, 32, L"Max: %.0fC", brakeTemps[i].max);
+        swprintf(avgBuf, 32, isFr ? L"Moy.: %.0f\u00b0C" : L"Avg: %.0fC", brakeTemps[i].avg);
+        swprintf(maxBuf, 32, L"Max: %.0fC", (double)brakeTemps[i].max);
 
         Gdiplus::RectF avgRect((Gdiplus::REAL)(pos[i].x - 16), (Gdiplus::REAL)(pos[i].y + iconSize + 3), (Gdiplus::REAL)(iconSize + 32), 15);
         graphics.DrawString(avgBuf, -1, &tempFont, avgRect, &centerFmt, &avgBrush);
@@ -1398,6 +1400,7 @@ void __fastcall TFormMotecSetup::BrakeTempPaintBoxPaint(TObject *Sender)
     const int gaugeX = leftPad + 2 * (iconSize + colGap) + 30; // x of gauge column (pushed to the right)
     const float gaugeD = 46.0f;                            // same diameter as brake discs
 
+    // isFr captured from outer scope for localized Avg/Max value labels inside the gauge.
     auto drawTempGauge = [&](float gx, float gy, double tempValue, double maxTempValue, bool dataValid, double warnThreshold, const wchar_t* caption) {
         float cx = gx + gaugeD / 2.0f;
         float cy = gy + gaugeD / 2.0f;
@@ -1486,7 +1489,7 @@ void __fastcall TFormMotecSetup::BrakeTempPaintBoxPaint(TObject *Sender)
         Gdiplus::RectF valRect(gx - 6.0f, gy + gaugeD + 17.0f, gaugeD + 12.0f, 14.0f);
         Gdiplus::RectF maxRect(gx - 6.0f, gy + gaugeD + 31.0f, gaugeD + 12.0f, 14.0f);
         if (dataValid) {
-            swprintf(valBuf, 16, L"Avg: %.0fC", tempValue);
+            swprintf(valBuf, 16, isFr ? L"Moy.: %.0f\u00b0C" : L"Avg: %.0fC", tempValue);
             Gdiplus::SolidBrush valBrush(Gdiplus::Color(255, 100, 200, 255));
             graphics.DrawString(valBuf, -1, &tempFont, valRect, &centerFmt, &valBrush);
 
@@ -1502,8 +1505,10 @@ void __fastcall TFormMotecSetup::BrakeTempPaintBoxPaint(TObject *Sender)
 
     // Water gauge (front row) and Oil gauge (rear row)
     // Needle turns red above the configured warning thresholds
-    drawTempGauge((float)gaugeX, (float)topY0, waterTemp.avg, waterTemp.max, waterTemp.valid, g_thresholds.waterTempMax, L"Water");
-    drawTempGauge((float)gaugeX, (float)topY1, oilTemp.avg, oilTemp.max, oilTemp.valid, g_thresholds.oilTempMax, L"Oil");
+    drawTempGauge((float)gaugeX, (float)topY0, waterTemp.avg, waterTemp.max, waterTemp.valid, g_thresholds.waterTempMax,
+                  isFr ? L"Eau" : L"Water");
+    drawTempGauge((float)gaugeX, (float)topY1, oilTemp.avg, oilTemp.max, oilTemp.valid, g_thresholds.oilTempMax,
+                  isFr ? L"Huile" : L"Oil");
 }
 
 void __fastcall TFormMotecSetup::DrawModernHistogram(TCanvas* canvas, int x, int y, int width, int height, const SuspensionCornerData& stats, const String& label)
@@ -1544,6 +1549,26 @@ void __fastcall TFormMotecSetup::DrawModernHistogram(TCanvas* canvas, int x, int
     for (int i = 1; i < 4; ++i) {
         int gy = (chartHeight * i) / 4;
         graphics.DrawLine(&gridPen, marginLeft, gy, width, gy);
+    }
+
+    // Side labels: rebound side is negative velocity (left), bump/compression positive (right).
+    const bool isFr = ReadReportLanguageSetting() == ReportLanguage::French;
+    {
+        Gdiplus::Font lblFont(L"Segoe UI", 8.0f, Gdiplus::FontStyleBold);
+        Gdiplus::SolidBrush sideLbl(Gdiplus::Color(215, 168, 170, 178));
+
+        const wchar_t* rebTxt = isFr ? L"D\u00e9tente" : L"Rebound";      // v < 0
+        Gdiplus::RectF rb; graphics.MeasureString(rebTxt, -1, &lblFont, Gdiplus::PointF(0, 0), &rb);
+        float rebX = marginLeft + chartWidth * 0.25f - rb.Width / 2.0f;   // center of left half
+        if (rebX < marginLeft) rebX = marginLeft;
+
+        const wchar_t* bumpTxt = isFr ? L"Compression" : L"Bump";         // v > 0
+        Gdiplus::RectF bb; graphics.MeasureString(bumpTxt, -1, &lblFont, Gdiplus::PointF(0, 0), &bb);
+        float bumpX = marginLeft + chartWidth * 0.75f - bb.Width / 2.0f;  // center of right half
+        if (bumpX > width - bb.Width) bumpX = width - bb.Width;
+
+        graphics.DrawString(rebTxt, -1, &lblFont, Gdiplus::PointF(rebX, 3), &sideLbl);
+        graphics.DrawString(bumpTxt, -1, &lblFont, Gdiplus::PointF(bumpX, 3), &sideLbl);
     }
 
     // 3. Draw Bars
@@ -1609,24 +1634,35 @@ void __fastcall TFormMotecSetup::DrawModernHistogram(TCanvas* canvas, int x, int
     }
 }
 
+// Localized corner names for the four damper histogram paint handlers.
+static String DamperCornerLabel(int index) {
+    const bool isFr = TFormMotecSetup::ReadReportLanguageSetting() == ReportLanguage::French;
+    switch (index) {
+        case 0: return isFr ? L"Avant Gauche" : L"Front Left";
+        case 1: return isFr ? L"Avant Droite" : L"Front Right";
+        case 2: return isFr ? String(L"Arri\u00e8re Gauche") : L"Rear Left";
+        default:return isFr ? String(L"Arri\u00e8re Droit")  : L"Rear Right";
+    }
+}
+
 void __fastcall TFormMotecSetup::DamperFLPaintBoxPaint(TObject *Sender) {
     TPaintBox* pb = (TPaintBox*)Sender;
-    DrawModernHistogram(pb->Canvas, pb->Left, pb->Top, pb->Width, pb->Height, suspensionData[0], "Front Left");
+    DrawModernHistogram(pb->Canvas, pb->Left, pb->Top, pb->Width, pb->Height, suspensionData[0], DamperCornerLabel(0));
 }
 
 void __fastcall TFormMotecSetup::DamperFRPaintBoxPaint(TObject *Sender) {
     TPaintBox* pb = (TPaintBox*)Sender;
-    DrawModernHistogram(pb->Canvas, pb->Left, pb->Top, pb->Width, pb->Height, suspensionData[1], "Front Right");
+    DrawModernHistogram(pb->Canvas, pb->Left, pb->Top, pb->Width, pb->Height, suspensionData[1], DamperCornerLabel(1));
 }
 
 void __fastcall TFormMotecSetup::DamperRLPaintBoxPaint(TObject *Sender) {
     TPaintBox* pb = (TPaintBox*)Sender;
-    DrawModernHistogram(pb->Canvas, pb->Left, pb->Top, pb->Width, pb->Height, suspensionData[2], "Rear Left");
+    DrawModernHistogram(pb->Canvas, pb->Left, pb->Top, pb->Width, pb->Height, suspensionData[2], DamperCornerLabel(2));
 }
 
 void __fastcall TFormMotecSetup::DamperRRPaintBoxPaint(TObject *Sender) {
     TPaintBox* pb = (TPaintBox*)Sender;
-    DrawModernHistogram(pb->Canvas, pb->Left, pb->Top, pb->Width, pb->Height, suspensionData[3], "Rear Right");
+    DrawModernHistogram(pb->Canvas, pb->Left, pb->Top, pb->Width, pb->Height, suspensionData[3], DamperCornerLabel(3));
 }
 
 // --- Combined damper chart: all four corners overlaid on a single axis set. ---
@@ -1905,6 +1941,23 @@ void __fastcall TFormMotecSetup::DrawCombinedDamperChart(Gdiplus::Graphics& grap
         Gdiplus::Pen basePen(Gdiplus::Color(140, 96, 98, 104), 1.0f);
         graphics.DrawLine(&basePen, chartLeft, chartBottom, chartRight, chartBottom);
 
+        // Side labels just above the baseline: rebound (v < 0) left half, bump/compression right half.
+        {
+            Gdiplus::Font sideLbl(L"Segoe UI", 8.0f, Gdiplus::FontStyleBold);
+            Gdiplus::SolidBrush sideTxt(Gdiplus::Color(215, 168, 170, 178));
+
+            const wchar_t* rebTxt = isFr ? L"D\u00e9tente" : L"Rebound";      // v < 0
+            Gdiplus::RectF rb; graphics.MeasureString(rebTxt, -1, &sideLbl, Gdiplus::PointF(0, 0), &rb);
+            float rebX = chartLeft + (zeroX - chartLeft) / 2.0f - rb.Width / 2.0f; // center of left half
+
+            const wchar_t* bumpTxt = isFr ? L"Compression" : L"Bump";         // v > 0
+            Gdiplus::RectF bb; graphics.MeasureString(bumpTxt, -1, &sideLbl, Gdiplus::PointF(0, 0), &bb);
+            float bumpX = zeroX + (chartRight - zeroX) / 2.0f - bb.Width / 2.0f; // center of right half
+
+            graphics.DrawString(rebTxt, -1, &sideLbl, Gdiplus::PointF(rebX, chartBottom - rb.Height - 3), &sideTxt);
+            graphics.DrawString(bumpTxt, -1, &sideLbl, Gdiplus::PointF(bumpX, chartBottom - bb.Height - 3), &sideTxt);
+        }
+
         // --- Step 8e: slow-speed band shading ---------------------------------
         double slowRange = g_thresholds.damperSlowSpeedRange;
         if (slowRange > 0) {
@@ -2080,16 +2133,76 @@ void __fastcall TFormMotecSetup::UpdateTireTemps(const std::vector<LapStats>& la
         TireTempPaintBox->Invalidate();
 }
 
+// Normalized vehicle name: lowercase alphanumerics only (spaces/underscores/dots dropped).
+static std::string normalizeVehicleName(const std::string& s) {
+    std::string out;
+    for (std::size_t i = 0; i < s.size(); ++i) {
+        char c = s[i];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+            out += (char)(c | 32);   // tolower for ASCII letters
+        } else if (c >= '0' && c <= '9') {
+            out += c;
+        }
+    }
+    return out;
+}
+
+// DB lookup with a normalized-name fallback: AMS2 shared memory may report the car name
+// in a slightly different form than the embedded-DB key ("Alpine A110 GT4 Evo" vs "Alpine_A110_GT4_Evo").
+static bool findVehicleInDb(const std::string& rawName, VehicleInfo& out) {
+    if (Ams2VehicleDb::instance().find(rawName, out)) return true;
+
+    const Ams2VehicleDb& db = Ams2VehicleDb::instance();
+    if (!db.isValid()) return false;
+    std::vector<std::string> names;
+    db.allNames(names);
+    const std::string normTarget = normalizeVehicleName(rawName);
+    for (std::size_t i = 0; i < names.size() && !normTarget.empty(); ++i) {
+        if (normalizeVehicleName(names[i]) == normTarget) {
+            return db.find(names[i], out);   // exact key -> full parse guaranteed
+        }
+    }
+    return false;
+}
+
 void __fastcall TFormMotecSetup::UpdateBrakeTemps(const std::vector<LapStats>& laps)
 {
     if (laps.empty()) {
         hasBrakeTempData = false;
+        for (int i = 0; i < 4; ++i) brakeFadeValid[i] = false;
         if (BrakeTempPaintBox) BrakeTempPaintBox->Invalidate();
         return;
     }
 
-    // Use averaged data for brake and engine temperatures across all valid laps
+    // Use averaged data for brake and engine temperatures across all valid laps.
+    // NOTE: buildAverageLapData() returns an EMPTY LapStats when fewer than 2 valid
+    // laps exist (single-lap live sessions) -- its vehicleName is then empty, so the
+    // car name must fall back to any lap that carries one for the fade lookup below.
     LapStats avg = buildAverageLapData(laps);
+
+    std::string carName = avg.vehicleName;
+    if (carName.empty() || carName == "Unknown vehicle") {
+        for (std::size_t i = 0; i < laps.size(); ++i) {
+            const std::string& n = laps[i].vehicleName;
+            if (!n.empty() && n != "Unknown vehicle") { carName = n; break; }
+        }
+    }
+
+    // Per-wheel fade threshold from the embedded AMS2 vehicle DB (AMS2 only).
+    // Unknown car / missing wheel entry -> flags stay false, no Fade line drawn.
+    for (int i = 0; i < 4; ++i) brakeFadeValid[i] = false;
+    if (!carName.empty()) {
+        VehicleInfo fadeCar;
+        if (findVehicleInDb(carName, fadeCar)) {
+            for (int i = 0; i < 4; ++i) {
+                const WheelBrakeData& wb = fadeCar.chassis.brakes[i];
+                if (wb.present && wb.hasFadeTemps) {
+                    brakeFadeThresholdC[i] = wb.fadeRangeAboveC;
+                    brakeFadeValid[i] = true;
+                }
+            }
+        }
+    }
 
     for (int i = 0; i < 4; ++i) {
         const StatSummary* summary = nullptr;
@@ -2126,6 +2239,32 @@ void __fastcall TFormMotecSetup::UpdateBrakeTemps(const std::vector<LapStats>& l
         oilTemp.valid = false;
     }
 
+    // Append per-wheel fade threshold text to MemoBrake (from the AMS2 vehicle DB).
+    if (MemoBrake != NULL) {
+        bool anyFade = false;
+        for (int i = 0; i < 4; ++i) if (brakeFadeValid[i]) { anyFade = true; break; }
+        if (anyFade && !carName.empty()) {
+            const bool isFr2 = ReadReportLanguageSetting() == ReportLanguage::French;
+            MemoBrake->Lines->Add(String(L""));  // blank separator line
+
+            String carNameWide(carName.c_str());   // narrow -> wide (ANSI codepage)
+			MemoBrake->Lines->Add((isFr2 ? L"Seuil d'éfficacité: " : L"Fade threshold : ") + carNameWide);
+
+            const wchar_t* cornerNames[4] = {
+                isFr2 ? L"AV G" : L"FL",
+                isFr2 ? L"AV D" : L"FR",
+                isFr2 ? L"AR G" : L"RL",
+                isFr2 ? L"AR D" : L"RR"
+            };
+            for (int i = 0; i < 4; ++i) {
+                if (!brakeFadeValid[i]) continue;
+                wchar_t lineBuf[64];
+                swprintf(lineBuf, 64, L"  %s: %.0f\u00b0C", cornerNames[i], brakeFadeThresholdC[i]);
+                MemoBrake->Lines->Add(String(lineBuf));
+            }
+        }
+    }
+
     hasBrakeTempData = true;
     if (BrakeTempPaintBox) BrakeTempPaintBox->Invalidate();
 }
@@ -2140,18 +2279,26 @@ void __fastcall TFormMotecSetup::TireTempPaintBoxPaint(TObject *Sender)
     canvas->Brush->Color = clWhite;
     canvas->FillRect(TRect(0, 0, TireTempPaintBox->Width, TireTempPaintBox->Height));
 
+    const bool isFr = ReadReportLanguageSetting() == ReportLanguage::French;
+
     if (!hasTireTempData) {
         canvas->Font->Color = clGray;
         canvas->Font->Name = "Segoe UI";
         canvas->Font->Size = 10;
         canvas->Font->Style = TFontStyles();
-        String msg = "No tyre temp data";
+        String msg = isFr ? String(L"Aucune donn\u00e9e de temp\u00e9rature pneu") : L"No tyre temp data";
         int tw = canvas->TextWidth(msg);
         canvas->TextOut((TireTempPaintBox->Width - tw) / 2, TireTempPaintBox->Height / 2 - 10, msg);
         return;
     }
 
-    const String tireNames[4] = { "FL", "FR", "RL", "RR" };
+    // FL/FR/RL/RR are universal in English; use AV G / AV D / AR G / AR D (avant/arri\u00e8re + gauche/droite) in French.
+    const String tireNames[4] = {
+        isFr ? "AV G" : "FL",
+        isFr ? "AV D" : "FR",
+        isFr ? "AR G" : "RL",
+        isFr ? "AR D" : "RR"
+    };
     const int boxW = TireTempPaintBox->Width;
     const int boxH = TireTempPaintBox->Height;
     const int tireW = 70;
@@ -2589,8 +2736,9 @@ void __fastcall TFormMotecSetup::LiveCaptureCheckBoxClick(TObject *Sender)
 		resetLiveSession();
 
 		// LED red = not connected yet (reconnecting)
+		const bool isFrConn2 = ReadReportLanguageSetting() == ReportLanguage::French;
 		LiveLed->Brush->Color = clRed;
-		LabelLiveStatus->Caption = "Connecting...";
+		LabelLiveStatus->Caption = isFrConn2 ? String(L"Connexion...") : String("Connecting...");
 
 		// Start the connection timer to begin looking for shared memory/process
 		LiveConnectTimer->Enabled = true;
@@ -2642,10 +2790,11 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
     if (ok)
     {
         // Connected!
+        const bool isFrConn3 = ReadReportLanguageSetting() == ReportLanguage::French;
         liveConnected = true;
         liveActive = true;
         LiveLed->Brush->Color = clLime;
-        LabelLiveStatus->Caption = "Connected";
+        LabelLiveStatus->Caption = isFrConn3 ? String(L"Connect\u00e9") : String("Connected");
         LabelLiveStatus->Font->Color = clGreen;
         LiveConnectTimer->Enabled = false;
 
@@ -2766,8 +2915,9 @@ void __fastcall TFormMotecSetup::stopLiveCapture(bool isShuttingDown)
             Ams2CloseSharedMemory();
 
         // Visual feedback for reconnection state
+        const bool isFrRec = ReadReportLanguageSetting() == ReportLanguage::French;
         LiveLed->Brush->Color = clRed;
-        LabelLiveStatus->Caption = "Reconnecting...";
+        LabelLiveStatus->Caption = isFrRec ? String(L"Reconnexion...") : String("Reconnecting...");
         LabelLiveStatus->Font->Color = clGray;
 
         // Keep the connection timer running to look for the process again
@@ -2780,8 +2930,9 @@ void __fastcall TFormMotecSetup::stopLiveCapture(bool isShuttingDown)
         LiveTimer->Enabled = false;
 
         if (!isShuttingDown) {
+            const bool isFrDisc = ReadReportLanguageSetting() == ReportLanguage::French;
             LiveLed->Brush->Color = clRed;
-            LabelLiveStatus->Caption = "Disconnected";
+            LabelLiveStatus->Caption = isFrDisc ? String(L"D\u00e9connect\u00e9") : String("Disconnected");
             LabelLiveStatus->Font->Color = clGray;
         }
 
@@ -2898,10 +3049,13 @@ void __fastcall TFormMotecSetup::updateLiveAdaptiveInterval(double simFpsHint)
             LiveTimer->Interval = intervalMs;
 
         String cap;
+        const bool isFrFps = ReadReportLanguageSetting() == ReportLanguage::French;
         if (liveMode == LIVE_EVO && liveEvoFpsAvg > 0)
-            cap = "Connected · sim " + IntToStr(liveEvoFpsAvg) + " Hz / read " + FormatFloat("0", liveMeasuredHz) + " Hz";
+            cap = isFrFps ? L"Connect\u00e9 · sim " + IntToStr(liveEvoFpsAvg) + L" Hz / lecture " + FormatFloat("0", liveMeasuredHz) + L" Hz"
+                          : "Connected \xc2\xb7 sim " + IntToStr(liveEvoFpsAvg) + " Hz / read " + FormatFloat("0", liveMeasuredHz) + " Hz";
         else
-            cap = "Connected · read " + (liveMeasuredHz > 0 ? FormatFloat("0", liveMeasuredHz) : "--") + " Hz";
+            cap = isFrFps ? L"Connect\u00e9 · lecture " + (liveMeasuredHz > 0 ? FormatFloat("0", liveMeasuredHz) : L"--") + L" Hz"
+                          : "Connected \xc2\xb7 read " + (liveMeasuredHz > 0 ? FormatFloat("0", liveMeasuredHz) : "--") + " Hz";
         LabelLiveStatus->Caption = cap;   // color stays as set by connect/disconnect handlers
     }
 }

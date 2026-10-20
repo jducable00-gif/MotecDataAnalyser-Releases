@@ -372,8 +372,8 @@ static void testLegacyRuleNonRegression() {
 
     // --- G3. Rear outer vs front outer temp -> suspension balance (Tyre tab) --
     LapStats stiff = makeValidLap(1);
-    fill(stiff.tyreOuterTempLF, 90.0); fill(stiff.tyreOuterTempRF, 92.0);   // front avg ~91
-    fill(stiff.tyreOuterTempLR, 105.0); fill(stiff.tyreOuterTempRR, 107.0); // rear  avg ~106 -> diff +15 > max(5)
+    fill(stiff.tyreOuterTempLF, 90.0); fill(stiff.tyreOuterTempRF, 92.0);   // front max = 92
+    fill(stiff.tyreOuterTempLR, 104.0); fill(stiff.tyreOuterTempRR, 106.0); // rear  max = 106 -> diff +14 > threshold(5)
     const std::vector<AnalysisResult> rStiff = evaluateLapWithRules(stiff, AnalysisSettings());
     bool stiffSeen = false; int brakeWarnings = 0;
     for (std::size_t i = 0; i < rStiff.size(); ++i) {
@@ -398,8 +398,8 @@ static void testLegacyRuleNonRegression() {
 
     // --- G3c. Rear only slightly hotter (within threshold) -> NO Brakes -------
     LapStats balLap = makeValidLap(3);
-    fill(balLap.tyreOuterTempLF, 90.0); fill(balLap.tyreOuterTempRF, 92.0);   // front avg ~91
-    fill(balLap.tyreOuterTempLR, 93.0); fill(balLap.tyreOuterTempRR, 95.0);   // rear  avg ~94 -> diff +3 (<= max)
+    fill(balLap.tyreOuterTempLF, 90.0); fill(balLap.tyreOuterTempRF, 92.0);   // front max = 92
+    fill(balLap.tyreOuterTempLR, 93.5); fill(balLap.tyreOuterTempRR, 94.5);   // rear  max = 94.5 -> diff +2.5 (<= threshold)
     const std::vector<AnalysisResult> rBal = evaluateLapWithRules(balLap, AnalysisSettings());
     int suspensionFindings = 0;
     for (std::size_t i = 0; i < rBal.size(); ++i) {

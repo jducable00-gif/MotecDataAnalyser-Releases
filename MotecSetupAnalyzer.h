@@ -55,8 +55,10 @@ struct Thresholds {
     double pressureSideDiffMax = 1.5;
 
     // Rear vs front OUTER tyre temp diff for suspension balance check (deg C).
-    // rearOuterAvg > frontOuterAvg + this value -> "rear too stiff".
-    // rearOuterAvg <  frontOuterAvg             -> "rear too soft" (any negative triggers it).
+    // max(rear outers) - max(front outers) > this value -> "rear too stiff".
+    // max(rear outers) <  max(front outers)              -> "rear too soft" (any negative triggers it).
+    // Per-wheel worst-case comparison: no pair averaging, so the values
+    // shown in the message match exactly what is displayed on the tyre chart.
     double rearOuterVsFrontStiffC = 5.0;
 
     // Camber target band (C): inner - outer spread per axle.
@@ -842,9 +844,11 @@ public:
         if (!hasFl || !hasFr || !hasRl || !hasRr)
             return results;
 
-        const double frontOuterAvg = (fl + fr) * 0.5;
-        const double rearOuterAvg  = (rl + rr) * 0.5;
-        const double diffC         = rearOuterAvg - frontOuterAvg;
+        // Compare the hottest wheel of each axle directly — no averaging,
+        // so every value in the message is visible on the tyre chart.
+        const double frontMax = std::max(fl, fr);
+        const double rearMax  = std::max(rl, rr);
+        const double diffC    = rearMax - frontMax;
 
         if (diffC > settings.tyres.rearOuterVsFrontStiffC) {
             AnalysisResult result;
@@ -852,14 +856,14 @@ public:
             result.category = "Tyres";
             result.title = tr("Rear suspension may be too stiff",
                               "Suspension arrière peut-être trop dure");
-            char descEn[160];
+            char descEn[240];
             snprintf(descEn, sizeof(descEn),
-                     "Rear outer tyre temperature is %.1f C higher than the front (%.1f C vs %.1f C).",
-                     diffC, rearOuterAvg, frontOuterAvg);
-            char descFr[200];
+                     "Rear outer tyre temperature is %.1f C higher than the front (rear RL/RR: %.1f / %.1f vs front FL/FR: %.1f / %.1f).",
+                     diffC, rl, rr, fl, fr);
+            char descFr[300];
             snprintf(descFr, sizeof(descFr),
-                     "La température externe des pneus arrière est %.1f C plus élevée que l'avant (%.1f C vs %.1f C).",
-                     diffC, rearOuterAvg, frontOuterAvg);
+                     "La température externe des pneus arrière est %.1f C plus élevée que l'avant (arrière RL/RR : %.1f / %.1f vs avant FL/FR : %.1f / %.1f).",
+                     diffC, rl, rr, fl, fr);
             result.description = tr(descEn, descFr);
             result.recommendation = tr("Soften the rear suspension (spring rate / damper) to bring rear tyre temps in line with the front.",
                                        "Adoucir la suspension arrière (taux de ressort / amortisseur) pour aligner les températures des pneus arrière sur l'avant.");
@@ -870,14 +874,14 @@ public:
             result.category = "Tyres";
             result.title = tr("Rear suspension may be too soft",
                               "Suspension arrière peut-être trop molle");
-            char descEn[160];
+            char descEn[240];
             snprintf(descEn, sizeof(descEn),
-                     "Rear outer tyre temperature is %.1f C lower than the front (%.1f C vs %.1f C).",
-                     -diffC, rearOuterAvg, frontOuterAvg);
-            char descFr[200];
+                     "Rear outer tyre temperature is %.1f C lower than the front (rear RL/RR: %.1f / %.1f vs front FL/FR: %.1f / %.1f).",
+                     -diffC, rl, rr, fl, fr);
+            char descFr[300];
             snprintf(descFr, sizeof(descFr),
-                     "La température externe des pneus arrière est %.1f C plus basse que l'avant (%.1f C vs %.1f C).",
-                     -diffC, rearOuterAvg, frontOuterAvg);
+                     "La température externe des pneus arrière est %.1f C plus basse que l'avant (arrière RL/RR : %.1f / %.1f vs avant FL/FR : %.1f / %.1f).",
+                     -diffC, rl, rr, fl, fr);
             result.description = tr(descEn, descFr);
             result.recommendation = tr("Stiffen the rear suspension (spring rate / damper) to bring rear tyre temps in line with the front.",
                                        "Resserrer la suspension arrière (taux de ressort / amortisseur) pour aligner les températures des pneus arrière sur l'avant.");
@@ -2240,10 +2244,10 @@ inline DamperZoneReport evaluateDamperZones(const VelocityHistogram& h, ReportLa
     // Human-readable zone labels (localized)
     struct ZoneInfo { const char* en; const char* fr; DamperZoneResult& r; };
     ZoneInfo zones[4] = {
-        { "Hi Comp",  "Comp. Haute",  report.hsc },
-        { "Lo Comp",  "Comp. Basse",  report.lsc },
-        { "Lo Rebound", "Détente Basse", report.lsr },
-        { "Hi Rebound", "Détente Haute", report.hsr }
+        { "High-speed Comp.",  "Compression haute vitesse",  report.hsc },
+        { "Low-speed Comp.",   "Compression basse vitesse",  report.lsc },
+        { "Low-speed Rebound", "Détente basse vitesse",      report.lsr },
+        { "High-speed Rebound","Détente haute vitesse",      report.hsr }
     };
 
     // Build description of out-of-target zones + suggested action
