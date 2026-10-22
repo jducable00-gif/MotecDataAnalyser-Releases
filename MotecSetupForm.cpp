@@ -421,7 +421,7 @@ bool ReadAutoDetectTrackSetting()
 {
 	TIniFile* settings = new TIniFile(SettingsFilePath());
 	try {
-		return settings->ReadInteger("General", "AutoDetectTrack", 0) != 0;
+		return settings->ReadInteger("General", "AutoDetectTrack", 1) != 0;   // default: checked
 	} __finally {
 		delete settings;
 	}
@@ -1839,10 +1839,10 @@ void __fastcall TFormMotecSetup::DrawCombinedDamperChart(Gdiplus::Graphics& grap
         // Four data rows: colored corner label + six % values; "--" when invalid.
         const wchar_t* cornerNames[4] = { L"Damper Vel FL", L"Damper Vel FR", L"Damper Vel RL", L"Damper Vel RR" };
         Gdiplus::Color colors[4] = {
-            Gdiplus::Color(255, 237, 64, 59),   // LF — red
-            Gdiplus::Color(255, 86, 84, 244),   // FR — indigo
-            Gdiplus::Color(255, 236, 72, 153),  // LR — pink/magenta
-            Gdiplus::Color(255, 0, 190, 230)    // RR — cyan
+            Gdiplus::Color(255, 237, 64, 59),   // FL — red
+            Gdiplus::Color(255, 255, 193, 7),   // FR — amber/yellow
+            Gdiplus::Color(255, 80, 220, 104),  // RL — green
+            Gdiplus::Color(255, 64, 156, 255)   // RR — blue/cyan
         };
 
         for (int i = 0; i < 4; ++i) {
@@ -1971,10 +1971,10 @@ void __fastcall TFormMotecSetup::DrawCombinedDamperChart(Gdiplus::Graphics& grap
 
         // --- Step 8f: per-corner curves (area fill + polyline) -----------------
         const Gdiplus::Color colors[4] = {
-            Gdiplus::Color(255, 237, 64, 59),   // LF — red
-            Gdiplus::Color(255, 86, 84, 244),   // FR — indigo
-            Gdiplus::Color(255, 236, 72, 153),  // LR — pink/magenta
-            Gdiplus::Color(255, 0, 190, 230)    // RR — cyan
+            Gdiplus::Color(255, 237, 64, 59),   // FL — red
+            Gdiplus::Color(255, 255, 193, 7),   // FR — amber/yellow
+            Gdiplus::Color(255, 80, 220, 104),  // RL — green
+            Gdiplus::Color(255, 64, 156, 255)   // RR — blue/cyan
         };
 
         for (int i = 0; i < 4; ++i) {

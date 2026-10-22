@@ -25,7 +25,9 @@ inline const std::string& tabletIndexHtml() {
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
      background:var(--bg);color:var(--text);line-height:1.5;padding-bottom:3rem}
 header{background:#2c3e50;color:#fff;padding:.8rem 1rem;text-align:center;font-size:1.1rem}
-main{max-width:720px;margin:0 auto;padding:1rem .6rem}
+/* Fluid width so cards (and their charts) fill most of a tablet/landscape screen for readability,
+   while keeping small side margins and capping on very wide desktops. */
+main{max-width:min(97%,1400px);margin:0 auto;padding:1rem .8rem}
 
 /* --- Section cards (C2) --- */
 .card{background:var(--card);border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);
@@ -58,6 +60,9 @@ details summary{cursor:pointer;padding:.75rem 1rem;font-weight:600;display:flex;
 .damper-grid{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-top:.7rem;padding:0 .9rem .9rem}
 @media(max-width:420px){.damper-grid{grid-template-columns:1fr}}
 .damper-box{text-align:center}
+/* Charts scale to fill their container (grid cell / full card width) for maximum readability;
+   the JS keeps a fixed logical size + devicePixelRatio backing store so they stay crisp. */
+#damperGrid canvas,#damperCombinedCanvas{width:100%;height:auto;display:block;margin:0 auto}
 .damper-title{font-size:.78rem;font-weight:600;color:var(--muted);margin-bottom:.3rem}
 .damper-controls{display:flex;gap:8px;padding:0 1rem .5rem;margin-top:.7rem}
 .damper-btn{cursor:pointer;border:none;font-size:.7rem;font-weight:700;text-transform:uppercase;padding:4px 12px;border-radius:99px;background:var(--muted);color:#fff;transition:opacity .2s}
@@ -359,13 +364,18 @@ function renderDampers(ls){
   var gridWrap=document.getElementById("damperGrid");
   var combWrap=document.getElementById("damperCombinedWrap");
 
+  // Re-draw the grid canvases at their current displayed size (a hidden canvas can't be measured,
+  // so it must be re-fitted once shown — otherwise CSS would stretch a small bitmap and blur it).
+  function redrawGrid(){var cs=gridWrap.querySelectorAll("canvas");for(var i=0;i<cs.length&&i<present.length;i++)drawHistogram(cs[i],norm[present[i]],ySharedFrac,cfg);}
+
   btnGrid.onclick=function(){
     btnGrid.classList.add("active");btnComb.classList.remove("active");
-    gridWrap.classList.remove("hidden");combWrap.classList.add("hidden");
+    gridWrap.classList.remove("hidden");combWrap.classList.add("hidden");redrawGrid();
   };
   btnComb.onclick=function(){
     btnComb.classList.add("active");btnGrid.classList.remove("active");
     combWrap.classList.remove("hidden");gridWrap.classList.add("hidden");
+    drawCombinedHistogram(document.getElementById("damperCombinedCanvas"),ls.damperHistograms,cfg);
   };
 
   // Threshold config from the API (mirrors app g_thresholds). Fallback defaults keep it safe.
@@ -397,11 +407,30 @@ function renderDampers(ls){
   drawCombinedHistogram(combCanvas,ls.damperHistograms,cfg);
 }
 
+// Size a canvas to its ACTUAL displayed CSS size × devicePixelRatio and return the scale factor s =
+// displayWidth / logicalDesignW. The drawing space is exactly the displayed pixel size (backing store
+// = css px * dpr), so fonts/lines/margins scaled by `s` render natively sharp — no CSS stretching of a small bitmap.
+function fitCanvas(canvas,logicalDesignW,ratio){
+  var dpr=Math.max(1,window.devicePixelRatio||1);
+  var disp=canvas.getBoundingClientRect();
+  if(!disp.width||!isFinite(disp.width))disp={width:logicalDesignW}; // hidden (display:none) -> design size
+  var Wcss=Math.round(Math.min(disp.width,dpr>1?2560:1920));         // cap displayed width for memory
+  if(Wcss<8)Wcss=8;
+  var Hcss=Math.max(8,Math.round(Wcss*ratio));
+  canvas.style.height=Hcss+"px";                                     // keep aspect (width stays ~disp.width via CSS)
+  canvas.width=Math.round(Wcss*dpr);canvas.height=Math.round(Hcss*dpr);
+  return Wcss/logicalDesignW;
+}
+
 function drawHistogram(canvas,nf,ySharedFrac,cfg){
   // Mirrors TFormMotecSetup::DrawModernHistogram (GDI+) exactly: same margins, slow band,
   // gradient bars on a shared Y scale, and % / value axis labels. `nf.f` = normalized bin fractions.
-  var ctx=canvas.getContext("2d");var W=canvas.width,H=canvas.height;
-  var ml=35,mb=20,cw=W-ml,ch=H-mb;   // app: marginLeft=35, marginBottom=20 (no top/right margin)
+  var s=fitCanvas(canvas,340,157/340);   // native-resolution render at displayed size
+  var dpr=Math.max(1,window.devicePixelRatio||1);
+  var W=Math.round(canvas.width/dpr),H=Math.round(canvas.height/dpr); // == displayed CSS px (exact, no stretch)
+  var ctx=canvas.getContext("2d");ctx.setTransform(dpr,0,0,dpr,0,0);
+  // Margins as fractions of width (app: marginLeft≈9%, marginBottom≈12%) so they scale with the canvas.
+  var ml=Math.round(35*s),mb=Math.max(8,Math.round(20*s)),cw=W-ml,ch=H-mb;
   var bins=nf.f||[];if(bins.length===0)return;
   ctx.clearRect(0,0,W,H);
 
@@ -418,7 +447,7 @@ function drawHistogram(canvas,nf,ySharedFrac,cfg){
   }
 
   // Grid: vertical center line (v=0) + horizontal quarter lines.
-  ctx.strokeStyle="rgba(60,60,60,.31)";ctx.lineWidth=1;
+  ctx.strokeStyle="rgba(60,60,60,.31)";ctx.lineWidth=Math.max(1,s);
   var cx=Math.round(ml+cw/2)+0.5;
   ctx.beginPath();ctx.moveTo(cx,0);ctx.lineTo(cx,ch);ctx.stroke();
   for(var i=1;i<4;i++){var gy=Math.round(ch*i/4)+0.5;ctx.beginPath();ctx.moveTo(ml,gy);ctx.lineTo(W,gy);ctx.stroke();}
@@ -432,24 +461,29 @@ function drawHistogram(canvas,nf,ySharedFrac,cfg){
   }
 
   // Y-axis % labels (top..bottom), matching app's displayMax*(1-i/4)*100.
-  ctx.fillStyle="#b4b4b4";ctx.font="8px sans-serif";ctx.textAlign="left";
-  for(var i=1;i<4;i++){var gy2=(ch*i/4);var val=displayMax*(1-i/4)*100;ctx.fillText(val.toFixed(1)+"%",5,gy2-7);}
-  ctx.fillText("0.0%",5,ch-7);
+  ctx.fillStyle="#b4b4b4";ctx.font=Math.max(8,Math.round(9*s))+"px sans-serif";ctx.textAlign="left";
+  for(var i=1;i<4;i++){var gy2=(ch*i/4);var val=displayMax*(1-i/4)*100;ctx.fillText(val.toFixed(1)+"%",Math.round(5*s),gy2-Math.round(7*s));}
+  ctx.fillText("0.0%",Math.round(5*s),ch-Math.round(7*s));
 
   // X-axis value labels every 50 mm/s (−200..+200), mapped with span 410 like the app.
-  ctx.textAlign="center";ctx.font="9px sans-serif";
-  for(var t=-200;t<=200;t+=50){var tx=ml+((t+205)/410)*cw;ctx.fillText(t,tx,H-6);}
+  ctx.textAlign="center";ctx.font=Math.max(8,Math.round(9.5*s))+"px sans-serif";
+  for(var t=-200;t<=200;t+=50){var tx=ml+((t+205)/410)*cw;ctx.fillText(t,tx,H-Math.round(6*s));}
 }
 
 function drawCombinedHistogram(canvas,damperData,cfg){
   cfg=cfg||{slowRange:15,yOffsetPct:20,minYPct:20}; // app g_thresholds via /api/report damperConfig
-  var ctx=canvas.getContext("2d");var W=canvas.width,H=canvas.height;
+  var s=fitCanvas(canvas,640,320/640);   // native-resolution render at displayed size (crisp when large)
+  var dpr=Math.max(1,window.devicePixelRatio||1);
+  var W=Math.round(canvas.width/dpr),H=Math.round(canvas.height/dpr); // == displayed CSS px (exact, no stretch)
+  var ctx=canvas.getContext("2d");ctx.setTransform(dpr,0,0,dpr,0,0);
   var slowRange=cfg.slowRange||0;   // dynamic threshold (mm/s), not a fixed constant
   var cornerKeys=["LF","RF","LR","RR"]; 
-  var colorMap={LF:"#ed403b", RF:"#5654f4", LR:"#ec4899", RR:"#00beea"};
+  // Palette mirrors the app's combined damper chart (MotecSetupForm.cpp): red / amber / green / blue.
+  var colorMap={LF:"#ed403b", RF:"#ffc107", LR:"#50dc68", RR:"#409cff"};
 
   ctx.fillStyle="#1e1e22";ctx.fillRect(0,0,W,H);
-  var pad={l:60,r:30,t:90,b:30};var pw=W-pad.l-pad.r,ph=H-pad.t-pad.b;
+  // Padding as fractions of width (design: l=60/640≈.094, r=.047, t/b=.14) so it scales with the canvas.
+  var pad={l:.094*W,r:.047*W,t:.14*H,b:.14*H};var pw=W-pad.l-pad.r,ph=H-pad.t-pad.b;
 
   var totalSamples=0;var validCorners=[];var cornerStats={};
   for(var c=0;c<cornerKeys.length;c++){
@@ -466,26 +500,33 @@ function drawCombinedHistogram(canvas,damperData,cfg){
   }
 
   // Header
-  ctx.fillStyle="#7f8c8d";ctx.font="bold 12px sans-serif";ctx.textAlign="left";
-  ctx.fillText(totalSamples+" samples",pad.l,25);
-  ctx.textAlign="right";ctx.fillText("Zoom Linked",W-pad.r,25);
+  var fHdr=Math.max(10,Math.round(13*s));
+  ctx.fillStyle="#7f8c8d";ctx.font="bold "+fHdr+"px sans-serif";ctx.textAlign="left";
+  ctx.fillText(totalSamples+" samples",pad.l,fHdr*2.0);
+  ctx.textAlign="right";ctx.fillText("Zoom Linked",W-pad.r,fHdr*2.0);
 
   var rowH=18;
+  // Darker variants of the curve palette for use as TEXT on the light page background —
+  // amber/green in particular are too faint to read at full brightness. Swatches keep the exact curve color.
+  var textColorMap={LF:"#c0392b", RF:"#d68910", LR:"#1e8449", RR:"#2e86de"};
+  // Corner swatch: small colored square matching the curve color, so each table row is tied to its curve.
+  function cornerSwatch(k){return '<span style="display:inline-block;width:.7em;height:.7em;border-radius:2px;background:'+(colorMap[k]||"#888")+';margin-right:.45em;"></span>';}
   var statsTable = document.getElementById("damperStatsTable");
   statsTable.innerHTML = "<div><b>Corner</b></div><div><b>Rebound (A/F/S)</b></div><div><b>Bump (S/F/A)</b></div>";
 
   for(var vC=0;vC<validCorners.length;vC++){
-    var k=validCorners[vC];var s=cornerStats[k];
-    
-    // Captions removed from canvas to clean up the histogram view
+    var k=validCorners[vC];var st=cornerStats[k]; // NOTE: not `s` — that name is the canvas scale factor used later
 
-	var rAvg = s.rebAvg || "0", rHi = s.rebHi || "0", rLo = s.rebLo   || "0";
-	var bLo = s.bmpLo   || "0", bHi = s.bmpHi || "0", bAvg = s.bmpAvg || "0";
+    // Captions removed from canvas to clean up the histogram view
+	
+	var rAvg = st.rebAvg || "0", rHi = st.rebHi || "0", rLo = st.rebLo   || "0";
+	var bLo = st.bmpLo   || "0", bHi = st.bmpHi || "0", bAvg = st.bmpAvg || "0";
 
     var row = document.createElement("div");
     row.style.display = "contents";
-    row.innerHTML = '<div><b>' + k + '</b></div><div>' + rAvg + '% / ' + rHi + '% / ' + rLo + '%</div><div>' + bLo + '% / ' + bHi + '% / ' + bAvg + '%</div>';
-    statsTable.appendChild(row);
+    // Corner label colored with a dark variant of the curve color (bold) so rows are distinguishable at a glance.
+    row.innerHTML = '<div><b style="color:'+(textColorMap[k]||"#2c3e50")+'">'+cornerSwatch(k)+k+'</b></div><div>' + rAvg + '% / ' + rHi + '% / ' + rLo + '%</div><div>' + bLo + '% / ' + bHi + '% / ' + bAvg + '%</div>';
+    statsTable.appendChild(row); // was missing — rows were built but never added to the table (blank legend)
   }
 
   // Y-axis labels (Dynamic scale based on data + headroom)
@@ -499,21 +540,22 @@ function drawCombinedHistogram(canvas,damperData,cfg){
   // Apply App GUI scaling exactly as MotecSetupForm.cpp does, using the live thresholds from damperConfig.
   var displayMax = Math.max(globalMax * (1 + (cfg.yOffsetPct||20)/100), (cfg.minYPct||20) / 100);
 
-  ctx.fillStyle="#7f8c8d"; ctx.font="9px sans-serif"; ctx.textAlign="right";
+  var fAxis=Math.max(8,Math.round(9.5*s));
+  ctx.fillStyle="#7f8c8d"; ctx.font=fAxis+"px sans-serif"; ctx.textAlign="right";
   var maxPct = displayMax * 100;
   for(var t=0; t<=4; t++){
     var pctVal = maxPct * (t / 4);
     var yPos = pad.t + ph - (t / 4 * ph);
-    ctx.fillText(Math.round(pctVal), pad.l-10, yPos+3);
+    ctx.fillText(Math.round(pctVal), pad.l-Math.max(6,Math.round(10*s)), yPos+fAxis*0.35);
   }
 
   // Grid & Axes — X ticks at −200..+200 step 50 mm/s, mapped with span 410 (app: chartLeft + ((val+205)/410)*chartWidth).
-  ctx.strokeStyle="rgba(60,70,70,0.39)";ctx.lineWidth=1;
+  ctx.strokeStyle="rgba(60,70,70,0.39)";ctx.lineWidth=Math.max(1,s);
   for(var tx=-200;tx<=200;tx+=50){
     var x=(pad.l+((tx+205)/410)*pw)|0;
     ctx.beginPath();ctx.moveTo(x,pad.t);ctx.lineTo(x,pad.t+ph);ctx.stroke();
-    ctx.fillStyle="#7f8c8d";ctx.font="9px sans-serif";ctx.textAlign="center";
-    ctx.fillText(tx,x,H-10);
+    ctx.fillStyle="#7f8c8d";ctx.font=fAxis+"px sans-serif";ctx.textAlign="center";
+    ctx.fillText(tx,x,H-Math.max(6,Math.round(10*s)));
   }
 
   // Slow band — dynamic threshold, (int) truncation + clamp to plot area exactly like the app GDI+ code.
@@ -544,8 +586,8 @@ function drawCombinedHistogram(canvas,damperData,cfg){
     // Fill area under curve — app uses alpha=50/255 ≈ 0.196 for the translucent fill.
     ctx.globalAlpha=0.196;ctx.fillStyle=colC2;ctx.fill();ctx.globalAlpha=1;
 
-    // Draw line on top (full opacity, width 2 — matches app Gdiplus::Pen(colors[i], 2.0f)).
-    ctx.strokeStyle=colC2;ctx.lineWidth=2;
+    // Draw line on top (full opacity, width scales with canvas — matches app Gdiplus::Pen(colors[i], 2.0f)).
+    ctx.strokeStyle=colC2;ctx.lineWidth=Math.max(1.5,Math.min(4,2*s));
     ctx.beginPath();
     for(var i=0;i<sC2.bins.length;i++){
       var x=bx(i)|0;
