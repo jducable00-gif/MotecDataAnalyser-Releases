@@ -944,14 +944,28 @@ ReportResult LapReportGenerator::generate(const LapStats& lap,
     }
 
     // --- Layer 1: optimal oil temperature info line (Engine Cooling tab) ---
+    // Shows the target AND the alert limits so the user always sees what the
+    // thresholds are, even when no finding is triggered. The values here mirror
+    // those embedded in individual findings — not a separate "max" display.
     if (hasVehicleRef && vehicleRef.engine.hasOptOilTemp) {
+        const bool fr = (language == ReportLanguage::French);
         std::ostringstream oss;
-        oss << (language == ReportLanguage::French ? "Temperature d'huile optimale (" : "Optimal oil temperature (")
+        oss << (fr ? "Temperature d'huile optimale (" : "Optimal oil temperature (")
             << lap.vehicleName << ") : ";
         // Round to integer for display.
         const int optC = static_cast<int>(vehicleRef.engine.optOilTempC + 0.5);
         oss << optC;
         oss << " deg C";   // ASCII-safe (bcc32c encodes narrow literals as CP1252)
+
+        if (vehicleRef.engine.hasOilWarningTemp) {
+            const int warnC = static_cast<int>(vehicleRef.engine.oilWarningTempC + 0.5);
+            oss << " | " << (fr ? "Alerte huile : " : "Oil alert: ") << warnC << " deg C";
+        }
+        if (vehicleRef.engine.hasWaterWarningTemp) {
+            const int wtrC = static_cast<int>(vehicleRef.engine.waterWarningTempC + 0.5);
+            oss << " | " << (fr ? "Alerte eau : " : "Water alert: ") << wtrC << " deg C";
+        }
+
         SectionData& data = result[ReportSection::EngineCooling];
         if (!data.content.empty())
             data.content += "\n\n";

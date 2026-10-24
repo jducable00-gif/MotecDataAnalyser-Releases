@@ -2248,7 +2248,7 @@ void __fastcall TFormMotecSetup::UpdateBrakeTemps(const std::vector<LapStats>& l
             MemoBrake->Lines->Add(String(L""));  // blank separator line
 
             String carNameWide(carName.c_str());   // narrow -> wide (ANSI codepage)
-			MemoBrake->Lines->Add((isFr2 ? L"Seuil d'éfficacité: " : L"Fade threshold : ") + carNameWide);
+			MemoBrake->Lines->Add((isFr2 ? L"Seuil d'éfficacité température Max: " : L"Max Temp Fade threshold : ") + carNameWide);
 
             const wchar_t* cornerNames[4] = {
                 isFr2 ? L"AV G" : L"FL",

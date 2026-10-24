@@ -476,6 +476,38 @@ static void testVehicleDb() {
     bool foundGhost = db.find("Nonexistent_Car_XYZ_999", ghost);
     CHECK(!foundGhost);
 
+    // H6: CG dual-form parsing (CgRangeData).
+    //  - Alpine A110 GT4 Evo : CG fixes -> scalaires dans le JSON.
+    if (found) {
+        const CgRangeData& cgR = alpine.chassis.cgRear;
+        CHECK(cgR.present);
+        CHECK(!cgR.isAdjustable());                 // scalaire => fixe
+        CHECK(std::fabs(cgR.valueM() - 0.56) < 1e-9);   // CGRearRange: 0.56
+
+        const CgRangeData& cgL = alpine.chassis.cgRight;
+        CHECK(!cgL.isAdjustable());                 // scalaire => fixe
+        CHECK(std::fabs(cgL.valueM() - 0.5) < 1e-9);    // CGRightRange: 0.5
+    }
+
+    //  - Stock USA Gen1 : plages reglables {min,step,max} + setting.
+    VehicleInfo stock;
+    bool foundStock = db.find("stock_usa_gen1", stock);   // '_' doit matcher ' '
+    CHECK_MSG(foundStock, "find('stock_usa_gen1') must succeed (underscore normalization)");
+    if (foundStock) {
+        const CgRangeData& cgR = stock.chassis.cgRear;
+        CHECK(cgR.present && cgR.isAdjustable());   // objet => reglable
+        CHECK(std::fabs(cgR.minM - 0.472) < 1e-9);
+        CHECK(std::fabs(cgR.stepM - 0.002) < 1e-9);
+        CHECK(std::fabs(cgR.maxPositions - 20.0) < 1e-9);
+        CHECK(cgR.hasSetting && std::fabs(cgR.settingIndex - 13.0) < 1e-9);
+        // position courante = min + step * setting (= CGRearValue du DB : 0.498)
+        CHECK(std::fabs(cgR.valueM() - (0.472 + 0.002 * 13.0)) < 1e-9);
+
+        const CgRangeData& cgL = stock.chassis.cgRight;
+        CHECK(cgL.present && cgL.isAdjustable());   // objet => reglable
+        CHECK(std::fabs(cgL.valueM() - (0.49 + 0.002 * 5.0)) < 1e-9);  // = 0.5 (= CGRightValue)
+    }
+
     std::printf("   vehicle DB: valid, %u cars, find/case-insensitive/unknown OK\n",
                 static_cast<unsigned>(db.vehicleCount()));
 }
@@ -555,6 +587,13 @@ static void testEngineCoolingPerCar() {
     const SectionData& engSecFr = rrFr[ReportSection::EngineCooling];
     bool frLineSeen = (engSecFr.content.find("Temperature d'huile optimale") != std::string::npos);
     CHECK_MSG(frLineSeen, "I6: French 'Temperature d\\'huile optimale' info line must appear");
+
+    // I6b. The same info line now also carries the alert limits from the DB
+    // (Alpine A110 GT4 Evo : OilWarningTemp 130, WaterWarningTemp 115).
+    bool frOilAlertSeen = (engSecFr.content.find("Alerte huile : 130") != std::string::npos);
+    CHECK_MSG(frOilAlertSeen, "I6b: French info line must include 'Alerte huile : 130'");
+    bool frWaterAlertSeen = (engSecFr.content.find("Alerte eau : 115") != std::string::npos);
+    CHECK_MSG(frWaterAlertSeen, "I6b: French info line must include 'Alerte eau : 115'");
 
     // I7. Oil temp ABOVE the per-car threshold still triggers a finding (override raises bar).
     LapStats lapHotOil = makeValidLap(1);

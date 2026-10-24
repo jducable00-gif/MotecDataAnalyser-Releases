@@ -42,12 +42,34 @@ struct WheelBrakeData {
     WheelBrakeData() {}            // C++Builder: constructeur explicite vide requis
 };
 
+// Position du centre de gravite latéral/longitudinal (m). Deux formes dans le DB :
+//  - scalaire JSON            -> valeur FIXE (isAdjustable() == false)
+//  - objet {min, step, max}   -> plage REGLABLE en jeu ; la position courante est
+//    min + step * <Setting> et exposee par valueM(). La presence d'une plage est
+//    elle-meme une information exploitable (le pilote peut deplacer le CG).
+struct CgRangeData {
+    bool present = false;          // cle presente dans le JSON ?
+    double fixedValueM  = 0.0, hasFixedValue = false;   // forme scalaire
+    double minM         = 0.0, stepM = 0.0, maxPositions = 0.0;  // forme objet {min,step,max}
+    double settingIndex = 0.0, hasSetting = false;      // CG*Setting (index de position)
+
+    bool isAdjustable() const { return present && !hasFixedValue; }
+    double valueM() const {      // position courante (m), dans les deux formes
+        if (!present)            return 0.0;
+        if (hasFixedValue)       return fixedValueM;
+        return minM + stepM * settingIndex;   // = CG*Setting du DB (= valeur resolue)
+    }
+
+    CgRangeData() {}              // C++Builder: constructeur explicite vide requis
+};
+
 struct ChassisPhysics {
     bool present = false;          // section "physics.chassis" presente ?
     double massKg = 0.0, hasMass = true;      // Mass (kg) -- quasi toujours present
     double cgHeightM = 0.0, hasCgHeight = false;   // CGHeight (m)
-    double cgRightRangeM = 0.0, hasCgRightRange = false;  // CGRightRange (m)
-    double cgRearRangeM = 0.0, hasCgRearRange = false;     // CGRearRange (m)
+
+    CgRangeData cgRight;           // CGRightRange : scalaire fixe OU plage reglable (+setting)
+    CgRangeData cgRear;            // CGRearRange  : idem
 
     WheelBrakeData brakes[4];      // [FL, FR, RL, RR] -- index: kWheelFl=0..kWheelRr=3
 };
@@ -91,8 +113,9 @@ public:
     // Noms des véhicules, triés par ordre lexicographique (déterministe).
     void allNames(std::vector<std::string>& out) const;
 
-    // Recherche : d'abord correspondance exacte sur la clé du DB, puis insensible à
-    // la casse. Retourne false si aucun véhicule ne correspond ; car est alors vide.
+    // Recherche : insensible à la casse et au tiret-bas/espace (les noms live
+    // gfx.car_model utilisent '_' tandis que les clés du DB utilisent ' ').
+    // Retourne false si aucun véhicule ne correspond ; car est alors vide.
     bool find(const std::string& name, VehicleInfo& car) const;
 
 private:

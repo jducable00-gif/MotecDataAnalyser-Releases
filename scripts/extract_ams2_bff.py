@@ -5,25 +5,39 @@ Extract AMS2 physics data from every .bff car pack.
 
 Pipeline per car (see /memories/session/plan.md):
   1. Unpack the BFF with `D:\AMS2\AMS2_Mod\PCTools\unpack AMS2_car.bat`
-     (interactive: pipes "<car name>\r\nn\r\n" on stdin -> answers N to the
-      "extraire tous les fichiers BFF generaux ?" question).
-  2. Decode [PCTools]\<car>\vehicles\physics\chassis\*.CDFBIN and
-     \engines\*.EDFBIN with ams2_cdf_decoder (port of ExtractData()).
+     (interactive: pipes "<car name>\r\ny\r\n" on stdin -> answers Y to the
+      "extraire tous les fichiers BFF generaux ?" question so the bat copies
+      this car's .CRD into its freshly created <car> folder).
+  2. Decode [PCTools]\\<car>\\vehicles\\physics\\chassis\\*.CDFBIN and
+     \engines\\*.EDFBIN with ams2_cdf_decoder (port of ExtractData()).
   3. Merge results into data/reference/ams2_vehicles_db.json under the car's
-     "physics" key, then delete the temp folder [PCTools]\<car>.
+     "physics" key, then delete ONLY this run's own artifacts before moving on.
+
+DB keys are the display names read from each pack's .CRD file (<prop name=
+"Vehicle Name">); the BFF stem is kept in metadata.bff_name for provenance.
+Duplicates: last one wins + warnings recorded on both entries. Missing CRD /
+name -> falls back to the BFF stem with a warning.
+Cleanup is STRICTLY scoped: before each unpack we take a snapshot of PCTools
+and afterwards delete only entries that did not exist in that snapshot (this
+car's folder + its *_extracted working dirs).  Other pre-existing content —
+general *_extracted working dirs, cars' folders, tool folders, loose files —
+is never touched. --fresh backs up and rebuilds from {}.
 
 Stdlib only. Usage:
     python scripts\extract_ams2_bff.py                 # all cars in Steam dir
     python scripts\extract_ams2_bff.py --car Alpine_A110_GT4_Evo   # one car
+    python scripts\extract_ams2_bff.py --fresh         # rebuild DB from scratch
 """
 
 import argparse
+import html
 import json
 import os
 import shutil
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -76,6 +90,45 @@ ENGINE_FIELDS = {
     "OilWarningTemp":     b"\x3F\x6B\x7B\xE7",   # float [deg C]
     "WaterWarningTemp":   b"\x6D\x47\xC1\xB2",   # float [deg C]
 }
+
+
+# ---------------------------------------------------------------------------
+# CRD display-name extraction (DB keys)
+# ---------------------------------------------------------------------------
+
+def parse_crd(path: Path):
+    """Extract the vehicle DISPLAY name from an AMS2 .CRD file.
+
+    Looks for <prop ... name="Vehicle Name" data="...">.  ElementTree is tried
+    first (handles XML entities); a regex fallback covers malformed markup.
+    Returns str or None when no usable value is found.
+    """
+    try:
+        raw = path.read_bytes()
+    except OSError as e:                       # pragma: no cover
+        log(f"  [!] cannot read CRD {path.name}: {e}")
+        return None
+    text = raw.decode("utf-8", errors="replace")
+    try:
+        import xml.etree.ElementTree as ET     # stdlib, local to keep top tidy
+        root = ET.fromstring(text)
+        for el in root.iter():
+            if (el.tag == "prop"
+                    and el.get("name", "").strip().lower() == "vehicle name"):
+                data = (el.get("data") or "").strip()
+                if data:                       # skip empty placeholders, keep looking
+                    return data
+    except ET.ParseError:                      # malformed -> regex fallback below
+        pass
+    for tag in re.findall(r'<prop\s+[^>]*/?>', text, re.I):
+        n = re.search(r'name=["\']([^"\']*)["\']', tag)
+        if not n or n.group(1).strip().lower() != "vehicle name":
+            continue
+        d = re.search(r'data=["\']([^"\']*)["\']', tag)
+        name = html.unescape(d.group(1)).strip() if d else ""
+        if name:                               # skip empty placeholders, keep looking
+            return name
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -202,13 +255,14 @@ def parse_engine(data: bytes, warnings: list) -> dict:
 # ---------------------------------------------------------------------------
 
 def run_unpack(car_name: str, timeout_s: int):
-    """Run the interactive batch for one car; answer N to general-files Q.
+    """Run the interactive batch for one car; answer Y to general-files Q.
 
-    Returns (returncode:int|None, log_text:str). returncode None = timed out.
-    Caller must have wiped PCTools of non-tool dirs before calling this and
-    should wipe again afterwards — see list_physics_files() docstring.
+    Answering Y makes the bat extract the general BFFs (BOOTFLOW,
+    PHYSICSPERSISTENT, ...) and copy this car's .CRD / images into its fresh
+    <car> folder.  Returns (returncode:int|None, log_text:str); returncode
+    None = timed out.
     """
-    stdin_data = f"{car_name}\r\nn\r\n"
+    stdin_data = f"{car_name}\r\ny\r\n"
     try:
         proc = subprocess.run(
             [str(UNPACK_BAT)],
@@ -236,60 +290,97 @@ def run_unpack(car_name: str, timeout_s: int):
 # Strategy (mtime diffs are unreliable — PCarsTools preserves the original
 # file timestamps from inside the BFF, so a stale leftover can have an old
 # mtime and pass any "recently modified" test):
-#   * _cleanup_non_tool_dirs() runs BEFORE every unpack -> PCTools contains no
-#     car folders at all;
-#   * therefore ANY *.CDFBIN / *.EDFBIN present AFTER the unpack belongs to
-#     THIS BFF, whatever folder it lives in.
-def list_physics_files() -> list:
-    """All CDFBIN/EDFBIN files currently under PCTools (sorted)."""
+#   * _snapshot_pctools() records every PCTOOLS_DIR entry BEFORE the unpack;
+#   * after it, only entries ABSENT from that snapshot belong to THIS run —
+#     those are used for discovery AND they (only) get deleted afterwards.
+def list_physics_files(root: Path = None) -> list:
+    """All extracted car data (CDFBIN/EDFBIN/.CRD) under PCTools, sorted."""
+    base = root if root is not None else PCTOOLS_DIR
     out = []
-    for pat in ("*.CDFBIN", "*.EDFBIN"):
+    for pat in ("*.CDFBIN", "*.EDFBIN", "*.crd"):
         try:
-            it = PCTOOLS_DIR.rglob(pat)
+            it = base.rglob(pat)
             for p in sorted(it):
                 if p.is_file():
                     out.append(p)
         except OSError as e:                 # pragma: no cover
-            log(f"  [!] physics scan failed ({pat}): {e}")
-    return sorted(out, key=lambda p: str(p))
+            log(f"  [!] extracted-data scan failed ({pat}): {e}")
+    return sorted(set(out), key=str)
 
 
-def _cleanup_non_tool_dirs():
-    """Delete every non-tool top-level dir in PCTools (car + *_extracted).
+def _snapshot_pctools() -> set:
+    """Names of every top-level entry in PCTOOLS_DIR (baseline for a run)."""
+    try:
+        return {p.name for p in PCTOOLS_DIR.iterdir()}
+    except OSError as e:                     # pragma: no cover
+        log(f"  [!] cannot snapshot PCTools: {e}")
+        return set()
 
-    Guarantees a pristine tree for the next car's snapshot diff.  The numbered
-    tool folders (02_bmt2xml, ...) are kept.
+
+def _cleanup_run_artifacts(car_name: str, pre_snapshot: set) -> bool:
+    """Delete ONLY the top-level entries this run created in PCTOOLS_DIR.
+
+    Everything that was already there before the unpack (other cars' folders,
+    tool folders such as 02_bmt2xml, loose files of any kind) is left exactly
+    as found.  Retries a few times — Windows file locks can linger right after
+    an unpack.  Returns True when nothing from this run remains.
+    """
+    for attempt in range(1, 4):
+        try:
+            entries = list(PCTOOLS_DIR.iterdir())
+        except OSError as e:                 # pragma: no cover
+            log(f"  [!] cannot list PCTools for cleanup: {e}")
+            return False
+        new_entries = [p for p in entries if p.name not in pre_snapshot]
+        for p in new_entries:
+            try:
+                if p.is_dir():
+                    shutil.rmtree(p, ignore_errors=True)
+                else:
+                    p.unlink()
+            except Exception as e:           # pragma: no cover
+                log(f"  [!] could not remove {p.name}: {e}")
+        remaining = [p for p in new_entries if p.exists()]
+        if not remaining:
+            return True
+        log(f"  [!] {car_name}: this run's files still present after cleanup "
+            f"attempt {attempt}/3 — retrying")
+        time.sleep(1)
+    leftovers = sorted(p.name for p in new_entries)[:5]
+    log(f"  [!!] {car_name}: could not remove all of this run's files: {leftovers}")
+    return False
+
+
+def _startup_check() -> bool:
+    """Verify PCTOOLS_DIR is accessible.  Nothing is deleted here.
+
+    All cleanup is handled per-car by ``_cleanup_run_artifacts`` using a
+snapshot diff — only entries that did NOT exist before the car's unpack are
+ever removed.  Pre-existing content (general *_extracted working dirs, tool
+folders, loose files) stays untouched for the entire session and across runs.
     """
     try:
-        entries = list(PCTOOLS_DIR.iterdir())
+        list(PCTOOLS_DIR.iterdir())
     except OSError as e:                     # pragma: no cover
-        log(f"  [!] cannot list PCTools for cleanup: {e}")
-        return
-    for d in entries:
-        if not (d.is_dir() and re.match(r"^\d+_", d.name)):
-            try:
-                shutil.rmtree(d, ignore_errors=True)
-            except Exception as e:           # pragma: no cover
-                log(f"  [!] could not remove {d}: {e}")
+        log(f"  [!] cannot access PCTools at {PCTOOLS_DIR}: {e}")
+        return False
+    return True
 
 
 def process_car(bff_path: Path, db: dict, log_entries: list, timeout_s: int):
-    """Full pipeline for one .bff. Returns True on success."""
+    """Full pipeline for one .bff. Returns True on success.
+
+    The DB entry is keyed by the display name read from this pack's .CRD file;
+    the BFF stem is stored in metadata.bff_name (provenance + legacy lookup).
+    Cleanup is snapshot-based: only entries created DURING this run are ever
+deleted afterwards — pre-existing PCTools content stays untouched.
+    """
     car = bff_path.stem
     warnings = []
 
-    # 1) unpack.  PCTools must be free of car folders before we start (main()
-    #    and every prior process_car call guarantee this via
-    #    _cleanup_non_tool_dirs); sanity-check it:
-    stale = list_physics_files()
-    if stale:
-        log(f"  [!] WARNING: physics files present BEFORE unpack "
-            f"({len(stale)}): {stale[:3]} — wiping")
-        for p in stale:
-            try:
-                p.unlink()
-            except OSError as e:             # pragma: no cover
-                log(f"  [!] could not remove stale {p}: {e}")
+    # 1) unpack. Snapshot first so we can tell OUR artifacts from anything that
+    # was already in PCTOOLS_DIR (which must never be deleted).
+    pre_snapshot = _snapshot_pctools()
     rc, bat_log = run_unpack(car, timeout_s)
     if rc is None or rc != 0:
         entry = {"car": car, "status": "unpack_failed",
@@ -297,18 +388,41 @@ def process_car(bff_path: Path, db: dict, log_entries: list, timeout_s: int):
                  "time": datetime.now(timezone.utc).isoformat()}
         log_entries.append(entry)
         _save_bat_log(car, bat_log)
-        # wipe whatever the BAT left behind so it cannot contaminate the
-        # NEXT car (stale *_extracted folders are exactly how cross-
-        # contamination happened in the first batch run).
-        _cleanup_non_tool_dirs()
+        # remove only what this run created (car folder / *_extracted dirs /
+        # temp .bff copies) so it cannot contaminate the NEXT car's snapshot.
+        if not _cleanup_run_artifacts(car, pre_snapshot):
+            entry["status"] = "unpack_failed_post_cleanup"
         return False
 
-    new_files = list_physics_files()          # all belong to THIS BFF now
+    new_files = list_physics_files()          # entries created by THIS run only
+
+    # --- CRD: display name (DB key) -----------------------------------------
+    # Per-car .CRDs live in the persistent BOOTFLOW_extracted working dir at
+    #   PCTools\BOOTFLOW_extracted\vehicles\<car_id>\<id>.crd
+    # where <car_id> is the lowercased BFF stem.  The bat does NOT copy them
+    # into the car's target folder, so we must look there directly.
+    crds = [p for p in new_files if p.suffix.lower() == ".crd"]
+    crd_path = next((p for p in crds if p.stem.lower() == car.lower()), None)
+    if crd_path is None:
+        # Fallback (normal case): persistent BOOTFLOW working dir.
+        bootflow_car_dir = PCTOOLS_DIR / "BOOTFLOW_extracted" / "vehicles" / car.lower()
+        if bootflow_car_dir.is_dir():
+            found = list(bootflow_car_dir.glob("*.crd"))
+            crd_path = next((p for p in found if p.stem.lower() == car.lower()), None) \
+                       or (found[0] if len(found) == 1 else None)
+    display_name = parse_crd(crd_path) if crd_path else None
+    key = car                                   # DB key (display name preferred)
+    if not display_name:
+        warnings.append("no 'Vehicle Name' found in CRD — using BFF stem as key")
+    else:
+        key = display_name                      # e.g. "Ginetta G55 GT4"
+
     cdfbin_path = next((p for p in new_files if p.suffix.upper() == ".CDFBIN"), None)
     edfbin_path = next((p for p in new_files if p.suffix.upper() == ".EDFBIN"), None)
-    if len(new_files) > 2:
-        log(f"  [!] {len(new_files)} physics files found (expected <=2): "
-            f"{[str(p.relative_to(PCTOOLS_DIR)) for p in new_files]}")
+    binaries = [p for p in new_files if p.suffix.lower() not in (".crd",)]
+    if len(binaries) > 2:                       # expect at most CDFBIN + EDFBIN
+        log(f"  [!] {len(binaries)} physics files found (expected <=2): "
+            f"{[str(p.relative_to(PCTOOLS_DIR)) for p in binaries]}")
 
     physics = {}
     engine_out = {}
@@ -329,10 +443,28 @@ def process_car(bff_path: Path, db: dict, log_entries: list, timeout_s: int):
                  "time": datetime.now(timezone.utc).isoformat()}
         log_entries.append(entry)
         _save_bat_log(car, bat_log + "\n[warn] no physics files found")
+        if not _cleanup_run_artifacts(car, pre_snapshot):
+            entry["status"] += "+post_cleanup_failed"
         return False
 
-    # 3) merge into DB ---------------------------------------------------------
-    car_entry = db.setdefault(car, {})
+    # 3) merge into DB (keyed by display name; BFF stem kept for provenance) --
+    existing = db.get(key)
+    if existing is not None and isinstance(existing, dict):
+        old_bff = ((existing.get("metadata") or {}).get("bff_name")) or car
+        if old_bff != car:
+            dup_msg = (f"duplicate 'Vehicle Name' {key!r}: BFFs "
+                       f"{old_bff} and {car}; last one wins")
+            for e in (existing,):               # warn on the entry being replaced
+                em = dict(e.get("metadata") or {})
+                ew = list((e.get("physics") or {}).get("_warnings") or [])
+                if dup_msg not in ew:
+                    ew.append(dup_msg)
+                e["physics"] = {**(e.get("physics") or {}), "_warnings": ew}
+            warnings.append(f"duplicate 'Vehicle Name' with BFF {old_bff}; last one wins")
+    car_entry = db.setdefault(key, {})
+    meta = dict(car_entry.get("metadata") or {})
+    if key != car:
+        meta["bff_name"] = car                 # provenance: which BFF this came from
     merged = dict(car_entry.get("physics") or {})   # idempotent per-car overwrite
     files_map = dict(merged.get("_files") or {})
 
@@ -350,10 +482,7 @@ def process_car(bff_path: Path, db: dict, log_entries: list, timeout_s: int):
         merged["_warnings"] = warnings
     else:
         merged.pop("_warnings", None)
-
-    # 4) cleanup — wipe ALL non-tool dirs (PCarsTools may have created a folder
-    #    named after the internal vehicle id, e.g. Kart_01 for Clio_Cup14)
-    _cleanup_non_tool_dirs()
+    car_entry["metadata"] = meta
 
     entry = {"car": car, "status": "ok",
              "warnings_count": len(warnings),
@@ -363,6 +492,10 @@ def process_car(bff_path: Path, db: dict, log_entries: list, timeout_s: int):
     log_entries.append(entry)
     _save_bat_log(car, bat_log + ("\n[warn]\n" + "\n".join(warnings)
                                   if warnings else ""))
+
+    # 5) remove this run's artifacts (car folder + working dirs only).
+    if not _cleanup_run_artifacts(car, pre_snapshot):
+        entry["status"] += "+post_cleanup_failed"
 
     mass = (physics.get("chassis") or {}).get("Mass")
     oil = (engine_out.get("engine") or {}).get("OptimumOilTemp")
@@ -399,6 +532,9 @@ def save_db(db: dict):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--car", help="process a single car (BFF basename)")
+    ap.add_argument("--fresh",
+                    action="store_true",
+                    help="back up the existing DB and rebuild from scratch")
     ap.add_argument("--timeout", type=int, default=900,
                     help="per-car unpack timeout in seconds (default 900)")
     args = ap.parse_args()
@@ -415,13 +551,22 @@ def main():
         if not wanted:
             raise SystemExit(f"[FATAL] no BFF named {args.car!r} found")
         bffs = wanted
-    else:
-        # Full batch: start from a pristine PCTools so the snapshot diff is
-        # meaningful (leftover car folders would be mis-attributed).
-        _cleanup_non_tool_dirs()
+    # Refuse to start when pre-existing car folders / *_extracted dirs are
+    # present: the snapshot diff would mis-attribute them.  Nothing is deleted
+    # without an explicit 'y' from the user.
+    if not _startup_check():
+        raise SystemExit(
+            "[FATAL] PCTools has pre-existing entries — start aborted (manual check needed)")
 
     log(f"{len(bffs)} car(s) to process. DB -> {DB_FILE}")
-    db = load_db()
+    if args.fresh and DB_FILE.exists():
+        # Back up the current DB so a fresh run is auditable/reversible.
+        WORK_DIR.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup = WORK_DIR / f"ams2_vehicles_db.pre-fresh-{ts}.json"
+        shutil.copy2(str(DB_FILE), str(backup))
+        log(f"--fresh: existing DB backed up to {backup.name}")
+    db = {} if args.fresh else load_db()
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     log_file = WORK_DIR / "bff_extract_log.json"
 

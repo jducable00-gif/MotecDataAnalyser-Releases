@@ -1,4 +1,4 @@
-//---------------------------------------------------------------------------
+﻿//---------------------------------------------------------------------------
 // MotecSetupAnalyzer.h — Types et API d'analyse de la télémétrie MoTeC.
 //
 // Définit les structures de données (LapStats, histogrammes de butées,
@@ -679,12 +679,12 @@ public:
                 result.severity = AnalysisSeverity::Warning;
                 result.category = "Brake";   // maps to ReportSection::Brake via mapAnalysisResultToReportSection
                 result.expectedValue = tr(pos + " disc at ", pos + " frein à ") + fmtC(temp)
-                    + tr(" deg C is below the fade-low threshold of ", " deg C est sous le seuil de fadage bas de ")
+					+ tr(" deg C is below the fade-low threshold of ", " deg C est sous le seuil d'éfficacité ")
                     + fmtC(wbt.fadeLowC) + tr(" deg C", " deg C");
                 result.title = pos + tr(" brake temperature low (cold)", " température frein basse (froid)");
-                result.description = pos + tr(" disc is below the vehicle's operating window; pads are not at full efficiency.", " disque sous la plage de fonctionnement du véhicule ; les garnissages ne sont pas à pleine efficacité.");
-                result.recommendation = tr("Warm up the brakes with a few medium stops before pushing, and check for restricted brake cooling ducts.", "Chauffer les freins avec quelques arrêts modérés avant d'attaquer et vérifier que les entrées de refroidissement ne sont pas obstruées.");
-                results.push_back(result);
+				result.description = pos + tr(" disc is below the vehicle's operating window; pads are not at full efficiency.", " disque sous la plage de fonctionnement du véhicule ; les plaquettes de freins ne sont pas à pleine efficacité.");
+				result.recommendation = tr("check for brake cooling ducts.", "vérifier que les entrées de refroidissement.");
+				results.push_back(result);
             }
         }
 
