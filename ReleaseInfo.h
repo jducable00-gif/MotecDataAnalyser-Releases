@@ -30,8 +30,11 @@
 // liees via winhttp.lib sans jamais charger les headers.
 typedef LPVOID HINTERNET;   // identique au typedef du SDK (wininet.h) — redefinition legale si present
 
+#include <atomic>
+#include <functional>
 #include <mutex>
 #include <string>
+#include <system_error>
 #include <thread>
 
 #pragma comment(lib, "winhttp")   // link winhttp.lib (pas besoin du header)
@@ -81,9 +84,21 @@ struct AppRelease {
     std::string htmlUrl;      // page GitHub du release (lien cliquable)
     std::string publishedAt;  // ISO-8601 brut ("2026-10-24T...Z") — formaté à l'affichage
     std::string body;         // notes de version markdown, UTF-8
+    std::string assetUrl;     // browser_download_url du binaire .exe ("" si absent)
 
     bool empty() const { return tagName.empty(); }
 };
+
+// ===============================
+// Comparaison de versions.
+// compareVersions("V5.6", "v5.7") -> -1 : insensible au préfixe v/V et aux
+// majuscules, comparaison numérique segment par segment (5.10 > 5.9).
+// Retourne -1 si a < b, 0 si égaux, +1 si a > b ; segments manquants = 0.
+// ===============================
+int compareVersions(const std::string& a, const std::string& b);
+
+// true si le tag GitHub est strictement plus récent que kAppVersion compilée.
+bool isUpdateAvailable(const AppRelease& release);
 
 // ===============================
 // Parse du JSON "latest release" (GitHub API).
@@ -112,5 +127,14 @@ void fetchLatestReleaseAsync(const std::string& owner, const std::string& repo);
 // Récupération du dernier release produit par le worker depuis l'appel précédent :
 // true + out rempli si une nouvelle donnée est disponible (sinon false).
 bool takePendingRelease(AppRelease& out);
+
+// ===============================
+// Téléchargement d'un asset de release (self-update) — thread worker uniquement.
+// onProgress(bytesReçus, totalBytes; total = -1 si inconnu) peut être vide ; il est
+// appelé depuis le THREAD WORKER : ne jamais y toucher à du VCL (atomiques seulement).
+// Retourne true si le fichier a été écrit intégralement (HTTP 200 + lecture complète).
+// ===============================
+bool downloadReleaseAsset(const std::string& url, const std::wstring& destPath,
+                          const std::function<void(long long receivedBytes, long long totalBytes)> onProgress = nullptr);
 
 #endif // RELEASEINFO_H

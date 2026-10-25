@@ -24,7 +24,7 @@ USEFORM("MotecSettingsForm.cpp", FormMotecSettings);
 #include "MotecSetupForm.h"
 #include "MotecSettingsForm.h"
 //---------------------------------------------------------------------------
-int WINAPI _tWinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
+int WINAPI _tWinMain(HINSTANCE, HINSTANCE, LPTSTR cmdLine, int)
 {
 	// Unlock 1 ms timer resolution so TTimer can fire at sub-16 ms intervals.
 	timeBeginPeriod(1);
@@ -42,6 +42,14 @@ int WINAPI _tWinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
 	{
 		Application->Initialize();
 		Application->MainFormOnTaskBar = true;
+
+		// Self-update: when relaunched with /updated the previous exe was renamed to
+		// .old.exe. Delete it now that no process holds a lock on it (best-effort).
+		if (cmdLine && wcsstr(cmdLine, L"/updated") != NULL) {
+			const String oldExe = IncludeTrailingPathDelimiter(ExtractFilePath(Application->ExeName)) + "MotecDataAnalyser.old.exe";
+			DeleteFile(oldExe.c_str());   // ignore failure — file may already be gone
+		}
+
 		Application->CreateForm(__classid(TFormMotecSetup), &FormMotecSetup);
 		Application->Run();
 	}

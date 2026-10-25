@@ -1,4 +1,4 @@
-﻿//---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 // MotecSetupForm.h — Déclaration de la fenêtre principale (TFormMotecSetup).
 //
 // Form VCL qui orchestre l'analyse : sélection des fichiers LD/LDX,
@@ -30,6 +30,7 @@
 #include "ReleaseInfo.h"  // kAppVersion + GitHub release notes fetch (WinHTTP)
 #include <atomic>
 #include <mutex>
+#include <thread>
 #include <map>
 
 // Active live-capture backend.
@@ -172,11 +173,19 @@ public:
 
     TForm*  m_aboutForm = nullptr;      // open About dialog (to refresh in place), else null
     TMemo*  m_aboutMemo = nullptr;
+	TButton* m_aboutUpdateBtn = nullptr;
+
+	// Self-update state — worker thread <-> UI via atomics only.
+	std::atomic<int> m_updateState{0};   // 0 idle / 1 downloading / 2 restarting / 3 failed
+	std::atomic<long long> m_downloadReceived{0};
+	std::atomic<long long> m_downloadTotal{-1};
 
     void __fastcall loadReleaseInfoCache();   // [ReleaseInfo] INI section -> m_latestRelease
     void __fastcall saveReleaseInfoCache(const AppRelease& rel);
     String __fastcall buildAboutText() const;  // FR/EN formatted version + notes (UI thread only)
     void __fastcall refreshAboutFormIfOpen();  // re-render memo if the About dialog is visible
+	void __fastcall UpdateButtonClick(TObject *Sender);
+	void __fastcall AboutDialogClosing(TObject *Sender, System::Uitypes::TCloseAction &Action);
 
     // Phase B5: push the freshly generated report to any connected tablet. No-op when server is off.
     void __fastcall publishToTabletServer(const ReportResult& result, const std::vector<LapStats>& laps);
