@@ -3874,6 +3874,15 @@ String __fastcall TFormMotecSetup::buildAboutText() const
 		const String relLabel = isFr ? "DerniÃ¨re release : " : "Latest release: ";
 		text += String(sLineBreak) + relLabel + tag;
 		if (!dateStr.IsEmpty()) text += String(" (") + dateStr + String(")");
+		const int cmp = compareVersions(kAppVersion, m_latestRelease.tagName);
+		if (cmp >= 0) {
+			text += String(sLineBreak) + (isFr ? "Vous etes a jour." : "You are up to date.");
+	} else if (!isUpdateAvailable(m_latestRelease)) {
+		const String noAsset = isFr
+			? "(Nouvelle version publiee sans binaire .exe - rien a installer.)"
+			: "Newer release published without an .exe asset - nothing to install.";
+		text += String(sLineBreak) + noAsset;
+	}
 
 		const String body = Utf8ToWideString(m_latestRelease.body);
 		if (!body.IsEmpty()) {
