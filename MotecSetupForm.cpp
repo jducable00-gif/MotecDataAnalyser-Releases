@@ -1041,7 +1041,7 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
 	// WinHTTP dÃ©lÃ¨gue les credentials Windows de l'utilisateur connectÃ©.
 	// Le worker Ã©crit dans l'Ã©tat global de ReleaseInfo ; ReleasePollTimer (1 s)
 	// rÃ©cupÃ¨re via takePendingRelease() et met Ã  jour UI + cache INI.
-	fetchLatestReleaseAsync("jducable00-gif", "MotecDataAnalyser");
+	fetchLatestReleaseAsync("jducable00-gif", "MotecDataAnalyser-Releases");
 
 	if (ReleasePollTimer != NULL) {
 		ReleasePollTimer->Interval = 1000;   // poll de l'Ã©tat global worker -> UI
