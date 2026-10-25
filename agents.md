@@ -189,4 +189,5 @@ Inline in the core analyzer header (previously `RecommendationEngine.h/.cpp`, no
 | [`docs/NEW_ALERT_PROCEDURE.md`](./docs/NEW_ALERT_PROCEDURE.md) | Step-by-step guide for creating new diagnostic rules |
 | [`docs/TUNING_RECOMMENDATIONS.md`](./docs/TUNING_RECOMMENDATIONS.md) | Telemetry-based setup checks & warnings (decision aid, not universal values) |
 | [`docs/channels/Channel_Correspondence.md`](./docs/channels/Channel_Correspondence.md) | Cross-reference table AC EVO <-> AMS2 channel names (+ per-sim channel inventories in the same folder) |
+| [`docs/RELEASE_PROCEDURE.md`](./docs/RELEASE_PROCEDURE.md) | Agent-facing release procedure: version bump → build → two-file dist commit (private `release` + public `-Releases`) → publish GitHub Release with exe asset on the **public** repo only → unauthenticated feed verification. The app's self-update reads ONLY releases of the public `jducable00-gif/MotecDataAnalyser-Releases` |
 | [`.ai/skills/AGENTS.md`](./.ai/skills/AGENTS.md) | Toolchain, build & debug reference |
