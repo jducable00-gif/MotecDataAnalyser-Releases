@@ -31,6 +31,7 @@
 #include "RuleConfig.h"
 #include "ReportJsonWriter.h"
 #include "MotecSettingsForm.h"
+#include <Vcl.Dialogs.hpp>   // TThread (worker -> UI marshalling)
 #include <gdiplus.h>
 
 
@@ -94,6 +95,33 @@ String DataPath()
 String SettingsFilePath()
 {
 	return AppDirPath() + "MotecDataAnalyser.ini";
+}
+
+// ===============================
+// Release info helpers (version + GitHub release notes).
+// The async fetch callback runs on a worker thread: it only touches the
+// mutex/atomic-guarded members, never VCL controls. UI updates are picked up
+// by ReleasePollTimer (1 s) which marshals them onto the main thread.
+// ===============================
+// Convertit un std::string UTF-8 en String VCL (UTF-16).
+// Routine native du RTL — System.hpp ligne 1674 :
+//   UnicodeString __fastcall UTF8ArrayToString(const char *S, const NativeInt S_High)
+static String Utf8ToWideString(const std::string& utf8)
+{
+	if (utf8.empty()) return "";
+	// S_High = index du dernier octet (0-based), soit size()-1.
+	return UTF8ArrayToString(utf8.data(), static_cast<System::NativeInt>(utf8.size() - 1));
+}
+
+// Convertit un String VCL (UTF-16) en std::string UTF-8.
+// Routine native du RTL — System.hpp ligne 1658 :
+//   RawByteString __fastcall UTF8Encode(const UnicodeString US)
+static std::string WideStringToUtf8(const String& w)
+{
+	if (w.IsEmpty()) return "";
+	RawByteString utf8 = UTF8Encode(w);   // bytes UTF-8 ; le buffer interne vit tant que utf8 est vivant
+	const char* p = static_cast<const char*>(utf8.c_str());
+	return std::string(p, static_cast<std::size_t>(utf8.Length()));
 }
 
 String DefaultMotecFolder()
@@ -458,6 +486,11 @@ void SaveLiveCaptureSetting(bool enabled)
 // ---------------------------------------------------------------------------
 void __fastcall TFormMotecSetup::DoFormClose(TObject *Sender, TCloseAction &Action)
 {
+	// Stop the release-info poll timer before teardown. The detached fetch worker
+	// only writes module-static state in ReleaseInfo.cpp, so it is safe to let it
+	// finish on its own without joining here.
+	if (ReleasePollTimer != NULL) ReleasePollTimer->Enabled = false;
+
 	// Persist window geometry before anything else so the next launch restores it.
 	SaveWindowGeometry(this);
 
@@ -997,6 +1030,23 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
         LiveCaptureCheckBox->Checked = false;
     }
 
+	// --- Release info : version dynamique + notes de release GitHub ---------
+	if (StatusBar1 && StatusBar1->Panels->Count >= 2)
+		StatusBar1->Panels->Items[1]->Text = kAppVersion;   // ex: "V5.6"
+
+	loadReleaseInfoCache();   // [ReleaseInfo] INI : dernières notes connues (hors-ligne OK)
+
+	// Fetch asynchrone du dernier release GitHub. Repo privé sans token :
+	// WinHTTP délègue les credentials Windows de l'utilisateur connecté.
+	// Le worker écrit dans l'état global de ReleaseInfo ; ReleasePollTimer (1 s)
+	// récupère via takePendingRelease() et met à jour UI + cache INI.
+	fetchLatestReleaseAsync("jducable00-gif", "MotecDataAnalyser");
+
+	if (ReleasePollTimer != NULL) {
+		ReleasePollTimer->Interval = 1000;   // poll de l'état global worker -> UI
+		ReleasePollTimer->OnTimer = ReleasePollTimerTimer;
+		ReleasePollTimer->Enabled = true;
+	}
 
 	TranslateUI();
 
@@ -1033,6 +1083,7 @@ void __fastcall TFormMotecSetup::TranslateUI()
     ButtonLoad->Caption = isFr ? "Importer Données Motec" : "Import Motec Data";
     Button1->Caption = isFr ? "Importer Données Motec" : "Import Motec Data";
     ButtonSettings->Caption = isFr ? "Réglages" : "Settings";
+    if (ButtonAbout != NULL) ButtonAbout->Caption = isFr ? "À propos" : "About";
     LiveCaptureCheckBox->Caption = isFr ? "Capture Live" : "Live Capture";
     ButtonResetSession->Caption = isFr ? "Réinitialiser" : "Reset";
     AutoDetectTrackCheckBox->Caption = isFr ? "Auto" : "Auto";
@@ -3764,6 +3815,124 @@ void __fastcall TFormMotecSetup::UpdateSuspension(std::vector<LapStats>& laps)
         if (DamperRLPaintBox != NULL) DamperRLPaintBox->Invalidate();
         if (DamperRRPaintBox != NULL) DamperRRPaintBox->Invalidate();
     }
+}
+
+// ---------------------------------------------------------------------------
+// Release info : version dynamique + notes de release GitHub
+// Toutes ces méthodes s'exécutent sur le thread UI uniquement. Le worker réseau
+// écrit dans l'état global de ReleaseInfo.cpp ; takePendingRelease() fait la
+// passerelle (voir ReleasePollTimerTimer).
+// ---------------------------------------------------------------------------
+
+void __fastcall TFormMotecSetup::loadReleaseInfoCache()
+{
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		m_latestRelease.tagName     = WideStringToUtf8(settings->ReadString("ReleaseInfo", "Tag", ""));
+		m_latestRelease.htmlUrl     = WideStringToUtf8(settings->ReadString("ReleaseInfo", "HtmlUrl", ""));
+		m_latestRelease.publishedAt = WideStringToUtf8(settings->ReadString("ReleaseInfo", "PublishedAt", ""));
+		m_latestRelease.body        = WideStringToUtf8(settings->ReadString("ReleaseInfo", "Body", ""));
+		m_hasCachedRelease = !m_latestRelease.empty();   // tag présent => cache utile
+	} __finally {
+		delete settings;
+	}
+}
+
+void __fastcall TFormMotecSetup::saveReleaseInfoCache(const AppRelease& rel)
+{
+	if (rel.empty()) return;   // rien à cacher sans tag
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		settings->WriteString("ReleaseInfo", "Tag",         Utf8ToWideString(rel.tagName));
+		settings->WriteString("ReleaseInfo", "HtmlUrl",     Utf8ToWideString(rel.htmlUrl));
+		settings->WriteString("ReleaseInfo", "PublishedAt", Utf8ToWideString(rel.publishedAt));
+		settings->WriteString("ReleaseInfo", "Body",        Utf8ToWideString(rel.body));
+	} __finally {
+		delete settings;
+	}
+}
+
+String __fastcall TFormMotecSetup::buildAboutText() const
+{
+	const bool isFr = ReadReportLanguageSetting() == ReportLanguage::French;
+
+	String text;
+	if (isFr) {
+		text  = AnsiString("Analyseur de Setup MoTeC") + sLineBreak;
+		text += AnsiString("Version : ") + kAppVersion;
+	} else {
+		text  = AnsiString("MoTeC Setup Analyzer") + sLineBreak;
+		text += AnsiString("Version: ") + kAppVersion;
+	}
+
+	if (!m_latestRelease.empty()) {
+		const String tag     = Utf8ToWideString(m_latestRelease.tagName);
+		const String dateStr = Utf8ToWideString(formatReleaseDate(m_latestRelease.publishedAt, isFr));
+		const String relLabel = isFr ? "Dernière release : " : "Latest release: ";
+		text += String(sLineBreak) + relLabel + tag;
+		if (!dateStr.IsEmpty()) text += String(" (") + dateStr + String(")");
+
+		const String body = Utf8ToWideString(m_latestRelease.body);
+		if (!body.IsEmpty()) {
+			const String notesLabel = isFr ? "Notes de version :" : "Release notes:";
+			text += String(sLineBreak) + notesLabel + String(sLineBreak);
+			text += body;
+		}
+	} else {
+		const String noInfo = isFr
+		    ? "(Aucune information de release disponible — hors-ligne ou premier lancement.)"
+		    : "(No release info available - offline or first launch.)";
+		text += String(sLineBreak) + noInfo;
+	}
+
+	return text;
+}
+
+void __fastcall TFormMotecSetup::refreshAboutFormIfOpen()
+{
+	if (m_aboutMemo != NULL) m_aboutMemo->Text = buildAboutText();
+}
+
+void __fastcall TFormMotecSetup::ButtonAboutClick(TObject *Sender)
+{
+	const bool isFr = ReadReportLanguageSetting() == ReportLanguage::French;
+
+	// Sans owner : destruction déterministe ici (pas de fuite, pas d'auto-delete).
+	// Cast explicite : NULL est ambigu entre TForm(TComponent*) et TForm(HWND) — on veut le 1er.
+	TForm* dlg  = new TForm(static_cast<TComponent*>(NULL));
+	dlg->Caption    = isFr ? "À propos" : "About";
+	dlg->Width      = 560;
+	dlg->Height     = 420;
+	dlg->Position   = poScreenCenter;
+
+	TMemo* memo = new TMemo(dlg);
+	memo->Parent     = dlg;
+	memo->Align      = alClient;
+	memo->ScrollBars = ssBoth;
+	memo->WordWrap   = false;
+	memo->Lines->Text = buildAboutText();
+
+	// Pendant ShowModal, la boucle de messages traite les timers : ReleasePollTimer
+	// peut donc arriver et rafraîchir le memo en place via ces pointeurs.
+	m_aboutForm = dlg;
+	m_aboutMemo = memo;
+	try {
+		dlg->ShowModal();
+	} __finally {
+		m_aboutForm = NULL;   // plus de référence pendante après fermeture
+		m_aboutMemo = NULL;
+		delete dlg;           // supprime aussi le TMemo (owned)
+	}
+}
+
+void __fastcall TFormMotecSetup::ReleasePollTimerTimer(TObject *Sender)
+{
+	AppRelease rel;
+	if (!takePendingRelease(rel)) return;      // rien de nouveau depuis le worker
+	m_latestRelease = std::move(rel);          // main thread : pas besoin de mutex ici
+	m_hasCachedRelease = true;
+	saveReleaseInfoCache(m_latestRelease);     // cache INI pour mode hors-ligne
+	refreshAboutFormIfOpen();                  // si la boîte À propos est ouverte, re-rendu
 }
 
 

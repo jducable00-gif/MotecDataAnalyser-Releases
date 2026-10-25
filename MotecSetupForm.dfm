@@ -304,7 +304,7 @@ object FormMotecSetup: TFormMotecSetup
         Width = 50
       end
       item
-        Text = 'V5.4'
+        Text = 'V5.6'
         Width = 50
       end>
   end
@@ -318,13 +318,22 @@ object FormMotecSetup: TFormMotecSetup
     OnClick = Button1Click
   end
   object ButtonSettings: TButton
-    Left = 1279
+    Left = 1165
     Top = 20
     Width = 170
     Height = 34
     Caption = 'Settings'
     TabOrder = 8
     OnClick = ButtonSettingsClick
+  end
+  object ButtonAbout: TButton
+    Left = 1341
+    Top = 20
+    Width = 130
+    Height = 34
+    Caption = 'About'
+    TabOrder = 11
+    OnClick = ButtonAboutClick
   end
   object ProgressBarExport: TProgressBar
     Left = 36
@@ -391,5 +400,11 @@ object FormMotecSetup: TFormMotecSetup
     OnTimer = LiveConnectTimerTimer
     Left = 24
     Top = 792
+  end
+  object ReleasePollTimer: TTimer
+    Enabled = False
+    OnTimer = ReleasePollTimerTimer
+    Left = 56
+    Top = 800
   end
 end

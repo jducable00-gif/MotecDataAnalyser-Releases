@@ -33,6 +33,7 @@
 #include "DiagnosticEngine.h"     // diag:: detectors, rankCauses, evaluateLapWithDiagnostics
 #include "VehicleDb.h"            // Ams2VehicleDb -- base vehicules AMS2 embarquee (Layer 1)
 #include "LapReportGenerator.h"   // LapReportGenerator::generate, ReportResult, ReportSection
+#include "ReleaseInfo.h"          // parseLatestReleaseJson / formatReleaseDate (section J)
 
 // DiagnosticFinding (struct) and diagnosticConfidenceLabel() live in GLOBAL scope
 // (MotecSetupAnalyzer.h), not inside namespace diag. Re-expose them under diag:: so
@@ -755,6 +756,56 @@ static void testBrakePerCar() {
 }
 
 // ===========================================================================
+// J. Release info : parse JSON GitHub release + format date FR/EN
+//    (fonctions pures de ReleaseInfo.h/.cpp - aucun reseau dans ces tests)
+// ===========================================================================
+static void testReleaseInfo() {
+    section("J: Release info (parseLatestReleaseJson / formatReleaseDate)");
+
+    // --- parse : echantillon positif complet -------------------------------
+    const std::string sample =
+        "{\n"
+        "  \"tag_name\": \"v5.7\",\n"
+        "  \"html_url\": \"https://github.com/jducable00-gif/MotecDataAnalyser/releases/tag/v5.7\",\n"
+        "  \"published_at\": \"2026-10-24T18:30:00Z\",\n"
+        "  \"body\": \"Nouveautes : version dynamique + notes de release\"\n"
+        "}\n";
+
+    AppRelease rel;
+    CHECK_MSG(parseLatestReleaseJson(sample, rel), "parse JSON GitHub valide");
+    CHECK(rel.tagName == "v5.7");
+    CHECK(rel.htmlUrl.find("releases/tag/v5.7") != std::string::npos);
+    CHECK(rel.publishedAt == "2026-10-24T18:30:00Z");
+    CHECK(!rel.body.empty());
+
+    // --- parse : champs optionnels absents ----------------------------------
+    AppRelease relMin;
+    const std::string minimal = "{\"tag_name\": \"v5.8\"}";
+    CHECK_MSG(parseLatestReleaseJson(minimal, relMin), "parse JSON avec tag_name seul");
+    CHECK(relMin.tagName == "v5.8");
+    CHECK(relMin.htmlUrl.empty());
+
+    // --- parse : cas negatifs -------------------------------------------------
+    AppRelease bad;
+    CHECK(!parseLatestReleaseJson("{ json invalide", bad));        // syntaxe casse
+    CHECK(!parseLatestReleaseJson("{\"html_url\": \"x\"}", bad));   // tag_name absent
+    CHECK(!parseLatestReleaseJson("{\"tag_name\": \"\"}", bad));     // tag_name vide
+
+    // --- format date : FR / EN -------------------------------------------------
+    const std::string iso = "2026-10-24T18:30:00Z";
+    CHECK(formatReleaseDate(iso, true)  == "24 oct. 2026");   // aout sans accent (CP1252)
+    CHECK(formatReleaseDate(iso, false) == "Oct 24, 2026");
+
+    const std::string isoJan = "2027-01-03T08:00:00Z";
+    CHECK(formatReleaseDate(isoJan, true)  == "3 janv. 2027");   // jour sans zero initial
+    CHECK(formatReleaseDate(isoJan, false) == "Jan 3, 2027");
+
+    // --- format date : valeurs invalides -> renvoyees telles quelles ----------
+    CHECK(formatReleaseDate("pas une date", true) == "pas une date");                    // pas de tirets
+    CHECK(formatReleaseDate("1999-13-40T00:00:00Z", false) == "1999-13-40T00:00:00Z");   // hors plage
+}
+
+// ===========================================================================
 int main() {
     std::printf("Phase 4 diagnostic-engine test harness\n");
     std::printf("-----------------------------------------------\n");
@@ -773,6 +824,7 @@ int main() {
     testVehicleDb();
     testEngineCoolingPerCar();
     testBrakePerCar();
+    testReleaseInfo();
 
     std::printf("\n-----------------------------------------------\n");
     if (g_failures == 0) {

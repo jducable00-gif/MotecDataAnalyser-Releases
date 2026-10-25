@@ -27,6 +27,9 @@
 #include "LapReportGenerator.h"
 #include "VehicleDb.h"    // Ams2VehicleDb -- per-wheel brake fade thresholds (AMS2 only)
 #include "HttpServer.h"   // Phase B: embedded tablet report server
+#include "ReleaseInfo.h"  // kAppVersion + GitHub release notes fetch (WinHTTP)
+#include <atomic>
+#include <mutex>
 #include <map>
 
 // Active live-capture backend.
@@ -78,6 +81,8 @@ __published:
     TComboBox *LanguageCombo;
     TCheckBox *AutoDetectTrackCheckBox;
     TButton *ButtonResetSession;
+    TButton *ButtonAbout;
+    TTimer  *ReleasePollTimer;   // worker -> UI handoff for the async release fetch (1 s poll)
 
     void __fastcall ButtonLoadClick(TObject *Sender);
 	void __fastcall Button1Click(TObject *Sender);
@@ -100,6 +105,8 @@ __published:
     // DFM-referenced handlers must stay in __published so VCL streaming can resolve them by name.
     void __fastcall ButtonResetSessionClick(TObject *Sender);
     void __fastcall AutoDetectTrackCheckBoxClick(TObject *Sender);
+    void __fastcall ButtonAboutClick(TObject *Sender);
+    void __fastcall ReleasePollTimerTimer(TObject *Sender);
 
     // Phase 4 — Before/After comparison mode (DFM-referenced, keep in __published).
 
@@ -154,6 +161,22 @@ public:
     void __fastcall UpdateTireTemps(const std::vector<LapStats>& laps);
     void __fastcall UpdateBrakeTemps(const std::vector<LapStats>& laps);
     void __fastcall UpdateSuspension(std::vector<LapStats>& laps);
+
+    // --- Release info (version + GitHub release notes) ---------------------
+    // The async fetch runs on a detached worker thread that only writes module-
+    // static state inside ReleaseInfo.cpp. UI updates are picked up by
+    // ReleasePollTimer (1 s, main thread) via takePendingRelease(). No mutex or
+    // atomic is needed here: m_latestRelease is touched from the UI thread only.
+    AppRelease  m_latestRelease{};      // last known release (INI cache, then network)
+    bool        m_hasCachedRelease = false;   // true once INI or network provided a release
+
+    TForm*  m_aboutForm = nullptr;      // open About dialog (to refresh in place), else null
+    TMemo*  m_aboutMemo = nullptr;
+
+    void __fastcall loadReleaseInfoCache();   // [ReleaseInfo] INI section -> m_latestRelease
+    void __fastcall saveReleaseInfoCache(const AppRelease& rel);
+    String __fastcall buildAboutText() const;  // FR/EN formatted version + notes (UI thread only)
+    void __fastcall refreshAboutFormIfOpen();  // re-render memo if the About dialog is visible
 
     // Phase B5: push the freshly generated report to any connected tablet. No-op when server is off.
     void __fastcall publishToTabletServer(const ReportResult& result, const std::vector<LapStats>& laps);

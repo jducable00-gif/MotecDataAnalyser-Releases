@@ -18,8 +18,8 @@ rem analyze_motec_setup.cpp defines the real TIniFile-based save/loadSymptomWeig
 rem which pulls in RTLE.LIB -> link rtl.lib + vcl.lib. cp32mt.lib provides __Mtx_destroy
 rem (multithreaded C++ runtime, matches <Multithreaded>true</Multithreaded> in Project1.cbproj).
 bcc32c -I.. -o test_comparison_engine.exe ^
-    ..\analyze_motec_setup.cpp ..\MotecToCSV.cpp ..\RuleConfig.cpp ..\LapReportGenerator.cpp ..\VehicleDb.cpp ^
-    test_comparison_engine.cpp rtl.lib vcl.lib cp32mt.lib
+    ..\analyze_motec_setup.cpp ..\MotecToCSV.cpp ..\RuleConfig.cpp ..\LapReportGenerator.cpp ..\VehicleDb.cpp ..\ReleaseInfo.cpp ^
+    test_comparison_engine.cpp rtl.lib vcl.lib cp32mt.lib winhttp.lib
 
 if errorlevel 1 (
     echo BUILD FAILED
