@@ -30,6 +30,9 @@ The version literal lives in one place only: [`kAppVersion`](../ReleaseInfo.h) (
   # use as: Authorization "Bearer $tok"   — log only $tok.Length, never the value
   ```
 
+**Token freshness:** these are one-time OAuth tokens (`gho_...`, length 40). Extract a FRESH token immediately before step 4 and fire release-creation + asset-upload back-to-back in ONE process. Reusing an older extracted token (or waiting minutes between calls) yields `401 Bad credentials` — that is the expected failure mode, not a missing scope; just re-extract once and retry.
+
+
 - Git remotes already configured locally: `origin` → private repo, `dist` → public dist repo. If missing:
   `git remote add dist https://github.com/jducable00-gif/MotecDataAnalyser-Releases.git`.
 - **Filename caveat:** the main form file is on disk as `Motoc→MotecSetupForm.cpp` (mojibake name). Direct editor tools may fail with ENOENT — use wildcard paths (`Get-ChildItem -Filter '*MotecSetupForm.cpp'`) and byte-safe PowerShell edits.
@@ -49,8 +52,10 @@ Let `$TAG = vX.Y.Z`, e.g. `v5.6.3`. Work from the repo root on branch `advanced`
 - Patch (`X.Y.Z`) → manual equivalent of release.ps1:
   1. Edit [`kAppVersion`](../ReleaseInfo.h) in [ReleaseInfo.h](../ReleaseInfo.h): `"V5.6.2"` → `"V5.6.3"`. (Normal edit tools work on this file.)
   2. `git add ReleaseInfo.h; git commit -m "Release v5.6.3"`
-  3. `git tag -a v5.6.3 -m "Release v5.6.3"`
-  4. Push branch + tag: `git push origin advanced` and `git push origin v5.6.3`.
+  3. `git tag -a v5.6.3 -m "Release v5.6.3"` (optional — see warning below)
+  4. Push branch + tag: `git push origin advanced` and, only if the tag was created, `git push origin v5.6.3`.
+
+> **⚠️ The private provenance tag is NOT for distribution.** It points at a full-source commit on `advanced`, so its GitHub "zip" download contains ALL source code — never share it or link to it with users (this caused confusion twice: v5.6.1 and v5.6.3). Users only ever get updates from the **public** repo's release assets / dist-`main` zip, which contain exe + mapping.json only. The tag is purely optional provenance metadata; skipping steps 3–4 entirely has zero effect on update detection (the app reads `/releases/latest` of the public repo).
 
 ### 2 — Build the release binary
 
