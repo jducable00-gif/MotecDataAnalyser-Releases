@@ -148,9 +148,13 @@ static std::vector<int> versionSegments(const std::string& s) {
     for (; i < s.size(); ++i) {
         const unsigned char c = static_cast<unsigned char>(s[i]);
         if (isdigit(c)) {
-            cur = (cur == -1) ? 0 : cur * 10 + (c - '0');
+            // Premier chiffre du segment -> valeur initiale ; sinon accumulation.
+            cur = (cur == -1) ? (c - '0') : cur * 10 + (c - '0');
+        } else if (c == '.' && cur != -1) {
+            segs.push_back(cur);   // séparateur de segments ("5.6" -> [5, 6])
+            cur = -1;
         } else {
-            // Premier caractère non-chiffre après un chiffre ("5.6", "5-rc") -> fin de la version.
+            // Premier caractère non-chiffre après un chiffre ("-rc", " ") -> fin de la version.
             if (cur != -1) segs.push_back(cur);
             break;
         }
