@@ -1,10 +1,10 @@
-//---------------------------------------------------------------------------
-// MotecSetupForm.cpp â€” ImplÃ©mentation de la fenÃªtre principale.
+﻿//---------------------------------------------------------------------------
+// MotecSetupForm.cpp — Implémentation de la fenêtre principale.
 //
 // Contient :
-//   - Persistance des rÃ©glages dans MotecDataAnalyser.ini (dossiers rÃ©cents,
+//   - Persistance des réglages dans MotecDataAnalyser.ini (dossiers récents,
 //     rapport complet, langue, profil de canaux) via TIniFile.
-//   - Chargement / crÃ©ation des seuils d'analyse dans
+//   - Chargement / création des seuils d'analyse dans
 //     MotecDataAnalyser.thresholds.ini (loadThresholds / saveDefaultThresholds).
 //   - Callbacks de progression (UpdateProgress / AnalysisProgress / ExportProgress).
 //   - Gestion des boutons : Button1 (LD/LDX), qui appelle
@@ -60,7 +60,7 @@ TFormMotecSetup *FormMotecSetup;
 // collapses multiple game frames into one timestamp and compresses derived
 // velocities toward zero in the damper histograms. QueryPerformanceCounter gives
 // microsecond precision so each poll gets a unique, accurate Î”t matching the true
-// per-frame interval (~3â€“5 ms at 270 Hz sim rate).
+// per-frame interval (~3–5 ms at 270 Hz sim rate).
 // ===============================
 
 static double HighResClockSeconds()
@@ -74,9 +74,9 @@ static double HighResClockSeconds()
 }
 
 // ===============================
-// Chemins de base (Ã‰tape 2 â€” portabilitÃ©).
-// Tous les fichiers d'application sont rÃ©solus relativement Ã  l'exÃ©cutable,
-// pour que le dossier portable fonctionne n'importe oÃ¹ il est dÃ©compressÃ©.
+// Chemins de base (Étape 2 — portabilité).
+// Tous les fichiers d'application sont résolus relativement à l'exécutable,
+// pour que le dossier portable fonctionne n'importe où il est décompressé.
 // ===============================
 
 String AppDirPath()
@@ -86,7 +86,7 @@ String AppDirPath()
 
 String DataPath()
 {
-	// Dossiers d'Ã©chantillons : <exedir>data\ (paquet portable) sinon le dossier courant.
+	// Dossiers d'échantillons : <exedir>data\ (paquet portable) sinon le dossier courant.
 	String p = AppDirPath() + "data\\";
 	if (!DirectoryExists(p))
 		p = ExtractFilePath(Application->ExeName);
@@ -105,7 +105,7 @@ String SettingsFilePath()
 // by ReleasePollTimer (1 s) which marshals them onto the main thread.
 // ===============================
 // Convertit un std::string UTF-8 en String VCL (UTF-16).
-// Routine native du RTL â€” System.hpp ligne 1674 :
+// Routine native du RTL — System.hpp ligne 1674 :
 //   UnicodeString __fastcall UTF8ArrayToString(const char *S, const NativeInt S_High)
 static String Utf8ToWideString(const std::string& utf8)
 {
@@ -115,7 +115,7 @@ static String Utf8ToWideString(const std::string& utf8)
 }
 
 // Convertit un String VCL (UTF-16) en std::string UTF-8.
-// Routine native du RTL â€” System.hpp ligne 1658 :
+// Routine native du RTL — System.hpp ligne 1658 :
 //   RawByteString __fastcall UTF8Encode(const UnicodeString US)
 static std::string WideStringToUtf8(const String& w)
 {
@@ -128,7 +128,7 @@ static std::string WideStringToUtf8(const String& w)
 String DefaultMotecFolder()
 {
 	// "Saved Games" is a known folder: Windows returns the localized name
-	// ("Saved Games" / "Jeux enregistrÃ©s" / ...) for the current user.
+	// ("Saved Games" / "Jeux enregistrés" / ...) for the current user.
 	String savedGames;
 	PWSTR path = NULL;
 	if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_SavedGames, 0, NULL, &path)))
@@ -460,7 +460,7 @@ bool ReadLiveCaptureSetting()
 {
 	TIniFile* settings = new TIniFile(SettingsFilePath());
 	try {
-		// Default: off (0) â€” do not auto-start capture on launch unless previously enabled
+		// Default: off (0) — do not auto-start capture on launch unless previously enabled
 		return settings->ReadInteger("General", "LiveCapture", 0) != 0;
 	} __finally {
 		delete settings;
@@ -481,7 +481,7 @@ void SaveLiveCaptureSetting(bool enabled)
 // ===============================
 
 // ---------------------------------------------------------------------------
-// OnClose handler â€” the ONLY place where resource cleanup happens.
+// OnClose handler — the ONLY place where resource cleanup happens.
 // VCL calls this while every child control is still alive (before DestroyComponents).
 // The destructor below must NOT touch any control because by then they are freed.
 // ---------------------------------------------------------------------------
@@ -497,7 +497,7 @@ void __fastcall TFormMotecSetup::DoFormClose(TObject *Sender, TCloseAction &Acti
 
     // 0. Detach all PaintBox OnPaint handlers BEFORE any cleanup begins.
     // If a timer fires mid-teardown and triggers WM_PAINT on a control that is
-    // being destroyed, the handler dereferences freed memory â†’ AV / terminate().
+    // being destroyed, the handler dereferences freed memory → AV / terminate().
     if (TireTempPaintBox)        TireTempPaintBox->OnPaint = NULL;
     if (BrakeTempPaintBox)       BrakeTempPaintBox->OnPaint = NULL;
     if (DamperFLPaintBox)        DamperFLPaintBox->OnPaint = NULL;
@@ -518,7 +518,7 @@ void __fastcall TFormMotecSetup::DoFormClose(TObject *Sender, TCloseAction &Acti
 }
 
 // ---------------------------------------------------------------------------
-// Destructor â€” intentionally minimal.
+// Destructor — intentionally minimal.
 // By the time this runs, VCL has already called DestroyComponents() and every
 // child control (timers, buttons, memos) is freed. Touching them here caused an
 // access violation ("Abnormal program termination") on exit. All real cleanup
@@ -530,7 +530,7 @@ TFormMotecSetup::~TFormMotecSetup()
 	// By the time VCL calls our C++ destructor, DestroyComponents() has already
 	// run and a pending WM_TIMER can corrupt atomic members mid-destruction.
 	// All real cleanup (thread join, timer disable, tablet server stop) is done
-	// in DoFormClose above â€” which runs while the form object is fully alive.
+	// in DoFormClose above — which runs while the form object is fully alive.
 }
 
 String ThresholdsFilePath()
@@ -539,8 +539,8 @@ String ThresholdsFilePath()
 }
 
 // ===============================
-// Rule configuration (JSON) â€” Ã‰tape 1 du plan de dÃ©veloppement.
-// Les rÃ¨gles de symptÃ´mes et les alias de canaux vivent dans RuleConfig ;
+// Rule configuration (JSON) — Étape 1 du plan de développement.
+// Les règles de symptômes et les alias de canaux vivent dans RuleConfig ;
 // un fichier JSON optionnel permet de les personnaliser sans recompiler.
 // ===============================
 
@@ -551,12 +551,12 @@ String RulesFilePath()
 
 void loadRuleConfig()
 {
-	String appDir = AppDirPath(); // avec sÃ©parateur final
+	String appDir = AppDirPath(); // avec séparateur final
 
-	// 1) Ã€ cÃ´tÃ© de l'exÃ©cutable.
+	// 1) À côté de l'exécutable.
 	String path = appDir + "MotecDataAnalyser.rules.json";
 	if (!FileExists(path)) {
-		// 2) Sous-rÃ©pertoire config\ (paquet portable).
+		// 2) Sous-répertoire config\ (paquet portable).
 		path = appDir + "config\\MotecDataAnalyser.rules.json";
 	}
 
@@ -565,7 +565,7 @@ void loadRuleConfig()
 		UTF8String utf8 = path;
 		std::string stdPath = utf8.c_str();
 		status = RuleConfig::instance().load(stdPath);
-		// FileNotFound / ParseError : les valeurs par dÃ©faut intÃ©grÃ©es restent en place.
+		// FileNotFound / ParseError : les valeurs par défaut intégrées restent en place.
 	} else {
 		RuleConfig::instance().resetToDefaults();
 	}
@@ -601,7 +601,7 @@ void saveDefaultThresholds()
         ini->WriteFloat("Pressure", "High", g_thresholds.pressureHighPsi);
 		ini->WriteFloat("Pressure", "SideDiffMax", g_thresholds.pressureSideDiffMax);
 
-		// Tyre temp spread (C) â€” per axle
+		// Tyre temp spread (C) — per axle
 		ini->WriteFloat("TyreTemp", "CamberMinSpreadFront", g_thresholds.camberMinSpreadFront);
 		ini->WriteFloat("TyreTemp", "CamberMaxSpreadFront", g_thresholds.camberMaxSpreadFront);
 		ini->WriteFloat("TyreTemp", "CamberMinSpreadRear",  g_thresholds.camberMinSpreadRear);
@@ -755,7 +755,7 @@ void loadThresholdsPart1(TIniFile* ini)
         ini->ReadFloat("Pressure", "HighEvo", ini->ReadFloat("Pressure", "HighAms2", g_thresholds.pressureHighPsi)));
 	g_thresholds.pressureSideDiffMax = ini->ReadFloat("Pressure", "SideDiffMax", g_thresholds.pressureSideDiffMax);
 
-	// Tyre temp spread (C) â€” per axle
+	// Tyre temp spread (C) — per axle
 	g_thresholds.camberMinSpreadFront = ini->ReadFloat("TyreTemp", "CamberMinSpreadFront", g_thresholds.camberMinSpreadFront);
 	g_thresholds.camberMaxSpreadFront = ini->ReadFloat("TyreTemp", "CamberMaxSpreadFront", g_thresholds.camberMaxSpreadFront);
 	g_thresholds.camberMinSpreadRear  = ini->ReadFloat("TyreTemp", "CamberMinSpreadRear",  g_thresholds.camberMinSpreadRear);
@@ -966,7 +966,7 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
     : TForm(Owner)
 {
 	// GDI+ is started in _tWinMain() before this form is created, and shut down there
-	// after Application->Run() returns. Do NOT start/stop it here â€” a double-startup
+	// after Application->Run() returns. Do NOT start/stop it here — a double-startup
 	// (or shutdown while other VCL objects are alive) caused an access violation on exit.
 
 	// Load rule configuration from MotecDataAnalyser.rules.json (optional).
@@ -988,7 +988,7 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
 		const int webPort = ReadWebServerPort();
 		_tabletServer.setPort(webPort);
 		if (!_tabletServer.isRunning() && _tabletServer.start()) {
-			StatusBar1->SimpleText = "Tablet viewer active â€” http://" + getLocalLanIp()
+			StatusBar1->SimpleText = "Tablet viewer active — http://" + getLocalLanIp()
 				+ ":" + IntToStr(_tabletServer.port());
 		}
 	}
@@ -996,7 +996,7 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
 	if (LanguageCombo != NULL) {
 		LanguageCombo->Items->Clear();
 		LanguageCombo->Items->Add("English");
-		LanguageCombo->Items->Add("FranÃ§ais");
+		LanguageCombo->Items->Add("Français");
 		LanguageCombo->ItemIndex = (int)ReadReportLanguageSetting();
 		LanguageCombo->OnChange = LanguageComboChange;
 	}
@@ -1014,7 +1014,7 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
     }
 	if (DamperLayoutTabs != NULL) {
 		int layoutIndex = ReadHistogramLayoutSetting();
-		const int kTabCount = 2; // Grid, Combined â€” matches DFM tab count
+		const int kTabCount = 2; // Grid, Combined — matches DFM tab count
 		if (layoutIndex < 0 || layoutIndex >= kTabCount)
 			layoutIndex = 0;
 		DamperLayoutTabs->ActivePageIndex = layoutIndex;
@@ -1035,16 +1035,16 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
 	if (StatusBar1 && StatusBar1->Panels->Count >= 2)
 		StatusBar1->Panels->Items[1]->Text = kAppVersion;   // ex: "V5.6"
 
-	loadReleaseInfoCache();   // [ReleaseInfo] INI : derniÃ¨res notes connues (hors-ligne OK)
+	loadReleaseInfoCache();   // [ReleaseInfo] INI : dernières notes connues (hors-ligne OK)
 
-	// Fetch asynchrone du dernier release GitHub. Repo privÃ© sans token :
-	// WinHTTP dÃ©lÃ¨gue les credentials Windows de l'utilisateur connectÃ©.
-	// Le worker Ã©crit dans l'Ã©tat global de ReleaseInfo ; ReleasePollTimer (1 s)
-	// rÃ©cupÃ¨re via takePendingRelease() et met Ã  jour UI + cache INI.
+	// Fetch asynchrone du dernier release GitHub. Repo privé sans token :
+	// WinHTTP délègue les credentials Windows de l'utilisateur connecté.
+	// Le worker écrit dans l'état global de ReleaseInfo ; ReleasePollTimer (1 s)
+	// récupère via takePendingRelease() et met à jour UI + cache INI.
 	fetchLatestReleaseAsync("jducable00-gif", "MotecDataAnalyser-Releases");
 
 	if (ReleasePollTimer != NULL) {
-		ReleasePollTimer->Interval = 1000;   // poll de l'Ã©tat global worker -> UI
+		ReleasePollTimer->Interval = 1000;   // poll de l'état global worker -> UI
 		ReleasePollTimer->OnTimer = ReleasePollTimerTimer;
 		ReleasePollTimer->Enabled = true;
 	}
@@ -1052,7 +1052,7 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
 	TranslateUI();
 
 
-	// Plan Â§10b â€” default to the Summary tab at startup so live collection-rate /
+	// Plan Â§10b — default to the Summary tab at startup so live collection-rate /
 	// report content is visible immediately. Runs once here (not in TranslateUI) so a
 	// mid-session language switch doesn't yank the user off their current report tab.
 	if (PageControlReport != NULL && TabSummary != NULL) {
@@ -1064,7 +1064,7 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
 
 	// Wire up OnClose so all resource cleanup (live capture, tablet server) happens
 	// while child controls are still alive. The destructor runs AFTER VCL has already
-	// destroyed every component â€” touching any control there causes an access violation.
+	// destroyed every component — touching any control there causes an access violation.
 	OnClose = DoFormClose;
 
 	// Restore saved window size/position ([Window] in the INI). Runs after DFM load so it
@@ -1081,16 +1081,16 @@ void __fastcall TFormMotecSetup::TranslateUI()
     this->Caption = isFr ? "Analyseur de Setup MoTeC" : "MoTeC Setup Analyzer";
 	LabelProfile->Caption = isFr ? "Profil :" : "Profile:";
     LabelLanguage->Caption = isFr ? "Langue :" : "Language:";
-    ButtonLoad->Caption = isFr ? "Importer DonnÃ©es Motec" : "Import Motec Data";
-    Button1->Caption = isFr ? "Importer DonnÃ©es Motec" : "Import Motec Data";
-    ButtonSettings->Caption = isFr ? "RÃ©glages" : "Settings";
-    if (ButtonAbout != NULL) ButtonAbout->Caption = isFr ? "Ã€ propos" : "About";
+    ButtonLoad->Caption = isFr ? "Importer Données Motec" : "Import Motec Data";
+    Button1->Caption = isFr ? "Importer Données Motec" : "Import Motec Data";
+    ButtonSettings->Caption = isFr ? "Réglages" : "Settings";
+    if (ButtonAbout != NULL) ButtonAbout->Caption = isFr ? "À propos" : "About";
     LiveCaptureCheckBox->Caption = isFr ? "Capture Live" : "Live Capture";
-    ButtonResetSession->Caption = isFr ? "RÃ©initialiser" : "Reset";
+    ButtonResetSession->Caption = isFr ? "Réinitialiser" : "Reset";
     AutoDetectTrackCheckBox->Caption = isFr ? "Auto" : "Auto";
 
-    TabSummary->Caption = isFr ? "RÃ©sumÃ©" : "Summary";
-    TabGeneral->Caption = isFr ? "GÃ©nÃ©ral" : "General";
+    TabSummary->Caption = isFr ? "Résumé" : "Summary";
+    TabGeneral->Caption = isFr ? "Général" : "General";
     TabTyre->Caption = isFr ? "Pneus" : "Tyre";
     TabBrake->Caption = isFr ? "Freins" : "Brake";
     TabSuspension->Caption = isFr ? "Suspensions" : "Suspension";
@@ -1142,7 +1142,7 @@ void __fastcall TFormMotecSetup::LanguageComboChange(TObject *Sender)
 	ReportLanguage language = (ReportLanguage)LanguageCombo->ItemIndex;
 	SaveReportLanguageSetting(language);
 	TranslateUI();
-	MemoSummary->Lines->Add(language == ReportLanguage::French ? "Langue changÃ©e en franÃ§ais." : "Language changed to English.");
+	MemoSummary->Lines->Add(language == ReportLanguage::French ? "Langue changée en français." : "Language changed to English.");
 }
 
 void __fastcall TFormMotecSetup::ChannelProfileComboChange(TObject *Sender)
@@ -1157,7 +1157,7 @@ void __fastcall TFormMotecSetup::ChannelProfileComboChange(TObject *Sender)
 	if (profile == ChannelProfile::EvoM1)      profileName = "Evo";
 	else if (profile == ChannelProfile::Pmr)   profileName = "PMR";
 
-	// Wipe all previously displayed data â€” the old profile's results no longer apply.
+	// Wipe all previously displayed data — the old profile's results no longer apply.
 	resetAnalysisGraphics();
 	if (MemoSummary != NULL)       MemoSummary->Lines->Clear();
 	if (MemoGeneral != NULL)       MemoGeneral->Lines->Clear();
@@ -1722,11 +1722,11 @@ void __fastcall TFormMotecSetup::DamperRRPaintBoxPaint(TObject *Sender) {
 namespace {
 struct CornerVelStats {
     double reboundSidePct = -1;   // total % of all samples on the rebound side
-    double reboundHiPct = -1;     // % of samples with |v| > slowRange (rebound side) â€” fast
-    double reboundLoPct = -1;     // % of samples with |v| <= slowRange (rebound side) â€” slow
+    double reboundHiPct = -1;     // % of samples with |v| > slowRange (rebound side) — fast
+    double reboundLoPct = -1;     // % of samples with |v| <= slowRange (rebound side) — slow
     double bumpSidePct  = -1;     // total % of all samples on the bump side
-    double bumpHiPct    = -1;     // % of samples with v  > slowRange (bump side) â€” fast
-    double bumpLoPct    = -1;     // % of samples with |v| <= slowRange (bump side) â€” slow
+    double bumpHiPct    = -1;     // % of samples with v  > slowRange (bump side) — fast
+    double bumpLoPct    = -1;     // % of samples with |v| <= slowRange (bump side) — slow
     double avgReboundMs = -1e308;  // mean velocity on rebound side, mm/s (unused in legend)
     double avgBumpMs    = -1e308;  // mean velocity on bump side,   mm/s (unused in legend)
     double reboundAvgPct = -1.0; // (Fast % + Slow %) / 2 on the rebound side
@@ -1891,10 +1891,10 @@ void __fastcall TFormMotecSetup::DrawCombinedDamperChart(Gdiplus::Graphics& grap
         // Four data rows: colored corner label + six % values; "--" when invalid.
         const wchar_t* cornerNames[4] = { L"Damper Vel FL", L"Damper Vel FR", L"Damper Vel RL", L"Damper Vel RR" };
         Gdiplus::Color colors[4] = {
-            Gdiplus::Color(255, 237, 64, 59),   // FL â€” red
-            Gdiplus::Color(255, 255, 193, 7),   // FR â€” amber/yellow
-            Gdiplus::Color(255, 80, 220, 104),  // RL â€” green
-            Gdiplus::Color(255, 64, 156, 255)   // RR â€” blue/cyan
+            Gdiplus::Color(255, 237, 64, 59),   // FL — red
+            Gdiplus::Color(255, 255, 193, 7),   // FR — amber/yellow
+            Gdiplus::Color(255, 80, 220, 104),  // RL — green
+            Gdiplus::Color(255, 64, 156, 255)   // RR — blue/cyan
         };
 
         for (int i = 0; i < 4; ++i) {
@@ -1967,7 +1967,7 @@ void __fastcall TFormMotecSetup::DrawCombinedDamperChart(Gdiplus::Graphics& grap
                 Gdiplus::PointF(chartLeft - lb.Width - 6.0f, yPix - lb.Height / 2.0f), &axisText);
         }
 
-        // X ticks: fixed âˆ’200 â€¦ +200 step 50 mm/s; vertical grid lines at each tick.
+        // X ticks: fixed −200 … +200 step 50 mm/s; vertical grid lines at each tick.
         for (int val = -200; val <= 200; val += 50) {
             float xPix = chartLeft + ((float)(val + 205) / 410.0f) * chartWidth;
 
@@ -2023,10 +2023,10 @@ void __fastcall TFormMotecSetup::DrawCombinedDamperChart(Gdiplus::Graphics& grap
 
         // --- Step 8f: per-corner curves (area fill + polyline) -----------------
         const Gdiplus::Color colors[4] = {
-            Gdiplus::Color(255, 237, 64, 59),   // FL â€” red
-            Gdiplus::Color(255, 255, 193, 7),   // FR â€” amber/yellow
-            Gdiplus::Color(255, 80, 220, 104),  // RL â€” green
-            Gdiplus::Color(255, 64, 156, 255)   // RR â€” blue/cyan
+            Gdiplus::Color(255, 237, 64, 59),   // FL — red
+            Gdiplus::Color(255, 255, 193, 7),   // FR — amber/yellow
+            Gdiplus::Color(255, 80, 220, 104),  // RL — green
+            Gdiplus::Color(255, 64, 156, 255)   // RR — blue/cyan
         };
 
         for (int i = 0; i < 4; ++i) {
@@ -2300,7 +2300,7 @@ void __fastcall TFormMotecSetup::UpdateBrakeTemps(const std::vector<LapStats>& l
             MemoBrake->Lines->Add(String(L""));  // blank separator line
 
             String carNameWide(carName.c_str());   // narrow -> wide (ANSI codepage)
-			MemoBrake->Lines->Add((isFr2 ? L"Seuil d'Ã©fficacitÃ© tempÃ©rature Max: " : L"Max Temp Fade threshold : ") + carNameWide);
+			MemoBrake->Lines->Add((isFr2 ? L"Seuil d'éfficacité température Max: " : L"Max Temp Fade threshold : ") + carNameWide);
 
             const wchar_t* cornerNames[4] = {
                 isFr2 ? L"AV G" : L"FL",
@@ -2467,7 +2467,7 @@ void __fastcall TFormMotecSetup::TireTempPaintBoxPaint(TObject *Sender)
         }
 
         // Center the three values as a group under the tire, with enough gap to keep 3-digit temps readable.
-        const int tempGap = 12;   // px between temperature strings (was 4 â€” too tight for "127.9Â°")
+        const int tempGap = 12;   // px between temperature strings (was 4 — too tight for "127.9Â°")
         int totalW = canvas->TextWidth(s1) + canvas->TextWidth(s2) + canvas->TextWidth(s3) + 2 * tempGap;
         int tx = centerX - totalW / 2;
         canvas->TextOut(tx, tempY, s1);
@@ -2696,7 +2696,7 @@ void __fastcall TFormMotecSetup::resetLiveSession()
 	AcsEvoResetFrameTracking();
 
 	// Drain buffer: frames queued by the capture thread belong to the OLD profile's
-	// union member â€” draining them under a new liveMode would read garbage. The
+	// union member — draining them under a new liveMode would read garbage. The
 	// idling capture thread only appends when connected, so clearing here is safe.
 	{
 	    std::lock_guard<std::mutex> lock(frameMutex);
@@ -2737,7 +2737,7 @@ void __fastcall TFormMotecSetup::ButtonResetSessionClick(TObject *Sender)
 	MemoSuspension->Lines->Clear();
 	MemoEngineCooling->Lines->Clear();
 	MemoHandling->Lines->Clear();
-	MemoSummary->Lines->Add("Session reset â€” ready for new collection.");
+	MemoSummary->Lines->Add("Session reset — ready for new collection.");
 
 	// Hide all data tabs (they'll reappear when the next report is generated).
 	if (TabGeneral != NULL) TabGeneral->Visible = false;
@@ -2822,10 +2822,10 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
     if (liveMode == LIVE_EVO) {
         ok = AcsEvoOpenSharedMemory(err);
     } else if (liveMode == LIVE_PMR) {
-        // PMR: bind the UDP socket. No process check â€” a successful bind means we are
+        // PMR: bind the UDP socket. No process check — a successful bind means we are
         // ready to receive; telemetry arrives only while the game is running.
         String bindAddrW = ReadPmrBindAddressSetting().Trim();
-        std::string bindAddr;  // empty string â†’ INADDR_ANY (all interfaces)
+        std::string bindAddr;  // empty string → INADDR_ANY (all interfaces)
         if (!bindAddrW.IsEmpty()) {
             int len = WideCharToMultiByte(CP_UTF8, 0, bindAddrW.c_str(), -1, nullptr, 0, nullptr, nullptr);
             if (len > 0) {
@@ -2851,7 +2851,7 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
         LiveConnectTimer->Enabled = false;
 
         // Start the high-rate data timer. AC EVO polls at a fixed fast rate from frame #1 so no physics
-        // packet is ever overwritten between reads â€” see updateLiveAdaptiveInterval() for details.
+        // packet is ever overwritten between reads — see updateLiveAdaptiveInterval() for details.
         LiveTimer->Interval = 4;    // reset to default before adaptive logic takes over (plan Â§6)
         LiveTimer->Enabled = true;  // START the UI processing loop
 
@@ -2879,7 +2879,7 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
         {
             // Read static track name + variant from shared memory.
             // Combine "track" and "track_configuration" for a full display name
-            // e.g. "Silverstone" + "GP" â†’ "Silverstone GP".
+            // e.g. "Silverstone" + "GP" → "Silverstone GP".
             SPageFileStaticEvo stat;
             if (AcsEvoReadStatic(stat) && strlen(stat.track) > 0)
                 liveTrackName = std::string(stat.track) +
@@ -2893,7 +2893,7 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
                 if (!tblWarn.empty())
                     MemoSummary->Lines->Add(String(tblWarn.c_str()));
             }
-			//StatusBar1->SimpleText = "Live: connected (AC EVO) â€” waiting for track";
+			//StatusBar1->SimpleText = "Live: connected (AC EVO) — waiting for track";
         }
         else if (liveMode == LIVE_PMR)
         {
@@ -2908,14 +2908,14 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
                 if (!tblWarn.empty())
                     MemoSummary->Lines->Add(String(tblWarn.c_str()));
             }
-			//StatusBar1->SimpleText = "Live: connected (PMR) â€” waiting for telemetry";
+			//StatusBar1->SimpleText = "Live: connected (PMR) — waiting for telemetry";
         }
         else
         {
             // We don't add the "Waiting..." message yet, because we might be 
             // immediately seeing a frame that says we are on track.
             // Instead, let processLiveFrame handle the status updates.
-			//StatusBar1->SimpleText = "Live: connected â€” waiting for car to leave pits...";
+			//StatusBar1->SimpleText = "Live: connected — waiting for car to leave pits...";
             MemoSummary->Lines->Add("Live: connected to AMS2. Waiting for car to leave pits...");
 
             // Surface channel-table problems immediately (e.g. mapping.json missing next to the exe).
@@ -2928,7 +2928,7 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
     }
     else
     {
-        // Still not connected â€” keep retrying
+        // Still not connected — keep retrying
 		//if (liveMode == LIVE_EVO)
 			//StatusBar1->SimpleText = "Live: connecting... (AC EVO not detected)";
 		//else
@@ -2941,7 +2941,7 @@ void __fastcall TFormMotecSetup::stopLiveCapture(bool isShuttingDown)
     // Stop the capture thread first to avoid accessing closed handles.
     // Reconnect mode: leave a live idling thread running (it sleeps while !liveConnected) so we
     // don't churn create/join on every reconnect cycle. Only join+delete when fully stopping,
-    // shutting down, or switching simulator profile â€” the connect handler recreates it then.
+    // shutting down, or switching simulator profile — the connect handler recreates it then.
     if (captureThread != nullptr && !(LiveCaptureCheckBox != NULL && LiveCaptureCheckBox->Checked && !isShuttingDown)) {
         stopCaptureThread = true;
         // Give the thread a moment to see the flag and exit its loop before joining
@@ -3046,7 +3046,7 @@ void TFormMotecSetup::checkEvoPacketJump(const char* label, int id, bool isPhys)
     if (isPhys) liveEvoLastPhysId = id; else liveEvoLastGfxId = id;
 
     if (prevId < 0 || id <= prevId)
-        return;   // first read this connection, or token wrap/step â€” nothing to report
+        return;   // first read this connection, or token wrap/step — nothing to report
 
     const int delta = id - prevId;
     if (delta > 1) {
@@ -3062,7 +3062,7 @@ void __fastcall TFormMotecSetup::updateLiveAdaptiveInterval(double simFpsHint)
         liveSessionStartMs = (double)GetTickCount64();
 
     // Measure arrival rate from wall-clock time between accepted NewFrames, EMA-smoothed (alpha=0.1).
-    double nowMs = (double)GetTickCount64();   // ms since boot; wraps only after ~49 days â€” fine for a live session
+    double nowMs = (double)GetTickCount64();   // ms since boot; wraps only after ~49 days — fine for a live session
     if (liveLastNewFrameMs > 0.0) {
         double dtSec = (nowMs - liveLastNewFrameMs)/1000.0;
         if (dtSec > 0 && dtSec < 0.2) {            // sanity guard against huge gaps / clock jumps (>200ms => not a real frame interval)
@@ -3093,7 +3093,7 @@ void __fastcall TFormMotecSetup::updateLiveAdaptiveInterval(double simFpsHint)
     // Throttle the actual write to LiveTimer->Interval: only apply ~every 15 accepted frames (~4 Hz cadence at 60 fps),
     // and only when it differs from current, so we don't churn a VCL property on every tick. On this same cadence we also
     // refresh LabelLiveStatus with the live FPS readout (plan Â§6: "surface it in the live status line"). We never touch
-    // Font->Color here â€” connection-state color is owned by connect/reconnect/disconnect handlers.
+    // Font->Color here — connection-state color is owned by connect/reconnect/disconnect handlers.
     if (++liveAdaptiveCounter >= 15) {
         liveAdaptiveCounter = 0;
 
@@ -3146,7 +3146,7 @@ void TFormMotecSetup::captureThreadFunc()
 
             // AC EVO writes the physics page at ~333 Hz (~every 3 ms). Polling every ~1-2 ms
             // (timeBeginPeriod(1) in WinMain unlocks sub-ms timer resolution) comfortably exceeds
-            // that write rate, so no packetId increment goes unseen â€” while eliminating the previous
+            // that write rate, so no packetId increment goes unseen — while eliminating the previous
             // yield-only busy-loop that spun at full CPU speed between sim writes.
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
@@ -3168,7 +3168,7 @@ void TFormMotecSetup::captureThreadFunc()
             }
 
             // AMS2 writes shared memory at ~60-90 Hz (~every 11 ms). An 8 ms poll comfortably exceeds
-            // that rate, so no mSequenceNumber increment goes unseen â€” and the thread sleeps most of its time.
+            // that rate, so no mSequenceNumber increment goes unseen — and the thread sleeps most of its time.
             std::this_thread::sleep_for(std::chrono::milliseconds(8));
         }
         else {
@@ -3215,7 +3215,7 @@ void __fastcall TFormMotecSetup::LiveTimerTimer(TObject *Sender)
     else if (liveMode == LIVE_EVO)
     {
         // Retry reading the static page until we get a non-empty track name.
-        // At connect time the game may not have written it yet â†’ one-shot read can miss it.
+        // At connect time the game may not have written it yet → one-shot read can miss it.
         if (liveTrackName.empty())
         {
             SPageFileStaticEvo stat;
@@ -3265,7 +3265,7 @@ void __fastcall TFormMotecSetup::processLiveFrame(const Ams2SharedMemory& frame)
 		MemoSummary->Lines->Add("Auto: new session started.");
 	}
 
-	// 0. Detect pit â†’ track transition: start a new lap if none is currently in progress
+	// 0. Detect pit → track transition: start a new lap if none is currently in progress
 	if (onTrack && !liveWasOnTrack && !liveLapInProgress && sessionLapCounter == 0) {
 		// Wipe all previously displayed data so the fresh run starts from a clean slate:
 		// clears tire/brake/water/oil + suspension caches and repaints every paintbox empty.
@@ -3371,7 +3371,7 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
 		MemoSummary->Lines->Add("Auto: new session started.");
 	}
 
-    // Detect pit â†’ track transition: start a new lap
+    // Detect pit → track transition: start a new lap
     if (onTrack && !liveWasOnTrack)
     {
         liveEvoPitReportDone = false;  // allow report again on next pit visit
@@ -3384,7 +3384,7 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
         liveCurrentLap.trackName = liveTrackName;
 
         // Seed npos so the wrap detector doesn't fire on this same frame:
-        // pit exit is at nposâ‰ˆ0.95, next frame drops to <0.2 â€” looks like a line
+        // pit exit is at npos≈0.95, next frame drops to <0.2 — looks like a line
         // crossing but you've only driven ~3% of track length. By seeding here,
         // prevNPos == curNPos and the > 0.8 && < 0.2 condition can't trigger.
         liveEvoPrevNPos = gfx.npos;
@@ -3393,8 +3393,8 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
 		//StatusBar1->SimpleText = "Live: Lap " + IntToStr(liveLapNumber) + " in progress";
     }
 
-    // Detect track â†’ pit arrival: finalize the lap.
-    // No liveWasOnTrack guard â€” teleports (ESC menu) can skip a frame where neither
+    // Detect track → pit arrival: finalize the lap.
+    // No liveWasOnTrack guard — teleports (ESC menu) can skip a frame where neither
     // onTrack nor inPits is true, clearing liveWasOnTrack before we settle into pits.
     if (inPits && liveLapInProgress)
     {
@@ -3410,11 +3410,11 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
         liveEvoPitReportDone = true;
     }
 
-    // --- npos wrap detection: backward jump >40% of track â†’ start/finish line crossing on track ---
+    // --- npos wrap detection: backward jump >40% of track → start/finish line crossing on track ---
     // Catches laps that complete without a pit stop (normalized position wraps ~1 -> 0).
     // Using "backward delta" instead of fixed thresholds (>0.8/<0.2) makes this robust to
     // dropped frames: with frame-sync change-detection we may skip intermediate writes, so
-    // prev can be e.g. 0.75 and cur 0.3 â€” the old threshold pair would miss that crossing.
+    // prev can be e.g. 0.75 and cur 0.3 — the old threshold pair would miss that crossing.
     if (onTrack && liveLapInProgress && (liveEvoPrevNPos - gfx.npos) > 0.4f) {
         liveCurrentLap.endTime = (double)GetTickCount64() / 1000.0;
         finalizeLiveLap();
@@ -3431,7 +3431,7 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
         MemoSummary->Lines->Add("Lap " + IntToStr(liveLapNumber) + " started (line crossing).");
     }
 
-    // Feed data only when on track and lap is in progress. A plausibility-rejected physics page (physUsable=false) skips the feed for this tick ONLY â€” its values are excluded from lap stats, but npos tracking continues so line-crossing detection stays accurate.
+    // Feed data only when on track and lap is in progress. A plausibility-rejected physics page (physUsable=false) skips the feed for this tick ONLY — its values are excluded from lap stats, but npos tracking continues so line-crossing detection stays accurate.
     if (onTrack && liveLapInProgress)
     {
         double timeSeconds = HighResClockSeconds();   // QPC: GetTickCount64's ~15 ms resolution compressed damper velocities toward zero
@@ -3458,7 +3458,7 @@ void __fastcall TFormMotecSetup::processLiveFramePmir()
         MemoSummary->Lines->Add("PMR: track is " + String(t.c_str()));
     }
 
-    // No player state yet â€” nothing to do this tick.
+    // No player state yet — nothing to do this tick.
     int playerId = PmrGetPlayerId();
     if (playerId < 0) return;
 
@@ -3466,7 +3466,7 @@ void __fastcall TFormMotecSetup::processLiveFramePmir()
     int  sector   = PmrGetCurrentSector(playerId);   // -1 when unknown / between laps
     bool onTrack  = !inPits && sector >= 0;          // "on track" means we have a valid sector reading
 
-    // --- Auto-detect: back on track after a completed session â†’ fresh start ---
+    // --- Auto-detect: back on track after a completed session → fresh start ---
     if (onTrack && !liveWasOnTrack &&
         AutoDetectTrackCheckBox != NULL && AutoDetectTrackCheckBox->Checked &&
         !liveLaps.empty()) {
@@ -3476,7 +3476,7 @@ void __fastcall TFormMotecSetup::processLiveFramePmir()
         sector = PmrGetCurrentSector(playerId);
     }
 
-    // --- Pit â†’ track transition: start a new lap ---
+    // --- Pit → track transition: start a new lap ---
     if (onTrack && !liveWasOnTrack) {
         liveLapInProgress  = true;
         ++liveLapNumber;
@@ -3492,7 +3492,7 @@ void __fastcall TFormMotecSetup::processLiveFramePmir()
         MemoSummary->Lines->Add("PMR Lap " + IntToStr(liveLapNumber) + " started.");
     }
 
-    // --- Track â†’ pit transition: finalize the lap and generate report if we have data ---
+    // --- Track → pit transition: finalize the lap and generate report if we have data ---
     if (inPits && liveWasOnTrack) {
         if (liveLapInProgress) {
             liveCurrentLap.endTime = (double)GetTickCount64() / 1000.0;
@@ -3505,7 +3505,7 @@ void __fastcall TFormMotecSetup::processLiveFramePmir()
         }
     }
 
-    // --- Sector-wrap detection: prevSector >= 3 && cur <= 1 â†’ lap boundary on track ---
+    // --- Sector-wrap detection: prevSector >= 3 && cur <= 1 → lap boundary on track ---
     // This catches laps that complete without a pit stop (sector wraps from S3 back to S1).
     if (onTrack && liveLapInProgress && pmrPrevSector >= 3 && sector <= 1) {
         liveCurrentLap.endTime = (double)GetTickCount64() / 1000.0;
@@ -3580,7 +3580,7 @@ void __fastcall TFormMotecSetup::generateLiveReport()
     if (TabSummary != NULL && TabSummary->Visible)
         PageControlReport->ActivePage = TabSummary;
 
-    //StatusBar1->SimpleText = "Live capture complete â€” " + IntToStr((int)liveLaps.size()) + " laps";
+    //StatusBar1->SimpleText = "Live capture complete — " + IntToStr((int)liveLaps.size()) + " laps";
 }
 
 // B5: push a fresh JSON payload to the tablet server after every analysis.
@@ -3607,7 +3607,7 @@ void TFormMotecSetup::ApplyWebServerSettings()
     if (enabled) {
         _tabletServer.setPort(port);
         if (!_tabletServer.start()) return;  // start() already shows an error message on failure
-        StatusBar1->SimpleText = "Tablet viewer active â€” http://" + getLocalLanIp()
+        StatusBar1->SimpleText = "Tablet viewer active — http://" + getLocalLanIp()
                 + ":" + IntToStr(_tabletServer.port());
     } else {
         StatusBar1->SimpleText = "";
@@ -3647,7 +3647,7 @@ void __fastcall TFormMotecSetup::UpdateReportTabs(const ReportResult& result)
         MemoSummary->Text = formatForMemo(result.at(ReportSection::Summary).content);
     }
 
-    // Plan Â§10a â€” live collection-rate line appended to the Summary memo so it stays
+    // Plan Â§10a — live collection-rate line appended to the Summary memo so it stays
     // visible alongside report content while a live session is running.
     if (liveActive && liveFrameCount > 0) {
         const double elapsedSec = ((double)(GetTickCount64() - (__int64)liveSessionStartMs)) / 1000.0;
@@ -3670,7 +3670,7 @@ void __fastcall TFormMotecSetup::UpdateReportTabs(const ReportResult& result)
         }
         MemoSummary->Lines->Add(rateLine);
         if (lagWarning)
-            MemoSummary->Lines->Add("Warning: reader lag â€” consider lowering LiveTimer interval.");
+            MemoSummary->Lines->Add("Warning: reader lag — consider lowering LiveTimer interval.");
     }
 
     if (result.count(ReportSection::General)) {
@@ -3726,7 +3726,7 @@ void __fastcall TFormMotecSetup::UpdateReportTabs(const ReportResult& result)
 
     // Force a REAL page transition so Windows properly hides/shows tab windows
     // and triggers painting. If ActivePage is already Summary, VCL does nothing
-    // on re-assignment â€” no show/hide, no repaint, stale pixels remain.
+    // on re-assignment — no show/hide, no repaint, stale pixels remain.
     // Bouncing through another visible tab replicates what clicking does.
     if (TabSummary != NULL && TabSummary->Visible) {
         if (PageControlReport->ActivePage == TabSummary) {
@@ -3820,8 +3820,8 @@ void __fastcall TFormMotecSetup::UpdateSuspension(std::vector<LapStats>& laps)
 
 // ---------------------------------------------------------------------------
 // Release info : version dynamique + notes de release GitHub
-// Toutes ces mÃ©thodes s'exÃ©cutent sur le thread UI uniquement. Le worker rÃ©seau
-// Ã©crit dans l'Ã©tat global de ReleaseInfo.cpp ; takePendingRelease() fait la
+// Toutes ces méthodes s'exécutent sur le thread UI uniquement. Le worker réseau
+// écrit dans l'état global de ReleaseInfo.cpp ; takePendingRelease() fait la
 // passerelle (voir ReleasePollTimerTimer).
 // ---------------------------------------------------------------------------
 
@@ -3834,7 +3834,7 @@ void __fastcall TFormMotecSetup::loadReleaseInfoCache()
 		m_latestRelease.publishedAt = WideStringToUtf8(settings->ReadString("ReleaseInfo", "PublishedAt", ""));
 		m_latestRelease.body        = WideStringToUtf8(settings->ReadString("ReleaseInfo", "Body", ""));
 		m_latestRelease.assetUrl    = WideStringToUtf8(settings->ReadString("ReleaseInfo", "Asset", ""));
-		m_hasCachedRelease = !m_latestRelease.empty();   // tag prÃ©sent => cache utile
+		m_hasCachedRelease = !m_latestRelease.empty();   // tag présent => cache utile
 	} __finally {
 		delete settings;
 	}
@@ -3842,7 +3842,7 @@ void __fastcall TFormMotecSetup::loadReleaseInfoCache()
 
 void __fastcall TFormMotecSetup::saveReleaseInfoCache(const AppRelease& rel)
 {
-	if (rel.empty()) return;   // rien Ã  cacher sans tag
+	if (rel.empty()) return;   // rien à cacher sans tag
 	TIniFile* settings = new TIniFile(SettingsFilePath());
 	try {
 		settings->WriteString("ReleaseInfo", "Tag",         Utf8ToWideString(rel.tagName));
@@ -3871,7 +3871,7 @@ String __fastcall TFormMotecSetup::buildAboutText() const
 	if (!m_latestRelease.empty()) {
 		const String tag     = Utf8ToWideString(m_latestRelease.tagName);
 		const String dateStr = Utf8ToWideString(formatReleaseDate(m_latestRelease.publishedAt, isFr));
-		const String relLabel = isFr ? "DerniÃ¨re release : " : "Latest release: ";
+		const String relLabel = isFr ? "Dernière release : " : "Latest release: ";
 		text += String(sLineBreak) + relLabel + tag;
 		if (!dateStr.IsEmpty()) text += String(" (") + dateStr + String(")");
 		const int cmp = compareVersions(kAppVersion, m_latestRelease.tagName);
@@ -3892,7 +3892,7 @@ String __fastcall TFormMotecSetup::buildAboutText() const
 		}
 	} else {
 		const String noInfo = isFr
-		    ? "(Aucune information de release disponible â€” hors-ligne ou premier lancement.)"
+		    ? "(Aucune information de release disponible — hors-ligne ou premier lancement.)"
 		    : "(No release info available - offline or first launch.)";
 		text += String(sLineBreak) + noInfo;
 	}
