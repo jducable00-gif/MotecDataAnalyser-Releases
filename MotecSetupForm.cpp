@@ -1037,6 +1037,8 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
 
 	loadReleaseInfoCache();   // [ReleaseInfo] INI : dernières notes connues (hors-ligne OK)
 
+	promptForAvailableUpdate();// popup immediat si le cache contient deja une version plus recente
+
 	// Fetch asynchrone du dernier release GitHub. Repo privé sans token :
 	// WinHTTP délègue les credentials Windows de l'utilisateur connecté.
 	// Le worker écrit dans l'état global de ReleaseInfo ; ReleasePollTimer (1 s)
@@ -3835,6 +3837,10 @@ void __fastcall TFormMotecSetup::loadReleaseInfoCache()
 		m_latestRelease.body        = WideStringToUtf8(settings->ReadString("ReleaseInfo", "Body", ""));
 		m_latestRelease.assetUrl    = WideStringToUtf8(settings->ReadString("ReleaseInfo", "Asset", ""));
 		m_hasCachedRelease = !m_latestRelease.empty();   // tag présent => cache utile
+		for (int i = 0; i < 8; ++i) {   // tags refuses : pas de re-proposition au demarrage suivant non plus
+			m_declinedUpdateTags[i] = WideStringToUtf8(settings->ReadString("ReleaseInfo", ("Declined" + IntToStr(i)).c_str(), ""));
+		}
+
 	} __finally {
 		delete settings;
 	}
@@ -3855,6 +3861,91 @@ void __fastcall TFormMotecSetup::saveReleaseInfoCache(const AppRelease& rel)
 	}
 }
 
+
+// [ReleaseInfo] Popup au demarrage : propose la mise a jour si le cache INI contient deja une version plus recente que l exe courante.
+void __fastcall TFormMotecSetup::promptForAvailableUpdate()
+{
+	if (!m_hasCachedRelease || !isUpdateAvailable(m_latestRelease)) return;   // rien de neuf (ou pas encore de reseau)
+
+	const std::string tag = m_latestRelease.tagName;
+	if (tag.empty()) return;
+	for (int i = 0; i < 8; ++i) {       // deja refuse par l utilisateur ? on ne relance plus le popup.
+		if (!m_declinedUpdateTags[i].empty() && m_declinedUpdateTags[i] == tag) return;
+	}
+
+	const bool isFr = ReadReportLanguageSetting() == ReportLanguage::French;
+	String msg = String(isFr ? "Version courante : " : "Current version: ") + kAppVersion + sLineBreak
+	           + (isFr ? "Nouvelle version disponible : " : "New update available: ") + Utf8ToWideString(tag);
+
+	m_updatePromptTag = tag;            // un seul popup par lancement, meme si le timer re-polle.
+	int choice = MessageBoxW(NULL, msg.c_str(), isFr ? L"Mise a jour disponible" : L"Update available", MB_YESNO | MB_ICONINFORMATION);
+	if (choice == IDYES) {
+		startSelfUpdate();              // pas de bouton ici ; le timer ReleasePollTimer affichera la progression dans le dialog A propos.
+	} else if (choice == IDNO) {        // memoire anti-spam : on ne re-proposera plus ce tag tant qu'une version suivante n'arrive pas.
+		for (int i = 7; i > 0; --i) m_declinedUpdateTags[i] = m_declinedUpdateTags[i - 1];
+		m_declinedUpdateTags[0] = tag;
+		TIniFile* settings = new TIniFile(SettingsFilePath());   // meme fichier que le cache de release (MotecDataAnalyser.ini).
+		try {
+			for (int i = 0; i < 8; ++i)
+				settings->WriteString("ReleaseInfo", ("Declined" + IntToStr(i)).c_str(), Utf8ToWideString(m_declinedUpdateTags[i]));
+		} __finally { delete settings; }
+	}
+}
+
+// [ReleaseInfo] Telechargement de l asset du release GitHub + echange des exe + relance avec /updated.
+void __fastcall TFormMotecSetup::startSelfUpdate(TButton* progressBtn)
+{
+	if (m_updateState.load() != 0) return;   // deja en cours
+
+	std::wstring curExeW = std::wstring(Application->ExeName.c_str());
+	const String appDir = AppDirPath();      // se termine par un backslash.
+	std::wstring exeDirW;   // dossier de l exe en wide (CreateProcessW lpCurrentDirectory).
+	for (size_t k = curExeW.size(); k > 0; --k) { if (curExeW[k - 1] == L'\\') { exeDirW.assign(curExeW, 0, k); break; } }
+
+	std::wstring newExeW = (appDir + "MotecDataAnalyser.new.exe").c_str();   // telecharge ici, puis echange avec l exe courante.
+	std::wstring oldExeW = (appDir + "MotecDataAnalyser.old.exe").c_str();
+
+	const std::string urlUtf8 = m_latestRelease.assetUrl;   // copie locale : le thread ne lit pas de membre du form apres detach().
+	if (urlUtf8.empty()) { MessageBoxW(NULL, L"No update asset URL available.", L"Update", MB_ICONWARNING); return; }
+
+	m_downloadReceived.store(0);
+	m_downloadTotal.store(-1);
+	m_updateState.store(1);                  // 1 = telechargement en cours ; le timer ReleasePollTimer lit ces atomiques.
+	if (progressBtn) progressBtn->Enabled = false;   // bouton du dialog A propos : desactive pendant l update, re-active par le timer a la fin.
+
+	std::thread([urlUtf8, exeDirW, newExeW, oldExeW, curExeW, this]() {
+		bool ok = downloadReleaseAsset(urlUtf8, newExeW, [this](long long rec, long long tot) {   // thread HTTP : ne touche pas au VCL.
+			m_downloadReceived.store(rec);
+			if (tot > 0) m_downloadTotal.store(tot);
+		});
+
+		if (!ok) { DeleteFileW(newExeW.c_str()); m_updateState.store(3); return; }   // echec : on nettoie et le timer affichera l erreur.
+
+		bool swapped = (MoveFileExW(curExeW.c_str(), oldExeW.c_str(), MOVEFILE_REPLACE_EXISTING) != 0);
+		if (swapped) {
+			swapped = (MoveFileExW(newExeW.c_str(), curExeW.c_str(), 0) != 0);   // la nouvelle exe prend le nom courant.
+			if (!swapped) DeleteFileW(newExeW.c_str());                   // on ne peut pas ecrire : on garde l ancienne version intacte.
+		}
+
+		bool created = false;
+		if (swapped) {   // relance de la nouvelle exe avec /updated ; le WinMain nettoiera alors MotecDataAnalyser.old.exe au demarrage.
+			std::wstring cmdLine = L"\"" + curExeW + L"\" /updated";
+			wchar_t* cmdBuf = new wchar_t[cmdLine.size() + 1];   // CreateProcessW modifie la chaine : tampon mutable obligatoire.
+			for (size_t i = 0; i <= cmdLine.size(); ++i) cmdBuf[i] = cmdLine[i];
+
+			STARTUPINFOW siw{}; PROCESS_INFORMATION pi{};
+			siw.cb = sizeof(siw);
+			bool okProc = CreateProcessW(NULL, cmdBuf, NULL, NULL, FALSE, 0, NULL, exeDirW.c_str(), &siw, &pi) != 0;   // working dir = dossier de l exe.
+			delete[] cmdBuf;
+
+			if (okProc) { CloseHandle(pi.hThread); CloseHandle(pi.hProcess); created = true; }
+		} else { DeleteFileW(newExeW.c_str()); }
+
+		m_updateState.store(created ? 2 : 3);   // 2 = relance en cours ; le timer terminera l ancienne instance.
+	}).detach();
+
+	if (progressBtn) progressBtn->Caption = "Mise a jour...";
+}
 String __fastcall TFormMotecSetup::buildAboutText() const
 {
 	const bool isFr = ReadReportLanguageSetting() == ReportLanguage::French;
@@ -3958,6 +4049,8 @@ void __fastcall TFormMotecSetup::ReleasePollTimerTimer(TObject *Sender)
 		m_latestRelease = std::move(rel);      // main thread : pas besoin de mutex ici
 		m_hasCachedRelease = true;
 		saveReleaseInfoCache(m_latestRelease); // cache INI pour mode hors-ligne
+
+	promptForAvailableUpdate();   // popup si la version reseau est plus recente que l exe courante
 	}
 	int state = m_updateState.load();
 	if (state == 2) {                          // self-update termine, relance demarree
@@ -3999,52 +4092,9 @@ void __fastcall TFormMotecSetup::UpdateButtonClick(TObject *Sender)
 {
 	// Garde : un update est deja en cours (1), relance attendue (2) ou echec a traiter (3).
 	if (m_updateState.load() != 0) return;
-	TButton* btn = dynamic_cast<TButton*>(Sender);
-	// Chemins (exe courant + fichiers temporaires de self-update, tous dans le dossier exe).
-	std::wstring curExeW = std::wstring(Application->ExeName.c_str());
-	const String appDir  = AppDirPath();             // se termine par un backslash
-	std::wstring newExeW = std::wstring((appDir + L"MotecDataAnalyser.new.exe").c_str());
-	std::wstring oldExeW = std::wstring((appDir + L"MotecDataAnalyser.old.exe").c_str());
-	// Copie locale de l URL : le thread worker ne doit pas lire d etat VCL.
-	const std::string urlUtf8 = m_latestRelease.assetUrl;
-	m_downloadReceived.store(0);
-	m_downloadTotal.store(-1);
-	m_updateState.store(1);                          // 1 = telechargement/update en cours
-	if (btn) btn->Enabled = false;
-	// Thread detache : telechargement + echange de fichiers. Aucun appel VCL ici ;
-	// le retour au main thread passe par les atomiques lus dans ReleasePollTimerTimer.
-	std::thread([urlUtf8, newExeW, oldExeW, curExeW, this]() {
-		bool ok = downloadReleaseAsset(urlUtf8, newExeW, [this](long long rec, long long tot) {
-			m_downloadReceived.store(rec);           // atomiques : thread-safe
-			if (tot > 0) m_downloadTotal.store(tot);
-		});
-		if (!ok) { DeleteFileW(newExeW.c_str()); m_updateState.store(3); return; }
-		// Echange d exe : courant -> .old, puis .new -> courant.
-		bool swapped = MoveFileExW(curExeW.c_str(), oldExeW.c_str(), MOVEFILE_REPLACE_EXISTING) != 0;
-		if (swapped) {
-			swapped = MoveFileExW(newExeW.c_str(), curExeW.c_str(), 0) != 0;
-			if (!swapped) DeleteFileW(newExeW.c_str());   // .new orphelin si le move a echoue
-		}
-		if (swapped) {
-			// Relance l exe avec /updated : il nettoie .old au demarrage.
-			std::wstring cmdLine = L"\"" + curExeW + L"\" /updated";
-			wchar_t* cmdBuf = new wchar_t[cmdLine.size() + 1];
-			for (size_t i = 0; i <= cmdLine.size(); ++i) cmdBuf[i] = cmdLine[i];
-			STARTUPINFOW siw; ZeroMemory(&siw, sizeof(siw));
-			siw.cb = sizeof(siw);
-			PROCESS_INFORMATION pi;
-			BOOL created = CreateProcessW(NULL, cmdBuf, NULL, NULL, FALSE, 0, NULL, NULL, &siw, &pi);
-			delete[] cmdBuf;
-			if (created) { CloseHandle(pi.hThread); CloseHandle(pi.hProcess); }
-			m_updateState.store(created ? 2 : 3);   // 2 = relance OK ; 3 = echec a signaler
-		} else {
-			DeleteFileW(newExeW.c_str());
-			m_updateState.store(3);                 // echange impossible (fichier verrouille?)
-		}
-	}).detach();
-	if (btn) btn->Caption = "Mise a jour...";       // le timer prendra le relais avec % / MB
+	TButton* btn = dynamic_cast<TButton*>(Sender);   // bouton du dialog A propos ; le timer gera la progression
+	startSelfUpdate(btn);                            // telechargement + echange exe + relance /updated
 }
-
 
 void __fastcall TFormMotecSetup::AboutDialogClosing(TObject *Sender, System::Uitypes::TCloseAction &Action)
 {

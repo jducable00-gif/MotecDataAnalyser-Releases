@@ -1,4 +1,4 @@
-//---------------------------------------------------------------------------
+﻿//---------------------------------------------------------------------------
 // MotecSetupForm.h — Déclaration de la fenêtre principale (TFormMotecSetup).
 //
 // Form VCL qui orchestre l'analyse : sélection des fichiers LD/LDX,
