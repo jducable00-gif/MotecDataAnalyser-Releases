@@ -1,4 +1,4 @@
-<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
         <ProjectGuid>{78D6ACCF-5FF1-4A2B-B43B-96C49F98CFDA}</ProjectGuid>
         <ProjectVersion>20.1</ProjectVersion>
@@ -78,8 +78,8 @@
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base)'!=''">
         <DCC_CBuilderOutput>JPHNE</DCC_CBuilderOutput>
-        <DynamicRTL>false</DynamicRTL>    <DCC_Closure>true</DCC_Closure>
-
+        <DynamicRTL>false</DynamicRTL>
+        <DCC_Closure>true</DCC_Closure>
         <UsePackages>true</UsePackages>
         <IntermediateOutputDir>.\$(Platform)\$(Config)</IntermediateOutputDir>
         <FinalOutputDir>.\$(Platform)\$(Config)</FinalOutputDir>

@@ -184,8 +184,14 @@ public:
     void __fastcall saveReleaseInfoCache(const AppRelease& rel);
     String __fastcall buildAboutText() const;  // FR/EN formatted version + notes (UI thread only)
     void __fastcall refreshAboutFormIfOpen();  // re-render memo if the About dialog is visible
+	void __fastcall startSelfUpdate(TButton* progressBtn = NULL);  // telechargement + echange exe (bouton ou popup)
+	void __fastcall promptForAvailableUpdate();   // Yes/No au demarrage si une release .exe plus recente existe
 	void __fastcall UpdateButtonClick(TObject *Sender);
 	void __fastcall AboutDialogClosing(TObject *Sender, System::Uitypes::TCloseAction &Action);
+
+	// Anti-spam du popup : tag deja propose ce lancement + tags refuses (persiste INI).
+	std::string m_updatePromptTag;      // vide = pas encore propose cette session
+	std::string m_declinedUpdateTags[8];   // versions refusees par l utilisateur (INI [ReleaseInfo] Declined*)
 
     // Phase B5: push the freshly generated report to any connected tablet. No-op when server is off.
     void __fastcall publishToTabletServer(const ReportResult& result, const std::vector<LapStats>& laps);
