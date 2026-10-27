@@ -342,11 +342,11 @@ bool downloadReleaseAsset(const std::string& urlUtf8, const std::wstring& destPa
 
             if (status == 301 || status == 302 || status == 307) {   // redirect -> header Location
                 DWORD locLen = 0;                                  // WINHTTP_QUERY_LOCATION : taille requise d'abord (-1 + len dans *lpdwBufferLength)
-                WinHttpQueryHeaders(request, 4u /*WINHTTP_QUERY_LOCATION*/, NULL, NULL, &locLen, NULL);
+                WinHttpQueryHeaders(request, 33u /*WINHTTP_QUERY_LOCATION*/, NULL, NULL, &locLen, NULL);   // SDK winhttp.h : LOCATION=33 (4 = CONTENT_DESCRIPTION — bug v5.6.13)
                 if (locLen < 2) { WinHttpCloseHandle(request); break; }   // pas de Location exploitable
 
                 std::wstring location(locLen - 1, L'\0');          // locLen incluait le NUL final
-                if (!WinHttpQueryHeaders(request, 4u /*WINHTTP_QUERY_LOCATION*/, NULL, &location[0], &locLen, NULL)) { WinHttpCloseHandle(request); break; }
+                if (!WinHttpQueryHeaders(request, 33u /*WINHTTP_QUERY_LOCATION*/, NULL, &location[0], &locLen, NULL)) { WinHttpCloseHandle(request); break; }
 
                 const std::string nextUrl = toUtf8(location);      // helper wide->utf8 ci-dessus (namespace anonyme)
                 std::wstring nHost; int nPort = 443; std::wstring nPath = L"/";
