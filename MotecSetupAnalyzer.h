@@ -206,7 +206,7 @@ struct Thresholds {
     int minLapsForReproducibility = 3;
     double histogramYOffset = 20.0;   // Percentage headroom above the tallest histogram bin
     double histogramMinYPct = 20.0;   // Minimum displayed Y-axis range (%) — floor so small data isn't stretched to full scale
-	double damperSlowSpeedRange = 25.0; // Symmetrical range around 0 to highlight slow damper section
+	double damperSlowSpeedRange = 50.0; // Symmetrical range around 0 to highlight slow damper section
 
     // Per-profile accessors
     double pressureLow(ChannelProfile) const {
