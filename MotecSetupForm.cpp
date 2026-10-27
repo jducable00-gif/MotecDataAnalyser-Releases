@@ -3929,6 +3929,7 @@ void __fastcall TFormMotecSetup::promptForAvailableUpdate()
 	for (int i = 0; i < 8; ++i) {       // deja refuse par l utilisateur ? on ne relance plus le popup.
 		if (!m_declinedUpdateTags[i].empty() && m_declinedUpdateTags[i] == tag) return;
 	}
+	if (m_updatePromptTag == tag) return;   // deja propose ce lancement : pas de re-popup pendant un download en cours.
 
 	const bool isFr = ReadReportLanguageSetting() == ReportLanguage::French;
 	String msg = String(isFr ? "Version courante : " : "Current version: ") + kAppVersion + sLineBreak
