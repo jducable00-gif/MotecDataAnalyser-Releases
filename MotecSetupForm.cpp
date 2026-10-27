@@ -235,6 +235,31 @@ ChannelProfile ReadChannelProfileSetting()
 	}
 }
 
+
+// Convert a UTF-8 byte string (simulator shared memory / UDP) to VCL UnicodeString.
+static String liveNameUtf8(const std::string& s)
+{
+	if (s.empty())
+		return String("");
+	wchar_t* wide = new wchar_t[s.size() + 1];
+	try {
+		int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), wide, (int)(s.size() + 1));
+		if (n <= 0)
+			return String(s.data()); // fallback: raw bytes as best effort
+		wide[n] = L'\u0000';
+		return String(wide);
+	} __finally {
+		delete[] wide;
+	}
+}
+
+// Localized labels for the live-summary name lines.
+static String liveNameLabel(bool french, bool vehicle)
+{
+	if (french)
+		return vehicle ? String(L"V\u00e9hicule : ") : String("Circuit : ");
+	return vehicle ? String("Vehicle: ") : String("Circuit: ");
+}
 // PMR UDP port: persisted as [PMR] Port, default 7576 (the game's documented default).
 int ReadPmrPortSetting()
 {
@@ -3280,6 +3305,11 @@ void __fastcall TFormMotecSetup::processLiveFrame(const Ams2SharedMemory& frame)
 		if (MemoEngineCooling != NULL) MemoEngineCooling->Lines->Clear();
 		if (MemoHandling != NULL)      MemoHandling->Lines->Clear();
 		MemoSummary->Lines->Add("Leaving Pits");
+		if (frame.mTrackLocation[0])
+			MemoSummary->Lines->Add(liveNameLabel(ReadReportLanguageSetting() == ReportLanguage::French, false) + liveNameUtf8(frame.mTrackLocation));
+		if (frame.mCarName[0])
+			MemoSummary->Lines->Add(liveNameLabel(ReadReportLanguageSetting() == ReportLanguage::French, true) + liveNameUtf8(frame.mCarName));
+		pushLiveStatusToTablet(std::string(frame.mCarName), std::string(frame.mTrackLocation), 0);
 		sessionLapCounter = 0;
 		lastCompletedLaps = frame.mParticipantInfo[frame.mViewedParticipantIndex].mLapsCompleted;
 		firstLapStarted = false;
@@ -3309,6 +3339,7 @@ void __fastcall TFormMotecSetup::processLiveFrame(const Ams2SharedMemory& frame)
             liveCurrentLap.trackName = frame.mTrackLocation;
 
 			MemoSummary->Lines->Add("Lap " + IntToStr(liveLapNumber) + " started.");
+			pushLiveStatusToTablet(std::string(frame.mCarName), std::string(frame.mTrackLocation), liveLapNumber);
 			//StatusBar1->SimpleText = "Live: Lap " + IntToStr(liveLapNumber) + " in progress";
 		}
 	}
@@ -3391,6 +3422,12 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
         // prevNPos == curNPos and the > 0.8 && < 0.2 condition can't trigger.
         liveEvoPrevNPos = gfx.npos;
 
+        // Show car/track names as soon as the lap starts.
+        if (gfx.car_model[0])
+            MemoSummary->Lines->Add(liveNameLabel(ReadReportLanguageSetting() == ReportLanguage::French, true) + liveNameUtf8(std::string(gfx.car_model)));
+        if (!liveTrackName.empty())
+            MemoSummary->Lines->Add(liveNameLabel(ReadReportLanguageSetting() == ReportLanguage::French, false) + liveNameUtf8(liveTrackName));
+        pushLiveStatusToTablet(std::string(gfx.car_model), liveTrackName, liveLapNumber);
         MemoSummary->Lines->Add("Lap " + IntToStr(liveLapNumber) + " started.");
 		//StatusBar1->SimpleText = "Live: Lap " + IntToStr(liveLapNumber) + " in progress";
     }
@@ -3491,6 +3528,12 @@ void __fastcall TFormMotecSetup::processLiveFramePmir()
             liveCurrentLap.vehicleName = driverName;
         liveCurrentLap.trackName  = liveTrackName;
 
+        // PMR UDP feed has no car model: driver name is the vehicle identity.
+        if (!driverName.empty())
+            MemoSummary->Lines->Add(liveNameLabel(ReadReportLanguageSetting() == ReportLanguage::French, true) + liveNameUtf8(driverName));
+        if (!liveTrackName.empty())
+            MemoSummary->Lines->Add(liveNameLabel(ReadReportLanguageSetting() == ReportLanguage::French, false) + liveNameUtf8(liveTrackName));
+        pushLiveStatusToTablet(driverName, liveTrackName, liveLapNumber);
         MemoSummary->Lines->Add("PMR Lap " + IntToStr(liveLapNumber) + " started.");
     }
 
@@ -3583,6 +3626,20 @@ void __fastcall TFormMotecSetup::generateLiveReport()
         PageControlReport->ActivePage = TabSummary;
 
     //StatusBar1->SimpleText = "Live capture complete — " + IntToStr((int)liveLaps.size()) + " laps";
+}
+
+// Phase B2: live pit-exit status for the tablet - car/track/lap appear as soon as
+// "Leaving Pits" is shown in the Summary memo. Reuses the report version counter so
+// polling tablets never re-render a stale payload.
+void __fastcall TFormMotecSetup::pushLiveStatusToTablet(const std::string& vehicleName,
+                                   const std::string& trackLocation, int lapCount)
+{
+    if (!_tabletServer.isRunning()) return;
+
+    ++tabletVersion_;
+    std::string json = "{\"version\":" + std::to_string(tabletVersion_) + ",\"meta\":{\"hasData\":true,\"carName\":\"" + reportjson::jsonEscape(vehicleName) + "\",\"trackName\":\"" + reportjson::jsonEscape(trackLocation) + "\",\"lapCount\":"
+        + (lapCount > 0 ? std::to_string(lapCount).c_str() : "null") + ",\"onTrack\":true},\"sections\":{},\"lapStats\":null}";
+    _tabletServer.setPayload(json);
 }
 
 // B5: push a fresh JSON payload to the tablet server after every analysis.

@@ -195,6 +195,8 @@ public:
 
     // Phase B5: push the freshly generated report to any connected tablet. No-op when server is off.
     void __fastcall publishToTabletServer(const ReportResult& result, const std::vector<LapStats>& laps);
+void __fastcall pushLiveStatusToTablet(const std::string& vehicleName,
+                                   const std::string& trackLocation, int lapCount);
 
     // Phase D3: live start/stop/restart the tablet web server from Settings dialog (no app restart).
     void ApplyWebServerSettings();

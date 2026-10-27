@@ -74,6 +74,11 @@ details summary{cursor:pointer;padding:.75rem 1rem;font-weight:600;display:flex;
               box-shadow:0 1px 6px rgba(0,0,0,.08);margin-top:1.5rem}
 .empty-notice h2{font-size:1.3rem;margin-bottom:.7rem;color:var(--accent)}
 
+/* --- Live pit-exit banner (B2): car/track/lap before any report exists --- */
+#liveBanner{background:#fff;border-radius:12px;padding:1.4rem 1.6rem;box-shadow:0 1px 6px rgba(0,0,0,.08);margin-top:1.5rem}
+#liveBanner .lb-title{font-size:1.35rem;font-weight:700;color:#fff;background:var(--accent);display:inline-block;padding:.25rem .9rem;border-radius:8px;margin-bottom:.9rem;letter-spacing:.4px;text-transform:uppercase}
+#liveBanner p{margin:.35rem 0;font-size:1.05rem;color:#2b2f36}
+
 /* --- Footer / status (C1) --- */
 footer{text-align:center;font-size:.76rem;color:var(--muted);padding:1rem .8rem 0}
 .hidden{display:none!important}
@@ -83,6 +88,7 @@ footer{text-align:center;font-size:.76rem;color:var(--muted);padding:1rem .8rem 
 <header>Motec Data Analyser - Session Report</header>
 <main id="content">
   <div class="empty-notice" id="emptyNotice"><h2>No session data yet</h2><p>Analyze a file on the PC and this page will update automatically.</p></div>
+  <div id="liveBanner" class="hidden"></div>
   <section id="sectionsWrap"></section>
   <section id="tyreSection" class="card hidden">
     <details open><summary>Tyre Temperatures & Pressures</summary>
@@ -119,6 +125,7 @@ footer{text-align:center;font-size:.76rem;color:var(--muted);padding:1rem .8rem 
 <script>
 "use strict";
 var lastVersion = -1;
+var liveBanner=document.getElementById("liveBanner");
 var POLL_MS = 3000;
 
 /* ---------- helpers ---------- */
@@ -600,8 +607,18 @@ function drawCombinedHistogram(canvas,damperData,cfg){
 
 /* ---------- main render + poll loop (C1) ---------- */
 function render(data){
-  document.getElementById("emptyNotice").classList.toggle("hidden",!!data.meta&&data.meta.hasData===true);
-  if(!data.sections||!Object.keys(data.sections).length)return;
+  var meta=data.meta||{};
+  document.getElementById("emptyNotice").classList.toggle("hidden",meta.hasData===true);
+  if(!data.sections||!Object.keys(data.sections).length){
+    liveBanner.classList.toggle("hidden",!(meta.onTrack===true));
+    var html=`<div class="lb-title">Out of pits</div>`;
+    if(meta.carName)html+=`<p>Car: ${esc(String(meta.carName))}</p>`;
+    if(meta.trackName)html+="<p>Track: "+esc(String(meta.trackName))+"</p>";
+    if(typeof meta.lapCount==="number")html+=`<p>Laps completed: ${meta.lapCount}</p>`;
+    liveBanner.innerHTML=html;
+    return;
+  }
+  liveBanner.classList.add("hidden");
   var ls=data.lapStats||{};
   renderSections(data);renderTyres(ls);renderBrakes(ls);renderEngineTemps(ls);renderDampers(ls);
 }
