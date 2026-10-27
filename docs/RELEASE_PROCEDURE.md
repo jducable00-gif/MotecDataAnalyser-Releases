@@ -72,9 +72,24 @@ $jsonSha = & git hash-object -w $jsonSrc
 # tree-entry name MUST be plain ASCII — the app loads this exact filename next to the exe:
 $entryName = 'MotecDataAnalyser.mapping.json'   # do NOT copy a mojibake'd name from an old HEAD
 
-$spec = Join-Path $env:TEMP 'rel.tree'
-[System.IO.File]::WriteAllLines($spec, @("100644 blob ${exeSha}`tMotecDataAnalyser.exe", "100644 blob ${jsonSha}`t${entryName}"))
-$tree = (Get-Content $spec | & git mktree).Trim()               # pipe — PS 5.1 has no '<' redirection
+# ⚠️ Do NOT feed `git mktree` through a PowerShell pipeline, and do NOT use WriteAllLines for the spec file.
+# Windows PowerShell 5.1 terminates every piped line with CRLF when handing it to native commands (and
+# WriteAllLines writes CRLF too) — both leak a trailing \r into EVERY tree-entry name: `git ls-tree` shows
+# quoted names like "MotecDataAnalyser.exe\r" and raw.githubusercontent.com 404s them silently. This is the
+# v5.6.8 incident, reproduced verbatim by this command block in v5.6.13 before being caught.
+$spec = Join-Path $env:TEMP 'rel.tree'   # LF-only bytes — WriteAllBytes, never WriteAllLines (CRLF)
+[System.IO.File]::WriteAllBytes($spec, [System.Text.Encoding]::UTF8.GetBytes("100644 blob ${exeSha}`tMotecDataAnalyser.exe`n100644 blob ${jsonSha}`t${entryName}`n"))
+# Helper script: reads the spec file ITSELF and feeds git mktree via subprocess raw stdin.
+# Written with a single-quoted here-string so PowerShell does not touch its content, and it takes only
+# one path argument (no embedded quotes survive command-line arg parsing — a classic PS pitfall).
+$helper = Join-Path $env:TEMP 'mktree_lf.py'
+Set-Content -Path $helper -Value @'
+import sys, subprocess
+data = open(sys.argv[1], "rb").read()
+r = subprocess.run(["git", "mktree"], input=data, capture_output=True)
+sys.stdout.write(r.stdout.decode().strip())
+'@
+$tree = (python $helper $spec).Trim()               # raw LF bytes in — no PS pipe
 
 $msgFile = Join-Path $env:TEMP 'rel.msg'
 [System.IO.File]::WriteAllText($msgFile, "Release v5.6.3 distribution build`n`nMotecDataAnalyser.exe + mapping.json only (no source). Update feed for the in-app self-update; published to public dist repo.")
@@ -85,9 +100,15 @@ $commit = (& git commit-tree $tree -p (git rev-parse HEAD) -F $msgFile).Trim()
 & git push --force dist "$($commit):refs/heads/main"            # public: same commit as main
 ```
 
-Verify both sides show exactly two files with clean ASCII names (byte-level check — a stray `\r` in an entry name silently 404s raw.githubusercontent.com, the v5.6.8 incident): `git ls-tree --name-only origin/release` and `git ls-tree --name-only dist/main`.
+Verify both sides show exactly two files with clean ASCII names (byte-level check — a stray `\r` in an entry name silently 404s raw.githubusercontent.com, the v5.6.8 incident). Quoted output from `git ls-tree --name-only` means non-ASCII bytes are present: run it and confirm NO quotes around either name:
 
-> **CRLF note:** if you build this tree from files checked out locally (e.g. a clone of the dist repo), git's autocrlf may expand mapping.json to CRLF on disk — that is harmless: committing it back normalizes it, and `git commit` will report only the exe as changed. The danger is in **tree-entry names**, not file content; always write them from literal ASCII strings (as above).
+```powershell
+git fetch origin release; git fetch dist main   # refresh remote refs first — local tracking refs may be stale
+$bad = @() + (git ls-tree --name-only origin/release) + (git ls-tree --name-only dist/main)
+if ($bad | Where-Object { $_ -match '[^\x20-\x7E]' }) { Write-Host 'FAIL: non-clean tree entry name — do NOT publish, rebuild the commit with LF bytes' } else { Write-Host "OK: $($bad.Count) clean entries" }
+```
+
+> **CRLF note:** there are TWO distinct CRLF hazards. (1) File *content*: if you build this tree from files checked out locally (e.g. a clone of the dist repo), git's autocrlf may expand mapping.json to CRLF on disk — harmless: committing it back normalizes it, and `git commit` will report only the exe as changed. (2) Tree-entry *names*: PowerShell 5.1 pipes inject CRLF into native-command stdin (`Get-Content $spec | git mktree`) and `[System.IO.File]::WriteAllLines` writes CRLF line endings — both put a trailing `\r` inside every entry name, which is the v5.6.8/v5.6.13 incident class. Always write spec bytes with LF only (`WriteAllBytes`, as above) and feed git through Python subprocess raw stdin.
 >
 > If `git push --force origin release` ever fails with "send-pack: unexpected disconnect" (GitHub rejects pushing objects it does not have), fall back to the Git Data API on api.github.com, all authenticated with `$tok`: POST `/repos/.../git/blobs` (base64 content; large payloads via a temp file + `curl --data-binary @file`) → GET contents@release for existing blob SHAs and parent commit sha → POST `/git/trees` (`{"base_tree": <parent>, "tree":[{path,mode:"100644",type,"sha"}]}`) → POST `/git/commits` (message/tree/parents) → force-POST `refs/heads/release`. Build JSON payloads with a Python heredoc piped to stdin — inline PS double-quote strings mangle them.
 
@@ -104,15 +125,37 @@ $rel = Invoke-RestMethod -Uri 'https://api.github.com/repos/jducable00-gif/Motec
         -Headers $headers -ContentType 'application/json; charset=utf-8' `
         -Body ([System.Text.Encoding]::UTF8.GetBytes($bodyRaw)) -Method Post
 
-# 4b. Upload the binary via uploads.github.com (curl.exe handles binary + auth header reliably).
-#     NOTE: GET on the release returns an EMPTY _links.assets.href - construct this URL manually from $rel.id.
-$exeName = 'MotecDataAnalyser.exe'   # plain ASCII; if in doubt derive it via `git ls-tree --name-only HEAD | findstr .exe`
-$url = "https://uploads.github.com/repos/jducable00-gif/MotecDataAnalyser-Releases/releases/$($rel.id)/assets?name=$exeName"
-& curl.exe -sS -X POST $url -H "Authorization: ******" `
-     -H 'Content-Type: application/octet-stream' --data-binary "@Win32\Release\Project1.exe"
-# success = response JSON contains a browser_download_url for MotecDataAnalyser.exe and size == local exe bytes
-
+# 4b. Upload the binary to uploads.github.com through a Python helper (urllib — no PS pipe/encoding hazards,
+#     and it verifies name+size in one shot). NOTE: GET on the release returns an EMPTY _links.assets.href -
+#     construct this URL manually from $rel.id.
+#     Derive BOTH the repo slug and asset name at runtime — never type them literally in a tool-call string
+#     (the product word can arrive mojibake'd mid-word; v5.6.13 shipped `MotocataAnalyzeur.exe` this way).
+$repoSlug = ((git remote get-url dist) -replace '^https?://[^/]+/', '') -replace '\.git$', ''
+$exeName  = (git ls-tree --name-only origin/release | Where-Object { $_ -like '*.exe' }).Trim()
+$url      = "https://uploads.github.com/repos/$repoSlug/releases/$($rel.id)/assets?name=" + [Uri]::EscapeDataString($exeName)
+# Upload + verify in ONE Python helper (same pattern as the mktree helper above): PowerShell pipes and `2>&1`
+# both corrupt binary/stderr streams around curl.exe — a stray stderr line makes ConvertFrom-Json fail, and an
+# uninterpolated literal Authorization header yields {"message":"Requires authentication"} while curl still exits 0.
+$up = Join-Path $env:TEMP 'upload_asset.py'
+Set-Content -Path $up -Value @'
+import json, os, sys, urllib.request
+url, exe_path, expected_name = sys.argv[1], sys.argv[2], sys.argv[3]
+data = open(exe_path, "rb").read()
+req = urllib.request.Request(url, data=data, method="POST", headers={
+    "Authorization": "Bearer " + os.environ["GH_TOKEN"],   # token via env var — never on a command line
+    "Content-Type": "application/octet-stream"})
+with urllib.request.urlopen(req) as r:
+    resp = json.load(r)
+ok_name, ok_size = resp.get("name") == expected_name, resp.get("size") == len(data)
+print(json.dumps({"id": resp.get("id"), "name": resp.get("name"), "size": resp.get("size"),
+                  "expectedName": expected_name, "localSize": len(data),
+                  "ok": ok_name and ok_size}))
+'@
+$env:GH_TOKEN = $tok   # consumed by the helper; clear it afterwards ($env:GH_TOKEN = $null)
+$r2 = (python $up $url 'Win32\Release\Project1.exe' $exeName | ConvertFrom-Json).Trim()
+if (-not $r2.ok) { Write-Host "FAIL: asset [$($r2.name)] size $($r2.size) != expected [$exeName] — DELETE it (DELETE /repos/$repoSlug/releases/assets/$($r2.id)) and re-upload" } else { Write-Host "OK: $($r2.name), $([math]::Round($r2.size/1MB,1)) MB" }
 ```
+
 
 Asset name must be exactly plain-ASCII **`MotecDataAnalyser.exe`** — never a mojibake'd variant; non-ASCII names break download URLs and user trust (v5.6.8's first dist commit shipped `Motoc???...mapping.json`). uploads.github.com also bypasses api.github.com rate limits, which 403 on large binary bodies sent to the API host directly.
 
@@ -124,6 +167,10 @@ $r = Invoke-WebRequest -Uri 'https://api.github.com/repos/jducable00-gif/MotecDa
         -UseBasicParsing -Headers @{ Accept='application/vnd.github+json'; UserAgent='motec-check' }   # expect HTTP 200, tag = $TAG
 $j = $r.Content | ConvertFrom-Json
 $exeAsset = ($j.assets | Where-Object { $_.name -like '*.exe' })[0]    # must exist with a browser_download_url
+if (-not $exeAsset) { Write-Host 'FAIL: no exe asset on latest release'; exit 1 }
+# name must be the clean ASCII one from step 3 (byte-exact, not just *.exe):
+$expected = (git ls-tree --name-only origin/release | Where-Object { $_ -like '*.exe' }).Trim()
+if ($exeAsset.name -ne $expected) { Write-Host "FAIL: asset name [$($exeAsset.name)] != expected [$expected] — delete + re-upload per step 4b"; exit 1 }
 
 # download URL reachable (302 -> CDN 200, content-length == local exe size):
 & curl.exe -sSIL $exeAsset.browser_download_url | Select-String '^HTTP|^content-length'
