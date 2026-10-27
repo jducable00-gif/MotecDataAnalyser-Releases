@@ -92,7 +92,7 @@ object FormMotecSettings: TFormMotecSettings
         Left = 16
         Top = 16
         Width = 552
-         Height = 96
+        Height = 96
         Caption = 'Pressure (psi)'
         TabOrder = 0
         object LblPressLow: TLabel
@@ -128,7 +128,7 @@ object FormMotecSettings: TFormMotecSettings
       end
       object GroupTyreTemp: TGroupBox
         Left = 16
-         Top = 120
+        Top = 120
         Width = 552
         Height = 210
         Caption = 'Temperature (C)'
@@ -136,9 +136,37 @@ object FormMotecSettings: TFormMotecSettings
         object LblFrontMinSpread: TLabel
           Left = 12
           Top = 32
-          Width = 80
+          Width = 55
           Height = 15
           Caption = 'Front Min:'
+        end
+        object LblFrontMaxSpread: TLabel
+          Left = 12
+          Top = 61
+          Width = 57
+          Height = 15
+          Caption = 'Front Max:'
+        end
+        object LblRearMinSpread: TLabel
+          Left = 340
+          Top = 32
+          Width = 50
+          Height = 15
+          Caption = 'Rear Min:'
+        end
+        object LblRearMaxSpread: TLabel
+          Left = 340
+          Top = 61
+          Width = 52
+          Height = 15
+          Caption = 'Rear Max:'
+        end
+        object LblRearOuterVsFrontStiffC: TLabel
+          Left = 12
+          Top = 92
+          Width = 158
+          Height = 15
+          Caption = 'Rear Outer vs Front Temp Diff:'
         end
         object EditFrontMinSpread: TEdit
           Left = 165
@@ -148,13 +176,6 @@ object FormMotecSettings: TFormMotecSettings
           TabOrder = 0
           Text = '4.0'
         end
-        object LblFrontMaxSpread: TLabel
-          Left = 12
-          Top = 61
-          Width = 80
-          Height = 15
-          Caption = 'Front Max:'
-        end
         object EditFrontMaxSpread: TEdit
           Left = 165
           Top = 57
@@ -162,13 +183,6 @@ object FormMotecSettings: TFormMotecSettings
           Height = 23
           TabOrder = 1
           Text = '10.0'
-        end
-        object LblRearMinSpread: TLabel
-          Left = 340
-          Top = 32
-          Width = 80
-          Height = 15
-          Caption = 'Rear Min:'
         end
         object EditRearMinSpread: TEdit
           Left = 460
@@ -178,13 +192,6 @@ object FormMotecSettings: TFormMotecSettings
           TabOrder = 2
           Text = '2.0'
         end
-        object LblRearMaxSpread: TLabel
-          Left = 340
-          Top = 61
-          Width = 80
-          Height = 15
-          Caption = 'Rear Max:'
-        end
         object EditRearMaxSpread: TEdit
           Left = 460
           Top = 57
@@ -193,14 +200,6 @@ object FormMotecSettings: TFormMotecSettings
           TabOrder = 3
           Text = '7.0'
         end
-        object LblRearOuterVsFrontStiffC: TLabel
-          Left = 12
-          Top = 92
-          Width = 248
-          Height = 15
-          Caption = 'Rear Outer vs Front Temp Diff:'
-        end
-
         object EditRearOuterVsFrontStiffC: TEdit
           Left = 300
           Top = 88
@@ -320,62 +319,62 @@ object FormMotecSettings: TFormMotecSettings
         object LblHscTarget: TLabel
           Left = 16
           Top = 32
-          Width = 70
+          Width = 51
           Height = 15
           Caption = 'Hi Comp:'
         end
         object LblLscTarget: TLabel
           Left = 16
           Top = 64
-          Width = 70
+          Width = 52
           Height = 15
           Caption = 'Lo Comp:'
         end
         object LblLsrTarget: TLabel
           Left = 16
           Top = 96
-          Width = 82
+          Width = 67
           Height = 15
           Caption = 'Lo Rebound:'
         end
         object LblHsrTarget: TLabel
           Left = 16
           Top = 128
-          Width = 84
+          Width = 66
           Height = 15
           Caption = 'Hi Rebound:'
         end
         object LblZoneToleranceHsc: TLabel
           Left = 16
           Top = 160
-          Width = 82
+          Width = 68
           Height = 15
           Caption = 'HSC Tol. (%):'
         end
         object LblZoneToleranceLsr: TLabel
-          Left = 300
-          Top = 160
-          Width = 79
+          Left = 252
+          Top = 74
+          Width = 64
           Height = 15
           Caption = 'LSR Tol. (%):'
         end
         object LblZoneToleranceLsc: TLabel
           Left = 16
           Top = 192
-          Width = 84
+          Width = 65
           Height = 15
           Caption = 'LSC Tol. (%):'
         end
         object LblZoneToleranceHsr: TLabel
-          Left = 300
-          Top = 192
-          Width = 76
+          Left = 252
+          Top = 95
+          Width = 67
           Height = 15
           Caption = 'HSR Tol. (%):'
         end
         object LblDamperSlowSpeedRange: TLabel
-          Left = 300
-          Top = 224
+          Left = 252
+          Top = 31
           Width = 142
           Height = 15
           Caption = 'Slow Speed Range (mm/s):'
@@ -383,14 +382,14 @@ object FormMotecSettings: TFormMotecSettings
         object LblHistogramYOffset: TLabel
           Left = 16
           Top = 256
-          Width = 210
+          Width = 173
           Height = 15
           Caption = 'Histogram Y-axis headroom (%):'
         end
         object LblHistogramMinYPct: TLabel
-          Left = 300
-          Top = 256
-          Width = 148
+          Left = 16
+          Top = 277
+          Width = 145
           Height = 15
           Caption = 'Minimum Y-axis range (%):'
         end
@@ -404,11 +403,11 @@ object FormMotecSettings: TFormMotecSettings
         end
         object EditLscTarget: TEdit
           Left = 130
-          Top = 60
+          Top = 63
           Width = 60
           Height = 23
           TabOrder = 1
-          Text = '35.0'
+          Text = '30.0'
         end
         object EditLsrTarget: TEdit
           Left = 130
@@ -416,7 +415,7 @@ object FormMotecSettings: TFormMotecSettings
           Width = 60
           Height = 23
           TabOrder = 2
-          Text = '35.0'
+          Text = '30.0'
         end
         object EditHsrTarget: TEdit
           Left = 130
@@ -435,8 +434,8 @@ object FormMotecSettings: TFormMotecSettings
           Text = '5.0'
         end
         object EditZoneToleranceLsr: TEdit
-          Left = 420
-          Top = 156
+          Left = 476
+          Top = 71
           Width = 60
           Height = 23
           TabOrder = 5
@@ -451,20 +450,20 @@ object FormMotecSettings: TFormMotecSettings
           Text = '5.0'
         end
         object EditZoneToleranceHsr: TEdit
-          Left = 420
-          Top = 188
+          Left = 476
+          Top = 100
           Width = 60
           Height = 23
           TabOrder = 7
           Text = '5.0'
         end
         object EditDamperSlowSpeedRange: TEdit
-          Left = 420
-          Top = 220
+          Left = 476
+          Top = 28
           Width = 60
           Height = 23
           TabOrder = 8
-          Text = '25.0'
+          Text = '50.0'
         end
         object EditHistogramYOffset: TEdit
           Left = 230
@@ -475,8 +474,8 @@ object FormMotecSettings: TFormMotecSettings
           Text = '20.0'
         end
         object EditHistogramMinYPct: TEdit
-          Left = 460
-          Top = 252
+          Left = 230
+          Top = 281
           Width = 60
           Height = 23
           TabOrder = 10
@@ -496,9 +495,23 @@ object FormMotecSettings: TFormMotecSettings
         object LblPmrBindAddress: TLabel
           Left = 16
           Top = 32
-          Width = 90
+          Width = 72
           Height = 15
           Caption = 'Bind Address:'
+        end
+        object LblPmrPort: TLabel
+          Left = 16
+          Top = 64
+          Width = 51
+          Height = 15
+          Caption = 'UDP Port:'
+        end
+        object LblPmrHint: TLabel
+          Left = 16
+          Top = 96
+          Width = 278
+          Height = 15
+          Caption = '(Leave Bind Address empty to listen on all interfaces)'
         end
         object EditPmrBindAddress: TEdit
           Left = 170
@@ -506,17 +519,9 @@ object FormMotecSettings: TFormMotecSettings
           Width = 140
           Height = 23
           TabOrder = 0
-          Text = ''
           OnChange = EditPmrBindAddressChange
           OnEnter = EditPmrBindAddressEnter
           OnExit = EditPmrBindAddressLeave
-        end
-        object LblPmrPort: TLabel
-          Left = 16
-          Top = 64
-          Width = 90
-          Height = 15
-          Caption = 'UDP Port:'
         end
         object EditPmrPort: TEdit
           Left = 170
@@ -525,13 +530,6 @@ object FormMotecSettings: TFormMotecSettings
           Height = 23
           TabOrder = 1
           Text = '7576'
-        end
-        object LblPmrHint: TLabel
-          Left = 16
-          Top = 96
-          Width = 400
-          Height = 15
-          Caption = '(Leave Bind Address empty to listen on all interfaces)'
         end
       end
     end
@@ -544,6 +542,32 @@ object FormMotecSettings: TFormMotecSettings
         Height = 140
         Caption = 'Local Web Server'
         TabOrder = 0
+        object LblWebUrl: TLabel
+          Left = 384
+          Top = 35
+          Width = 44
+          Height = 15
+          Caption = 'http://...'
+        end
+        object LblWebPort: TLabel
+          Left = 16
+          Top = 64
+          Width = 56
+          Height = 15
+          Caption = 'HTTP Port:'
+        end
+        object LblWebHint: TLabel
+          Left = 16
+          Top = 92
+          Width = 480
+          Height = 32
+          AutoSize = False
+          Caption = 
+            '(When enabled, a local web server runs so connected tablets can ' +
+            'view analysis results automatically.\r\nNote: Windows Firewall w' +
+            'ill prompt once on first start to allow inbound connections on t' +
+            'he configured port.)'
+        end
         object ChkWebServerEnabled: TCheckBox
           Left = 16
           Top = 32
@@ -553,37 +577,14 @@ object FormMotecSettings: TFormMotecSettings
           TabOrder = 0
           OnClick = ChkWebServerEnabledClick
         end
-        object LblWebUrl: TLabel
-          Left = 384
-          Top = 35
-          Width = 120
-          Height = 15
-          AutoSize = True
-          Caption = 'http://...'
-        end
-        object LblWebPort: TLabel
-          Left = 16
-          Top = 64
-          Width = 90
-          Height = 15
-          Caption = 'HTTP Port:'
-        end
         object EditWebPort: TEdit
           Left = 170
           Top = 60
           Width = 80
           Height = 23
           TabOrder = 1
-          OnChange = EditWebPortChange
           Text = '8765'
-        end
-        object LblWebHint: TLabel
-          Left = 16
-          Top = 92
-          Width = 480
-          Height = 32
-          AutoSize = False
-          Caption = '(When enabled, a local web server runs so connected tablets can view analysis results automatically.\r\nNote: Windows Firewall will prompt once on first start to allow inbound connections on the configured port.)'
+          OnChange = EditWebPortChange
         end
       end
     end

@@ -1138,6 +1138,16 @@ void __fastcall TFormMotecSetup::TranslateUI()
     applyDot(TabEngineCooling, MemoEngineCooling);
     applyDot(TabHandling, MemoHandling);
 
+    // Re-paint the GDI+ paint boxes: their captions (corner names, "Rebound"/"Bump",
+    // "No tyre temp data", ...) are drawn in code and must be re-rendered with the new language.
+    if (TireTempPaintBox != NULL)     TireTempPaintBox->Invalidate();
+    if (BrakeTempPaintBox != NULL)    BrakeTempPaintBox->Invalidate();
+    if (DamperFLPaintBox != NULL)     DamperFLPaintBox->Invalidate();
+    if (DamperFRPaintBox != NULL)     DamperFRPaintBox->Invalidate();
+    if (DamperRLPaintBox != NULL)     DamperRLPaintBox->Invalidate();
+    if (DamperRRPaintBox != NULL)     DamperRRPaintBox->Invalidate();
+    if (DamperCombinedPaintBox != NULL) DamperCombinedPaintBox->Invalidate();
+
     // Combo boxes items are usually set in DFM or constructor, 
     // but we can update them here if they were populated.
 
@@ -1370,7 +1380,7 @@ void __fastcall TFormMotecSetup::BrakeTempPaintBoxPaint(TObject *Sender)
         phFmt.SetAlignment(Gdiplus::StringAlignmentCenter);
         phFmt.SetLineAlignment(Gdiplus::StringAlignmentCenter);
         Gdiplus::RectF layoutRect(0.0f, 0.0f, (Gdiplus::REAL)width, (Gdiplus::REAL)height);
-        graphics.DrawString(isFr ? L"Aucune donn\u00e9e frein" : L"No brake data", -1, &phFont, layoutRect, &phFmt, &phTextBrush);
+        graphics.DrawString(isFr ? L"Aucune donn\u00e9e de freins" : L"No brake data", -1, &phFont, layoutRect, &phFmt, &phTextBrush);
         return;
     }
 
@@ -1718,7 +1728,7 @@ static String DamperCornerLabel(int index) {
     const bool isFr = TFormMotecSetup::ReadReportLanguageSetting() == ReportLanguage::French;
     switch (index) {
         case 0: return isFr ? L"Avant Gauche" : L"Front Left";
-        case 1: return isFr ? L"Avant Droite" : L"Front Right";
+        case 1: return isFr ? L"Avant Droit" : L"Front Right";
         case 2: return isFr ? String(L"Arri\u00e8re Gauche") : L"Rear Left";
         default:return isFr ? String(L"Arri\u00e8re Droit")  : L"Rear Right";
     }
@@ -2764,7 +2774,8 @@ void __fastcall TFormMotecSetup::ButtonResetSessionClick(TObject *Sender)
 	MemoSuspension->Lines->Clear();
 	MemoEngineCooling->Lines->Clear();
 	MemoHandling->Lines->Clear();
-	MemoSummary->Lines->Add("Session reset — ready for new collection.");
+    const bool isFrSum = ReadReportLanguageSetting() == ReportLanguage::French;
+	MemoSummary->Lines->Add(isFrSum ? "Nouvelle session - prêt pour la collecte" : "Session reset — ready for new collection.");
 
 	// Hide all data tabs (they'll reappear when the next report is generated).
 	if (TabGeneral != NULL) TabGeneral->Visible = false;
@@ -2809,7 +2820,8 @@ void __fastcall TFormMotecSetup::LiveCaptureCheckBoxClick(TObject *Sender)
 		liveMode = ProfileToLiveMode(profile);
 
         MemoSummary->Lines->Clear();
-        MemoSummary->Lines->Add("Live capture enabled. Searching for source...");
+        const bool isFrSum = ReadReportLanguageSetting() == ReportLanguage::French;
+        MemoSummary->Lines->Add(isFrSum ? "Capture en direct activée. Recherche de la source..." : "Live capture enabled. Searching for source...");
 
 		// Reset state for reconnection
 		resetLiveSession();
