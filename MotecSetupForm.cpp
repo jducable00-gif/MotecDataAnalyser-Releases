@@ -3963,6 +3963,7 @@ void __fastcall TFormMotecSetup::startSelfUpdate(TButton* progressBtn)
 	std::wstring oldExeW = (appDir + "MotecDataAnalyser.old.exe").c_str();
 
 	const std::string urlUtf8 = m_latestRelease.assetUrl;   // copie locale : le thread ne lit pas de membre du form apres detach().
+	const std::string mappingUrlUtf8 = m_latestRelease.mappingUrl;   // URL raw.githubusercontent.com pour MotecDataAnalyser.mapping.json ("" si indisponible).
 	if (urlUtf8.empty()) { MessageBoxW(NULL, L"No update asset URL available.", L"Update", MB_ICONWARNING); return; }
 
 	m_downloadReceived.store(0);
@@ -3970,13 +3971,19 @@ void __fastcall TFormMotecSetup::startSelfUpdate(TButton* progressBtn)
 	m_updateState.store(1);                  // 1 = telechargement en cours ; le timer ReleasePollTimer lit ces atomiques.
 	if (progressBtn) progressBtn->Enabled = false;   // bouton du dialog A propos : desactive pendant l update, re-active par le timer a la fin.
 
-	std::thread([urlUtf8, exeDirW, newExeW, oldExeW, curExeW, this]() {
+	std::thread([urlUtf8, mappingUrlUtf8, exeDirW, newExeW, oldExeW, curExeW, this]() {
 		bool ok = downloadReleaseAsset(urlUtf8, newExeW, [this](long long rec, long long tot) {   // thread HTTP : ne touche pas au VCL.
 			m_downloadReceived.store(rec);
 			if (tot > 0) m_downloadTotal.store(tot);
 		});
 
 		if (!ok) { DeleteFileW(newExeW.c_str()); m_updateState.store(3); return; }   // echec : on nettoie et le timer affichera l erreur.
+
+		// Telecharge aussi MotecDataAnalyser.mapping.json (version-matched). Echec non bloquant:
+		// si le json ne peut pas etre telecharge, l app utilisera son fichier local existant.
+		if (!mappingUrlUtf8.empty()) {
+			downloadReleaseAsset(mappingUrlUtf8, exeDirW + L"MotecDataAnalyser.mapping.json");   // pas de callback : fichier petit.
+		}
 
 		// Windows interdit a un processus de re-creer son propre chemin d image (MoveFileExW
 		// new->cur renvoie ACCESS_DENIED tant que ce process est vivant, meme apres avoir

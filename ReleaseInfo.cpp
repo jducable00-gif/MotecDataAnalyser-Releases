@@ -213,6 +213,25 @@ bool parseLatestReleaseJson(const std::string& json, AppRelease& out) {
             if (dl && dl->type == JsonValue::String) { out.assetUrl = dl->str; break; }
         }
     }
+
+    // mapping.json : dérivé de html_url -> raw.githubusercontent.com/{owner}/{repo}/{tag}/MotecDataAnalyser.mapping.json
+    // Pas besoin d'asset supplémentaire sur le release — le fichier est dans l'arbre dist.
+    if (!out.htmlUrl.empty() && !out.tagName.empty()) {
+        const std::string prefix = "https://github.com/";
+        size_t start = out.htmlUrl.find(prefix);
+        if (start != std::string::npos) {
+            start += prefix.size();   // après "https://github.com/"
+            size_t slash1 = out.htmlUrl.find('/', start);  // fin de owner
+            if (slash1 != std::string::npos) {
+                size_t slash2 = out.htmlUrl.find('/', slash1 + 1);  // fin de repo
+                if (slash2 != std::string::npos && slash2 > slash1 + 1) {
+                    std::string ownerRepo = out.htmlUrl.substr(start, slash2 - start);
+                    out.mappingUrl = "https://raw.githubusercontent.com/" + ownerRepo + "/" + out.tagName + "/MotecDataAnalyser.mapping.json";
+                }
+            }
+        }
+    }
+
     return true;
 }
 

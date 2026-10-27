@@ -77,7 +77,7 @@ extern "C" {
 
 // Version affichée dans la barre de statut. Bumpée par scripts/release.ps1 lors
 // de chaque release (le script met aussi à jour ce fichier et le commit).
-static const char* kAppVersion = "V5.6.8";
+static const char* kAppVersion = "V5.6.9";
 
 struct AppRelease {
     std::string tagName;      // ex: "v5.6"
@@ -85,6 +85,7 @@ struct AppRelease {
     std::string publishedAt;  // ISO-8601 brut ("2026-10-24T...Z") — formaté à l'affichage
     std::string body;         // notes de version markdown, UTF-8
     std::string assetUrl;     // browser_download_url du binaire .exe ("" si absent)
+    std::string mappingUrl;   // raw.githubusercontent.com URL de MotecDataAnalyser.mapping.json ("" si dérivable impossible)
 
     bool empty() const { return tagName.empty(); }
 };
