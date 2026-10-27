@@ -77,7 +77,7 @@ extern "C" {
 
 // Version affichée dans la barre de statut. Bumpée par scripts/release.ps1 lors
 // de chaque release (le script met aussi à jour ce fichier et le commit).
-static const char* kAppVersion = "V5.6.7";
+static const char* kAppVersion = "V5.6.8";
 
 struct AppRelease {
     std::string tagName;      // ex: "v5.6"
