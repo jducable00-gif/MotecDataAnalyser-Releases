@@ -12,7 +12,7 @@ How to cut a new version of MotecDataAnalyser so that **installed apps detect it
   - GitHub Releases (tagged `vX.Y.Z`) with the exe attached as asset named exactly `MotecDataAnalyser.exe`.
 - The app ([ReleaseInfo.cpp](../ReleaseInfo.cpp)) does an **unauthenticated** GET on
   `https://api.github.com/repos/jducable00-gif/MotecDataAnalyser-Releases/releases/latest`,
-  compares tags, and downloads the first `.exe` asset. Private repos return flat 404s to unauthenticated calls — that is why this public repo exists. **Never point the app back at the private repo.**
+  compares tags, and downloads the first `.exe` asset. Since V5.6.9 it ALSO downloads mapping.json: [ReleaseInfo.cpp](../ReleaseInfo.cpp) derives its URL from the release tag as `https://raw.githubusercontent.com/jducable00-gif/MotecDataAnalyser-Releases/{tag}/MotecDataAnalyser.mapping.json`, so **the dist tree must always contain both files with clean ASCII names** — a missing/mojibake'd json name silently 404s the mapping download (exe update itself is non-blocking on that failure, but users keep stale channel mappings). Private repos return flat 404s to unauthenticated calls — that is why this public repo exists. **Never point the app back at the private repo.**
 
 Version format: `VX.Y.Z`. The in-app comparison treats a missing segment as 0 (`V5.6` < `v5.6.1`).
 The version literal lives in one place only: [`kAppVersion`](../ReleaseInfo.h) (e.g. `"V5.6.2"`).
@@ -32,7 +32,7 @@ The version literal lives in one place only: [`kAppVersion`](../ReleaseInfo.h) (
 
 - Git remotes already configured locally: `origin` → private repo, `dist` → public dist repo. If missing:
   `git remote add dist https://github.com/jducable00-gif/MotecDataAnalyser-Releases.git`.
-- **Filename caveat:** the main form file is on disk as `Motoc→MotecSetupForm.cpp` (mojibake name). Direct editor tools may fail with ENOENT — use wildcard paths (`Get-ChildItem -Filter '*MotecSetupForm.cpp'`) and byte-safe PowerShell edits.
+- **Filename caveat:** the product word can arrive corrupted when typed literally inside agent tool-call strings (a stray character gets inserted mid-word). Never type it in commands: derive names from `git ls-tree --name-only HEAD`, `(Get-ChildItem -Filter '*.exe').Name`, or wildcard filters; if a URL must be built inline, assemble the name at runtime (e.g. Python heredoc) and verify with `.Replace()` of any corrupted variant before sending.
 
 ## Procedure
 
@@ -85,7 +85,11 @@ $commit = (& git commit-tree $tree -p (git rev-parse HEAD) -F $msgFile).Trim()
 & git push --force dist "$($commit):refs/heads/main"            # public: same commit as main
 ```
 
-Verify both sides show exactly two files: `git ls-tree --name-only origin/release` and `git ls-tree --name-only dist/main`.
+Verify both sides show exactly two files with clean ASCII names (byte-level check — a stray `\r` in an entry name silently 404s raw.githubusercontent.com, the v5.6.8 incident): `git ls-tree --name-only origin/release` and `git ls-tree --name-only dist/main`.
+
+> **CRLF note:** if you build this tree from files checked out locally (e.g. a clone of the dist repo), git's autocrlf may expand mapping.json to CRLF on disk — that is harmless: committing it back normalizes it, and `git commit` will report only the exe as changed. The danger is in **tree-entry names**, not file content; always write them from literal ASCII strings (as above).
+>
+> If `git push --force origin release` ever fails with "send-pack: unexpected disconnect" (GitHub rejects pushing objects it does not have), fall back to the Git Data API on api.github.com, all authenticated with `$tok`: POST `/repos/.../git/blobs` (base64 content; large payloads via a temp file + `curl --data-binary @file`) → GET contents@release for existing blob SHAs and parent commit sha → POST `/git/trees` (`{"base_tree": <parent>, "tree":[{path,mode:"100644",type,"sha"}]}`) → POST `/git/commits` (message/tree/parents) → force-POST `refs/heads/release`. Build JSON payloads with a Python heredoc piped to stdin — inline PS double-quote strings mangle them.
 
 ### 4 — Publish the GitHub Release on the PUBLIC repo with the exe asset (API)
 
@@ -100,14 +104,17 @@ $rel = Invoke-RestMethod -Uri 'https://api.github.com/repos/jducable00-gif/Motec
         -Headers $headers -ContentType 'application/json; charset=utf-8' `
         -Body ([System.Text.Encoding]::UTF8.GetBytes($bodyRaw)) -Method Post
 
-# 4b. Upload the binary (curl.exe handles binary + auth header reliably)
-$url = "https://uploads.github.com/repos/jducable00-gif/MotecDataAnalyser-Releases/releases/$($rel.id)/assets?name=MotecDataAnalyser.exe"
-& curl.exe -sS -X POST $url -H "Authorization: Bearer $tok" `
+# 4b. Upload the binary via uploads.github.com (curl.exe handles binary + auth header reliably).
+#     NOTE: GET on the release returns an EMPTY _links.assets.href - construct this URL manually from $rel.id.
+$exeName = 'MotecDataAnalyser.exe'   # plain ASCII; if in doubt derive it via `git ls-tree --name-only HEAD | findstr .exe`
+$url = "https://uploads.github.com/repos/jducable00-gif/MotecDataAnalyser-Releases/releases/$($rel.id)/assets?name=$exeName"
+& curl.exe -sS -X POST $url -H "Authorization: ******" `
      -H 'Content-Type: application/octet-stream' --data-binary "@Win32\Release\Project1.exe"
-# success = response JSON contains a browser_download_url for MotecDataAnalyser.exe
+# success = response JSON contains a browser_download_url for MotecDataAnalyser.exe and size == local exe bytes
+
 ```
 
-Asset name must be exactly plain-ASCII **`MotecDataAnalyser.exe`** — never a mojibake'd variant; non-ASCII names break download URLs and user trust (v5.6.8's first dist commit shipped `Motoc???...mapping.json`).
+Asset name must be exactly plain-ASCII **`MotecDataAnalyser.exe`** — never a mojibake'd variant; non-ASCII names break download URLs and user trust (v5.6.8's first dist commit shipped `Motoc???...mapping.json`). uploads.github.com also bypasses api.github.com rate limits, which 403 on large binary bodies sent to the API host directly.
 
 
 ### 5 — Verify end-to-end (unauthenticated, exactly what the app does)
@@ -122,12 +129,12 @@ $exeAsset = ($j.assets | Where-Object { $_.name -like '*.exe' })[0]    # must ex
 & curl.exe -sSIL $exeAsset.browser_download_url | Select-String '^HTTP|^content-length'
 ```
 
-All green → done. Installed apps pick it up on next launch: About box shows the new release + "Update available"; clicking download replaces **only `MotecDataAnalyser.exe`** in place (mapping.json and both INI files are left untouched — they're user-specific / already present). A newer mapping.json only reaches users who install a fresh build.
+All green → done. Installed apps pick it up on next launch: About box shows the new release + "Update available"; clicking download replaces **MotecDataAnalyser.exe** in place AND overwrites `MotecDataAnalyser.mapping.json` with the version-matched copy from raw.githubusercontent.com at refs/tags/{tag} (V5.6.9+). Only both INI files are left untouched — they're user-specific.
 
 ## Invariants / gotchas
 
 - **Deleting a release tag deletes its GitHub Release object and assets** (git push of the deleted ref removes them server-side). Recreating the bare tag does NOT restore it — you must re-run step 4a/4b via API. If you ever need to fix dist content in place, prefer force-pushing new commits/tags over deleting tags; if a delete was unavoidable, recreate the release immediately or self-update goes blind (it reads `/releases/latest`, which silently falls back to the previous version).
-- **Never** commit source to `release`/dist `main`. Keep releases clean: the only asset that matters for updates is the exe (the app picks the first `.exe` asset); mapping.json lives in-repo on dist main as reference and does NOT get re-downloaded by self-update.
+- **Never** commit source to `release`/dist `main`. Keep releases clean: the only asset that matters for updates is the exe (the app picks the first `.exe` asset); since V5.6.9 the app also downloads a version-matched `MotecDataAnalyser.mapping.json` from raw.githubusercontent.com at refs/tags/{tag}, so the dist tree must always contain BOTH files with clean ASCII names; only INI files are left untouched.
 - **Never** create distribution Releases on the private repo — unauthenticated clients get 404s there. Private tags/commits are for provenance only.
 - `kAppVersion` must be strictly greater than what is installed, or apps will report "up to date". Bump it in step 1 **before** building (step 2) so the binary reports its own version correctly.
 - Force-pushes of `release` and dist `main` are expected: each release commit is a fresh synthetic tip parented on `advanced`, not a descendant of the previous one.
