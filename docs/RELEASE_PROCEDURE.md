@@ -6,7 +6,7 @@ How to cut a new version of MotecDataAnalyser so that **installed apps detect it
 
 - **Private repo** `jducable00-gif/MotecDataAnalyser` — all source. Branches:
   - `advanced`: development branch (work happens here).
-  - `release`: contains **only two files** (`MotecDataAnalyser.exe`, `Motoc→MotecDataAnalyser.mapping.json`) at the tip of a synthetic commit whose parent is the current `advanced` tip. No source, ever.
+  - `release`: contains **only two files**, both with plain-ASCII names (`MotecDataAnalyser.exe`, `MotecDataAnalyser.mapping.json`) at the tip of a synthetic commit whose parent is the current `advanced` tip. No source, ever. The app loads its mapping from exe-relative `appDir + "MotecDataAnalyser.mapping.json"` — any non-ASCII/mojibake tree-entry name silently breaks channel mapping on fresh installs (this happened in v5.6.8's first dist commit).
 - **Public repo** `jducable00-gif/MotecDataAnalyser-Releases` — distribution/update feed only:
   - branch `main`: same two files as private `release`.
   - GitHub Releases (tagged `vX.Y.Z`) with the exe attached as asset named exactly `MotecDataAnalyser.exe`.
@@ -69,8 +69,8 @@ Build a tree containing exactly `MotecDataAnalyser.exe` (= fresh build) + mappin
 $exeSha = & git hash-object -w 'Win32\Release\Project1.exe'
 $jsonSrc = (Get-ChildItem . -Filter '*mapping.json').FullName   # wildcard: mojibake-safe
 $jsonSha = & git hash-object -w $jsonSrc
-# exact tree-entry name as git sees it in HEAD (avoids encoding mismatch):
-$entryName = (& git ls-tree --name-only HEAD | Where-Object { $_ -like '*.mapping.json' }).Trim()
+# tree-entry name MUST be plain ASCII — the app loads this exact filename next to the exe:
+$entryName = 'MotecDataAnalyser.mapping.json'   # do NOT copy a mojibake'd name from an old HEAD
 
 $spec = Join-Path $env:TEMP 'rel.tree'
 [System.IO.File]::WriteAllLines($spec, @("100644 blob ${exeSha}`tMotecDataAnalyser.exe", "100644 blob ${jsonSha}`t${entryName}"))
@@ -107,7 +107,8 @@ $url = "https://uploads.github.com/repos/jducable00-gif/MotecDataAnalyser-Releas
 # success = response JSON contains a browser_download_url for MotecDataAnalyser.exe
 ```
 
-Asset name must end in `.exe` (the app takes the first exe asset). `Motoc→MotecDataAnalyser.exe` is the established convention.
+Asset name must be exactly plain-ASCII **`MotecDataAnalyser.exe`** — never a mojibake'd variant; non-ASCII names break download URLs and user trust (v5.6.8's first dist commit shipped `Motoc???...mapping.json`).
+
 
 ### 5 — Verify end-to-end (unauthenticated, exactly what the app does)
 
@@ -125,6 +126,7 @@ All green → done. Installed apps pick it up on next launch: About box shows th
 
 ## Invariants / gotchas
 
+- **Deleting a release tag deletes its GitHub Release object and assets** (git push of the deleted ref removes them server-side). Recreating the bare tag does NOT restore it — you must re-run step 4a/4b via API. If you ever need to fix dist content in place, prefer force-pushing new commits/tags over deleting tags; if a delete was unavoidable, recreate the release immediately or self-update goes blind (it reads `/releases/latest`, which silently falls back to the previous version).
 - **Never** commit source to `release`/dist `main`. Keep releases clean: the only asset that matters for updates is the exe (the app picks the first `.exe` asset); mapping.json lives in-repo on dist main as reference and does NOT get re-downloaded by self-update.
 - **Never** create distribution Releases on the private repo — unauthenticated clients get 404s there. Private tags/commits are for provenance only.
 - `kAppVersion` must be strictly greater than what is installed, or apps will report "up to date". Bump it in step 1 **before** building (step 2) so the binary reports its own version correctly.
