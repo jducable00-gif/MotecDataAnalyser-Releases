@@ -12,8 +12,40 @@
 #include <vcl.h>
 #pragma hdrstop
 #include <tchar.h>
+#include <wchar.h>            // wcstok, _snwprintf (parsing de la ligne de commande /updated)
 #include <mmsystem.h>          // timeBeginPeriod / timeEndPeriod (1 ms timer resolution)
 #include <gdiplus.h>           // GDI+ initialization/shutdown must live here, in _tWinMain
+
+// Self-update : quand l instance courante est relancee depuis le chemin .new.exe avec
+// "/updated \"<nom d origine>\\"", on renomme cette exe vers son nom canonique (raccourcis)
+// des que possible. Retourne true si un renommage a ete effectue ou n'etait pas necessaire.
+static bool SelfUpdateRenameFromNewExe(LPTSTR cmdLine, const String& selfPath)
+{
+	if (!cmdLine || wcsstr(cmdLine, L"/updated") == NULL) return false;
+
+	const std::wstring selfW(selfPath.c_str());
+	static const wchar_t* kSuffix = L".new.exe";   // insensible a la casse (Windows).
+	bool isNewExe = selfW.size() > 8 && _wcsnicmp(&selfW[selfW.size()-8], kSuffix, 8) == 0;
+	if (!isNewExe) return false;
+
+	// Token suivant "/updated" dans une COPIE de la ligne de commande (wcstok modifie son entree).
+	std::wstring origNameW;
+	bool afterFlag = false;
+	wchar_t buf[1024] = {0}; swprintf_s(buf, 1024, L"%ls", cmdLine);   // copie locale (wcstok modifie son entree).
+	for (wchar_t* tok = wcstok(buf, L" \t"); tok != NULL; tok = wcstok(NULL, L" \t")) {
+		if (_wcsicmp(tok, L"/updated") == 0) { afterFlag = true; continue; }
+		if (!afterFlag) continue;
+		std::wstring t(tok);
+		if (t.size() >= 2 && ((t.front() == L'"') == (t.back() == L'"'))) t = t.substr(1, t.size()-2);   // dequote si present.
+		origNameW.swap(t); break;
+	}
+
+	const String dirPath = IncludeTrailingPathDelimiter(ExtractFilePath(selfPath));
+	String target = origNameW.empty() ? (dirPath + "Project1.exe") : (dirPath + origNameW.c_str());   // repli canonique si nom absent.
+	if (_wcsicmp(target.c_str(), selfPath.c_str()) == 0) return true;                                  // deja au bon endroit.
+
+	return MoveFile(selfPath.c_str(), target.c_str()) != 0;                                            // best-effort : ignore l echec (l app continue).
+}
 #pragma comment(lib, "winmm")  // winmm.lib for timeBeginPeriod/timeEndPeriod
 #pragma comment(lib, "gdiplus.lib")
 
@@ -48,6 +80,10 @@ int WINAPI _tWinMain(HINSTANCE, HINSTANCE, LPTSTR cmdLine, int)
 		if (cmdLine && wcsstr(cmdLine, L"/updated") != NULL) {
 			const String oldExe = IncludeTrailingPathDelimiter(ExtractFilePath(Application->ExeName)) + "MotecDataAnalyser.old.exe";
 			DeleteFile(oldExe.c_str());   // ignore failure — file may already be gone
+
+			// La nouvelle instance tourne depuis MotecDataAnalyser.new.exe : on la renomme vers
+			// son nom d origine (passe en argument) pour que les raccourcis continuent a pointer.
+			SelfUpdateRenameFromNewExe(cmdLine, Application->ExeName);   // best-effort ; ignore l echec.
 		}
 
 		Application->CreateForm(__classid(TFormMotecSetup), &FormMotecSetup);

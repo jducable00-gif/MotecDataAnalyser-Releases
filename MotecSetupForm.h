@@ -191,6 +191,7 @@ public:
 
 	// Anti-spam du popup : tag deja propose ce lancement + tags refuses (persiste INI).
 	std::string m_updatePromptTag;      // vide = pas encore propose cette session
+	std::string m_lastFailedTag;        // anti-spam de l alerte d echec : une seule boite par release en echec
 	std::string m_declinedUpdateTags[8];   // versions refusees par l utilisateur (INI [ReleaseInfo] Declined*)
 
     // Phase B5: push the freshly generated report to any connected tablet. No-op when server is off.

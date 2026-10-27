@@ -3978,15 +3978,18 @@ void __fastcall TFormMotecSetup::startSelfUpdate(TButton* progressBtn)
 
 		if (!ok) { DeleteFileW(newExeW.c_str()); m_updateState.store(3); return; }   // echec : on nettoie et le timer affichera l erreur.
 
-		bool swapped = (MoveFileExW(curExeW.c_str(), oldExeW.c_str(), MOVEFILE_REPLACE_EXISTING) != 0);
-		if (swapped) {
-			swapped = (MoveFileExW(newExeW.c_str(), curExeW.c_str(), 0) != 0);   // la nouvelle exe prend le nom courant.
-			if (!swapped) DeleteFileW(newExeW.c_str());                   // on ne peut pas ecrire : on garde l ancienne version intacte.
-		}
+		// Windows interdit a un processus de re-creer son propre chemin d image (MoveFileExW
+		// new->cur renvoie ACCESS_DENIED tant que ce process est vivant, meme apres avoir
+		// rename cur). On ne fait donc QUE : 1) ecarte l ancienne exe vers .old.exe, puis
+		// 2) lance directement la nouvelle depuis son chemin .new.exe avec /updated. Le WinMain
+		// de la nouvelle instance renomme alors .new.exe -> nom canonique et supprime .old.exe.
+		bool renamed = (MoveFileExW(curExeW.c_str(), oldExeW.c_str(), MOVEFILE_REPLACE_EXISTING) != 0);
 
 		bool created = false;
-		if (swapped) {   // relance de la nouvelle exe avec /updated ; le WinMain nettoiera alors MotecDataAnalyser.old.exe au demarrage.
-			std::wstring cmdLine = L"\"" + curExeW + L"\" /updated";
+		if (renamed) {   // relance de la nouvelle exe avec /updated ; le WinMain nettoiera alors MotecDataAnalyser.old.exe au demarrage.
+			std::wstring origNameW;                       // nom d origine de l exe courante : conserve les raccourcis utilisateur apres update.
+			for (size_t k = curExeW.size(); k > 0; --k) { if (curExeW[k - 1] == L'\\') { origNameW.assign(curExeW, k); break; } }
+			std::wstring cmdLine = L"\"" + newExeW + L"\" /updated \"" + origNameW + L"\"";
 			wchar_t* cmdBuf = new wchar_t[cmdLine.size() + 1];   // CreateProcessW modifie la chaine : tampon mutable obligatoire.
 			for (size_t i = 0; i <= cmdLine.size(); ++i) cmdBuf[i] = cmdLine[i];
 
@@ -4115,12 +4118,16 @@ void __fastcall TFormMotecSetup::ReleasePollTimerTimer(TObject *Sender)
 		return;
 	}
 	if (state == 3) {                           // echec update : signaler puis re-activer
-		const bool isFr = ReadReportLanguageSetting() == ReportLanguage::French;
-		MessageBox(NULL,
-			isFr ? L"Echec de la mise a jour. Verifiez votre connexion et retentez."
-			     : L"Update failed. Check your connection and try again.",
-			isFr ? L"Mise a jour" : L"Update", MB_OK | MB_ICONWARNING);
-		m_updateState.store(0); state = 0;
+		const std::string tag = m_latestRelease.tagName;   // copie locale avant le reset.
+		m_updateState.store(0); state = 0;                  // RESET AVANT la boite modale : TTimer re-entre dans sa pompe de messages, sans ce reset les popups se multipliaient (~6).
+		if (!tag.empty() && m_lastFailedTag != tag) {       // anti-spam : une seule alerte d echec par release.
+			m_lastFailedTag = tag;
+			const bool isFr = ReadReportLanguageSetting() == ReportLanguage::French;
+			MessageBox(NULL,
+				isFr ? L"Echec de la mise a jour. Verifiez votre connexion et retentez."
+				     : L"Update failed. Check your connection and try again.",
+				isFr ? L"Mise a jour" : L"Update", MB_OK | MB_ICONWARNING);
+		}
 	}
 	// Progression du telechargement sur le bouton de la boite a propos (si ouverte).
 	if (m_aboutUpdateBtn != NULL && state == 1) {

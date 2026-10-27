@@ -21,16 +21,13 @@ The version literal lives in one place only: [`kAppVersion`](../ReleaseInfo.h) (
 
 - Windows, PowerShell **5.1** (no `&&`, no `<` redirection — use pipes; git writes to stderr on success so red text + exit code 1 is normal for push output: judge by the `[new tag]`/branch lines).
 - Build toolchain via [scripts/build.ps1](../scripts/build.ps1) (`.\scripts\build.ps1 -Config Release`) → `Win32\Release\Project1.exe`. If linking fails on a locked exe, kill running instances first: `$p = Get-Process Project1; if ($p) { $p | ForEach-Object { Stop-Process -Id $_.Id } }`.
-- GitHub token for API calls (release creation + asset upload): extract from the git credential manager — **never ask the user, never print it**:
+- GitHub token for API calls (release creation + asset upload): use the **reusable PAT** stored at `.release_token.txt` in the repo root (classic `repo` scope, 90-day validity). It is git-excluded via `<git-dir>/info/exclude`, so it never enters commits - and must never be printed:
 
   ```powershell
-  $cred = 'url=https://github.com' | & git credential fill 2>$null
-  $tok = ''
-  foreach ($l in @($cred)) { if ("" + $l -like 'password=*') { $tok = "$l".Substring(9) } }
-  # use as: Authorization "Bearer $tok"   — log only $tok.Length, never the value
+  $tok = (Get-Content .release_token.txt -Raw).Trim()   # use in the Authorization header per step 4a/4b; log only length, never value
   ```
 
-**Token freshness:** these are one-time OAuth tokens (`gho_...`, length 40). Extract a FRESH token immediately before step 4 and fire release-creation + asset-upload back-to-back in ONE process. Reusing an older extracted token (or waiting minutes between calls) yields `401 Bad credentials` — that is the expected failure mode, not a missing scope; just re-extract once and retry.
+**Token freshness:** this PAT is reusable across calls and sessions - release creation + asset upload can be separate commands. If a call returns `401 Bad credentials`, the token has expired: ask the user for a fresh one (scope `repo`) and overwrite .release_token.txt. Do NOT use GCM (`git credential fill`) tokens as fallback: they are one-time OAuth grants that die after first use, so any multi-call flow 401s on call #2.
 
 
 - Git remotes already configured locally: `origin` → private repo, `dist` → public dist repo. If missing:
