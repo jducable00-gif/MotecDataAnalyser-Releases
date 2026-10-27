@@ -3991,10 +3991,18 @@ void __fastcall TFormMotecSetup::startSelfUpdate(TButton* progressBtn)
 		// rename cur). On ne fait donc QUE : 1) ecarte l ancienne exe vers .old.exe, puis
 		// 2) lance directement la nouvelle depuis son chemin .new.exe avec /updated. Le WinMain
 		// de la nouvelle instance renomme alors .new.exe -> nom canonique et supprime .old.exe.
-		bool renamed = (MoveFileExW(curExeW.c_str(), oldExeW.c_str(), MOVEFILE_REPLACE_EXISTING) != 0);
+		DeleteFileW(oldExeW.c_str());   // nettoie un .old.exe eventuel d une tentative precedente.
+
+		bool renamed = false;
+		for (int attempt = 0; attempt < 5 && !renamed; ++attempt) {   // retry : AV/Defender peut verrouiller l exe quelques secondes.
+			if (MoveFileExW(curExeW.c_str(), oldExeW.c_str(), MOVEFILE_REPLACE_EXISTING)) renamed = true;
+			else if (GetLastError() == ERROR_ACCESS_DENIED && attempt < 4) Sleep(1000);   // verrou temporaire : on retente.
+		}
 
 		bool created = false;
-		if (renamed) {   // relance de la nouvelle exe avec /updated ; le WinMain nettoiera alors MotecDataAnalyser.old.exe au demarrage.
+		if (!renamed) { DeleteFileW(newExeW.c_str()); m_updateState.store(3); return; }   // echec total du swap.
+
+		{   // relance de la nouvelle exe avec /updated ; le WinMain nettoiera alors MotecDataAnalyser.old.exe au demarrage.
 			std::wstring origNameW;                       // nom d origine de l exe courante : conserve les raccourcis utilisateur apres update.
 			for (size_t k = curExeW.size(); k > 0; --k) { if (curExeW[k - 1] == L'\\') { origNameW.assign(curExeW, k); break; } }
 			std::wstring cmdLine = L"\"" + newExeW + L"\" /updated \"" + origNameW + L"\"";
@@ -4007,7 +4015,7 @@ void __fastcall TFormMotecSetup::startSelfUpdate(TButton* progressBtn)
 			delete[] cmdBuf;
 
 			if (okProc) { CloseHandle(pi.hThread); CloseHandle(pi.hProcess); created = true; }
-		} else { DeleteFileW(newExeW.c_str()); }
+		}   // fin bloc relance.
 
 		m_updateState.store(created ? 2 : 3);   // 2 = relance en cours ; le timer terminera l ancienne instance.
 	}).detach();
