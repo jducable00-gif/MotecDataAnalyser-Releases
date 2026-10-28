@@ -761,7 +761,7 @@ public:
 				                                "Valeur attendue pour l'écart de température interne/externe supérieur à ") + fmtC(minSpread) + tr(" C", " °C");
 					result.title = pos + tr(" insufficient negative camber", " carrossage négatif insuffisant");
 					result.description = pos + tr(" tyre inner band is not hotter than the outer band.", " pneu : la bande interne n'est pas plus chaude que la bande externe.");
-					result.recommendation = tr("Increase negative camber slightly and re-check the same corner on comparable laps.", "Augmenter légèrement le carrossage négatif et revérifier le même virage sur des tours comparables.");
+					result.recommendation = tr("Increase negative camber slightly and re-check on comparable laps.", "Augmenter légèrement le carrossage négatif et revérifier sur des tours comparables.");
 					results.push_back(result);
 				}
 			}
@@ -775,7 +775,7 @@ public:
 				                                "Valeur attendue pour l'écart de température interne/externe inférieur à ") + fmtC(maxSpread) + tr(" C", " °C");
 					result.title = pos + tr(" too much negative camber", " carrossage négatif excessif");
 					result.description = pos + tr(" tyre inner band is too much hotter than the outer band.", " pneu : la bande interne est trop chaude par rapport à la bande externe.");
-					result.recommendation = tr("decrease negative camber slightly and re-check the same corner on comparable laps.", "Diminuer légèrement le carrossage négatif et revérifier le même virage sur des tours comparables.");
+					result.recommendation = tr("decrease negative camber slightly and re-check on comparable laps.", "Diminuer légèrement le carrossage négatif et revérifier sur des tours comparables.");
 					results.push_back(result);
 				}
 			}
@@ -1296,6 +1296,33 @@ struct VelocityHistogram {
         }
         return (c == 0) ? 0.0 : s / static_cast<double>(c);
     }
+
+    // --- 4-zone percentages on BIN CENTERS, same rule as the combined chart
+    // legend in MotecSetupForm::computeCombinedCornerStats(): a bin is slow iff
+    // |center| <= slowRange (the center bin at ~0 belongs to NEITHER side).
+    // Sign convention: positive velocity = compression/bump.
+
+    double percentLsc(double B) const { return pctZone(B, +1, false); }   // 0 < v <= B (low-speed compression)
+    double percentHsc(double B) const { return pctZone(B, +1, true);  }   // v > +B     (high-speed compression)
+    double percentLsr(double B) const { return pctZone(B, -1, false); }   // -B <= v < 0 (low-speed rebound)
+    double percentHsr(double B) const { return pctZone(B, -1, true);  }   // v < -B     (high-speed rebound)
+
+private:
+    // Bin-center rule identical to MotecSetupForm::computeCombinedCornerStats():
+    // side split on the sign of the bin center (the ~0 center bin belongs to NEITHER
+    // side), then slow iff |center| <= B. Returns % of all samples in that zone.
+    double pctZone(double slowRange, int sideSign, bool highSpeed) const {
+        if (totalCount == 0) return 0.0;
+        std::size_t c = 0;
+        for (int i = 0; i < kBinCount; ++i) {
+            double v = -rangeMax() + (i + 0.5) * binWidth();
+            const int sign = (v > 0.0) ? 1 : ((v < 0.0) ? -1 : 0);   // center bin (~0): neither side
+            if (sign != sideSign) continue;
+            const bool fast = std::abs(v) > slowRange + 1e-9;
+            if (fast == highSpeed) c += bins[i];
+        }
+        return 100.0 * static_cast<double>(c) / static_cast<double>(totalCount);
+    }
 };
 
 // ===============================
@@ -1334,8 +1361,11 @@ struct DamperCornerStats {
 
 // ===============================
 // Damper 4-zone analysis (HSC/LSC/LSR/HSR)
-// Zone split at —damperSlowSpeedRange mm/s:
-//   v < -B = HSC, -B <= v < 0 = LSC, 0 <= v <= B = LSR, v > B = HSR
+// Sign convention: positive velocity = compression/bump, negative = rebound.
+// Zone split at ±damperSlowSpeedRange mm/s on BIN CENTERS (same rule as the
+// combined chart legend in MotecSetupForm::computeCombinedCornerStats):
+//   |v| <= B  -> low speed : LSC (compression) / LSR (rebound)
+//   v > +B    -> HSC       ;  v < -B -> HSR
 // ===============================
 enum class DamperZoneSeverity { Normal, Moderate, Important };
 
@@ -2210,16 +2240,16 @@ inline DamperZoneReport evaluateDamperZones(const VelocityHistogram& h, ReportLa
 
     report.hasData = true;
 
-    // Zone boundaries: —damperSlowSpeedRange mm/s
-    // Sign convention: positive velocity = compression, negative = rebound
+    // Zone boundaries: ±damperSlowSpeedRange mm/s on bin centers — same rule as the
+    // combined chart legend, so report values match what is drawn. Sign convention:
+    // positive velocity = compression/bump, negative = rebound/détente.
     const double B = g_thresholds.damperSlowSpeedRange;
-    const double rMax = VelocityHistogram::rangeMax();
 
-    // Compute 4 zone percentages
-    double hscPct = h.percentInRange(B, rMax + 1.0);          // v > B (high-speed compression)
-    double lscPct = h.percentInRange(0.0, B + 1.0);           // 0 <= v <= B (low-speed compression)
-    double lsrPct = h.percentInRange(-B - 1.0, 0.0);          // -B <= v < 0 (low-speed rebound)
-    double hsrPct = h.percentInRange(-rMax - 1.0, -B);        // v < -B (high-speed rebound)
+    // Compute 4 zone percentages (bin-center rule: slow iff |center| <= B)
+    double lscPct = h.percentLsc(B);   // 0 < v <= +B : low-speed compression
+    double hscPct = h.percentHsc(B);   // v > +B      : high-speed compression
+    double lsrPct = h.percentLsr(B);   // -B <= v < 0 : low-speed rebound
+    double hsrPct = h.percentHsr(B);   // v < -B      : high-speed rebound
 
     // Classify each zone (single target + per-zone tolerance band)
     report.hsc = classifyDamperZone(hscPct, g_thresholds.damperHscTarget, g_thresholds.damperZoneToleranceHsc);

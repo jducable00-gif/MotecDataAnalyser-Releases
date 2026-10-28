@@ -360,17 +360,17 @@ void TFormMotecSettings::TranslateUI()
     LblRearOuterVsFrontStiffC->Caption = isFr ? "Écart externe Arrière vs Avant (°C) :" : "Rear Outer vs Front Temp Diff:";
 
     GroupDamperZones->Caption = isFr ? "Cibles 4 Zones Amortisseur (%)" : "Damper 4-Zone Targets (%)";
-    LblHscTarget->Caption = isFr ? "Comp. Haute :" : "Hi Comp:";
-    LblLscTarget->Caption = isFr ? "Comp. Basse :" : "Lo Comp:";
-    LblLsrTarget->Caption = isFr ? "D�tente Basse :" : "Lo Rebound:";
-    LblHsrTarget->Caption = isFr ? "D�tente Haute :" : "Hi Rebound:";
+	LblHscTarget->Caption = isFr ? "Comp. Rapide :" : "Hi Comp:";
+	LblLscTarget->Caption = isFr ? "Comp. Lente :" : "Lo Comp:";
+	LblLsrTarget->Caption = isFr ? "Détente Lente :" : "Lo Rebound:";
+	LblHsrTarget->Caption = isFr ? "Détente Rapide :" : "Hi Rebound:";
     LblZoneToleranceHsc->Caption = isFr ? "Tol. HSC (%) :" : "HSC Tol. (%):";
     LblZoneToleranceLsr->Caption = isFr ? "Tol. LSR (%) :" : "LSR Tol. (%):";
     LblZoneToleranceLsc->Caption = isFr ? "Tol. LSC (%) :" : "LSC Tol. (%):";
     LblZoneToleranceHsr->Caption = isFr ? "Tol. HSR (%) :" : "HSR Tol. (%):";
-    LblDamperSlowSpeedRange->Caption = isFr ? "Largeur Bande Basse Vitesse (mm/s) :" : "Slow Speed Range (mm/s):";
+	LblDamperSlowSpeedRange->Caption = isFr ? "Largeur Bande Vitesse Lente (mm/s) :" : "Slow Speed Range (mm/s):";
     LblHistogramYOffset->Caption = isFr ? "Marge axe Y histogramme (%) :" : "Histogram Y-axis headroom (%):";
-    LblHistogramMinYPct->Caption = isFr ? "Plancher axe Y minimum (%) :" : "Minimum Y-axis range (%):";
+	LblHistogramMinYPct->Caption = isFr ? "Échelle axe Y minimum (%) :" : "Minimum Y-axis range (%):";
 
     GroupHandling->Caption = isFr ? "Seuils de Détection" : "Detection Thresholds";
     LblBrakePedalMin->Caption = isFr ? "Pédale Frein Min :" : "Brake Pedal Min:";
@@ -391,8 +391,8 @@ void TFormMotecSettings::TranslateUI()
     ChkWebServerEnabled->Caption = isFr ? "Activer le visionneur de rapport tablette (serveur web local)" : "Enable tablet report viewer (local web server)";
     LblWebPort->Caption = isFr ? "Port HTTP :" : "HTTP Port:";
     LblWebHint->Caption = isFr
-        ? "(Quand activé, un serveur web local permet aux tablettes connectées de voir les résultats d'analyse automatiquement.\r\nNote : le Pare-feu Windows demandera une autorisation à la première activation pour le port configuré.)"
-        : "(When enabled, a local web server runs so connected tablets can view analysis results automatically.\r\nNote: Windows Firewall will prompt once on first start to allow inbound connections on the configured port.)";
+		? "(Quand activé, un serveur web local permet aux appareils Mobiles de voir les résultats d'analyse automatiquement.\r\nNote : le Pare-feu Windows demandera une autorisation à la première activation pour le port configuré.)"
+        : "(When enabled, a local web server runs so mobil devices can view analysis results automatically.\r\nNote: Windows Firewall will prompt once on first start to allow inbound connections on the configured port.)";
 
     ButtonSave->Caption = isFr ? "Enregistrer" : "Save";
     ButtonCancel->Caption = isFr ? "Annuler" : "Cancel";

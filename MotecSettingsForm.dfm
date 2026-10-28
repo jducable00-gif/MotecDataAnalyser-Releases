@@ -332,7 +332,7 @@ object FormMotecSettings: TFormMotecSettings
         end
         object LblLsrTarget: TLabel
           Left = 16
-          Top = 96
+          Top = 95
           Width = 67
           Height = 15
           Caption = 'Lo Rebound:'
