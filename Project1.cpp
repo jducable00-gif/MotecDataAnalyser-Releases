@@ -62,7 +62,10 @@ static bool SelfUpdateRenameFromNewExe(LPTSTR cmdLine, const String& selfPath)
 	const String target = dirPath + origNameW.c_str();
 	if (_wcsicmp(target.c_str(), selfPath.c_str()) == 0) return true;                                  // deja au bon endroit.
 
-	return MoveFile(selfPath.c_str(), target.c_str()) != 0;                                            // best-effort : ignore l echec (l app continue).
+	bool renamedBack = MoveFile(selfPath.c_str(), target.c_str());                                     // best-effort : ignore l echec (l app continue).
+	ReleaseInfoLog(renamedBack ? "rename-back .new.exe -> canonical name: OK"
+	                          : ("rename-back FAILED gle=" + std::to_string(GetLastError())).c_str());
+	return renamedBack;
 }
 #pragma comment(lib, "winmm")  // winmm.lib for timeBeginPeriod/timeEndPeriod
 #pragma comment(lib, "gdiplus.lib")
@@ -103,8 +106,21 @@ int WINAPI _tWinMain(HINSTANCE, HINSTANCE, LPTSTR cmdLine, int)
 		if (cmdLine && wcsstr(cmdLine, L"/updated") != NULL) {
 			markJustUpdated();   // anti-boucle : cette instance vient d'etre installee -> plus de popup update ce lancement.
 
+			// RETRY LOOP: l ancienne instance a appele Application->Terminate() mais son image (maintenant .old.exe)
+			// reste mappee en memoire jusqu'a la fin du teardown VCL/GDI+ — Windows refuse de supprimer un exe encore
+			// charge par n importe quel processus. On retente donc quelques secondes au lieu d une seule tentative.
 			const String oldExe = IncludeTrailingPathDelimiter(ExtractFilePath(selfPathBuf)) + "MotecDataAnalyser.old.exe";
-			DeleteFile(oldExe.c_str());   // ignore failure — file may already be gone
+			bool oldGone = !GetFileAttributes(oldExe.c_str()) || DeleteFile(oldExe.c_str());
+			for (int attempt = 1; !oldGone && attempt <= 20; ++attempt) {
+				Sleep(300);
+				if (!DeleteFile(oldExe.c_str())) {   // trace : on voit exactement quand le verrou est relache
+					ReleaseInfoLog(("delete .old.exe attempt " + std::to_string(attempt) +
+					    ": FAILED gle=" + std::to_string(GetLastError())).c_str());
+				} else {
+					ReleaseInfoLog(("delete .old.exe: OK on attempt " + std::to_string(attempt)).c_str());
+					break;
+				}
+			}
 
 			// La nouvelle instance tourne depuis MotecDataAnalyser.new.exe : on la renomme vers
 			// son nom d origine (passe en argument) pour que les raccourcis continuent a pointer.
@@ -113,6 +129,9 @@ int WINAPI _tWinMain(HINSTANCE, HINSTANCE, LPTSTR cmdLine, int)
 
 		Application->CreateForm(__classid(TFormMotecSetup), &FormMotecSetup);
 		Application->Run();
+
+		// Trace de sortie : si cette ligne n apparait JAMAIS dans le log apres un Terminate(), c est que la boucle VCL ne se termine pas.
+		ReleaseInfoLog("instance exiting: Run() returned — GDI+ shutdown + process exit follows");
 	}
 	catch (Exception &exception)
 	{

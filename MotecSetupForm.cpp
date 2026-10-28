@@ -4159,6 +4159,7 @@ void __fastcall TFormMotecSetup::ReleasePollTimerTimer(TObject *Sender)
 	}
 	int state = m_updateState.load();
 	if (state == 2) {                          // self-update termine, relance demarree
+		ReleaseInfoLog("self-update complete: calling Application->Terminate() on old instance");   // trace : l ancienne instance doit mourir ici.
 		Application->Terminate();              // main thread : arret propre de la VCL
 		return;
 	}
