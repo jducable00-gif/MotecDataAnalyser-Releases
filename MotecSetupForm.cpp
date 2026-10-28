@@ -3936,6 +3936,10 @@ void __fastcall TFormMotecSetup::promptForAvailableUpdate()
 {
 	if (!m_hasCachedRelease || !isUpdateAvailable(m_latestRelease)) return;   // rien de neuf (ou pas encore de reseau)
 
+	// Anti-boucle self-update : cette instance vient d'etre installee via /updated. Son kAppVersion
+	// compile est encore l ancienne -> sans ce garde-fou elle se "mettrait a jour" en boucle sur son propre .new.exe.
+	if (wasJustUpdated()) { ReleaseInfoLog("promptForAvailableUpdate: suppressed — this instance was just installed via /updated"); return; }
+
 	const std::string tag = m_latestRelease.tagName;
 	if (tag.empty()) return;
 	for (int i = 0; i < 8; ++i) {       // deja refuse par l utilisateur ? on ne relance plus le popup.
@@ -3965,7 +3969,10 @@ void __fastcall TFormMotecSetup::promptForAvailableUpdate()
 // [ReleaseInfo] Telechargement de l asset du release GitHub + echange des exe + relance avec /updated.
 void __fastcall TFormMotecSetup::startSelfUpdate(TButton* progressBtn)
 {
-	if (m_updateState.load() != 0) return;   // deja en cours
+	{
+		int st0 = m_updateState.load();
+		if (st0 != 0) { ReleaseInfoLog(("startSelfUpdate: early return, state already=" + std::to_string(st0)).c_str()); return; }   // deja en cours
+	}
 
 	std::wstring curExeW = std::wstring(Application->ExeName.c_str());
 	const String appDir = AppDirPath();      // se termine par un backslash.
@@ -3985,12 +3992,17 @@ void __fastcall TFormMotecSetup::startSelfUpdate(TButton* progressBtn)
 	if (progressBtn) progressBtn->Enabled = false;   // bouton du dialog A propos : desactive pendant l update, re-active par le timer a la fin.
 
 	std::thread([urlUtf8, mappingUrlUtf8, exeDirW, newExeW, oldExeW, curExeW, this]() {
+		ReleaseInfoLog("startSelfUpdate worker: download begin");   // trace : le thread a bien demarre
 		bool ok = downloadReleaseAsset(urlUtf8, newExeW, [this](long long rec, long long tot) {   // thread HTTP : ne touche pas au VCL.
 			m_downloadReceived.store(rec);
 			if (tot > 0) m_downloadTotal.store(tot);
 		});
 
-		if (!ok) { DeleteFileW(newExeW.c_str()); m_updateState.store(3); return; }   // echec : on nettoie et le timer affichera l erreur.
+		if (!ok) {
+			ReleaseInfoLog("startSelfUpdate worker: download FAILED -> state=3 (timer affichera l'erreur)");   // echec : on nettoie et le timer affichera l erreur.
+			DeleteFileW(newExeW.c_str()); m_updateState.store(3); return; }
+
+		ReleaseInfoLog("startSelfUpdate worker: download OK -> swap phase (MoveFileEx + CreateProcess /updated)");
 
 		// Telecharge aussi MotecDataAnalyser.mapping.json (version-matched). Echec non bloquant:
 		// si le json ne peut pas etre telecharge, l app utilisera son fichier local existant.
@@ -4024,6 +4036,11 @@ void __fastcall TFormMotecSetup::startSelfUpdate(TButton* progressBtn)
 			STARTUPINFOW siw{}; PROCESS_INFORMATION pi{};
 			siw.cb = sizeof(siw);
 			bool okProc = CreateProcessW(NULL, cmdBuf, NULL, NULL, FALSE, 0, NULL, exeDirW.c_str(), &siw, &pi) != 0;   // working dir = dossier de l exe.
+			if (okProc)
+				ReleaseInfoLog(("CreateProcess OK pid=" + std::to_string(pi.dwProcessId)).c_str());
+			else
+				ReleaseInfoLog(("CreateProcess FAILED gle=" + std::to_string(GetLastError())
+				    + " (cmd = <dirExe>\\MotecDataAnalyser.new.exe /updated \"<curName>\")").c_str());   // verrou AV sur .new.exe -> state=3
 			delete[] cmdBuf;
 
 			if (okProc) { CloseHandle(pi.hThread); CloseHandle(pi.hProcess); created = true; }

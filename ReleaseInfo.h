@@ -79,6 +79,13 @@ extern "C" {
 // de chaque release (le script met aussi à jour ce fichier et le commit).
 static const char* kAppVersion = "V5.6.14";
 
+// Diagnostic self-update : append-only log texte UTF-8 dans <dirExe>\MotecDataAnalyser.update.log.
+// Thread-safe (mutex interne) ; utilisé par downloadReleaseAsset + startSelfUpdate pour tracer
+// chaque point d'échec avec GetLastError() — indispensable car le chemin de téléchargement est
+// sinon 100% silencieux (aucun retour utilisateur si WinHttpSendRequest/ReceiveResponse/CreateFileW/
+// MoveFileExW/CreateProcessW échoue).
+void ReleaseInfoLog(const char* msg);
+
 struct AppRelease {
     std::string tagName;      // ex: "v5.6"
     std::string htmlUrl;      // page GitHub du release (lien cliquable)
@@ -128,6 +135,19 @@ void fetchLatestReleaseAsync(const std::string& owner, const std::string& repo);
 // Récupération du dernier release produit par le worker depuis l'appel précédent :
 // true + out rempli si une nouvelle donnée est disponible (sinon false).
 bool takePendingRelease(AppRelease& out);
+
+// ===============================
+// Anti-boucle self-update. Quand WinMain detecte "/updated" dans la ligne de commande,
+// c'est que CETTE instance vient d'etre installee par le self-update : son kAppVersion
+// compile est encore l ancienne (le bump n arrive qu a la prochaine release), donc sans
+// ce flag elle re-detecterait "nouvelle version", re-proposerait le popup et tenterait un
+// 2e swap sur son propre chemin .new.exe -> CreateProcess gle=2. WinMain appelle
+// markJustUpdated() ; promptForAvailableUpdate() doit alors rester muet pour la session.
+void markJustUpdated();
+
+// true si cette instance a ete relancee via /updated (self-update termine) : le popup de mise a jour est interdit.
+bool wasJustUpdated();
+
 
 // ===============================
 // Téléchargement d'un asset de release (self-update) — thread worker uniquement.

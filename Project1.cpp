@@ -13,6 +13,7 @@
 #pragma hdrstop
 #include <tchar.h>
 #include <wchar.h>            // wcstok, _snwprintf (parsing de la ligne de commande /updated)
+#include "ReleaseInfo.h"      // markJustUpdated() — anti-boucle self-update sur les lances /updated.
 #include <mmsystem.h>          // timeBeginPeriod / timeEndPeriod (1 ms timer resolution)
 #include <gdiplus.h>           // GDI+ initialization/shutdown must live here, in _tWinMain
 
@@ -41,7 +42,24 @@ static bool SelfUpdateRenameFromNewExe(LPTSTR cmdLine, const String& selfPath)
 	}
 
 	const String dirPath = IncludeTrailingPathDelimiter(ExtractFilePath(selfPath));
-	String target = origNameW.empty() ? (dirPath + "Project1.exe") : (dirPath + origNameW.c_str());   // repli canonique si nom absent.
+	if (origNameW.empty()) {   // repli canonique si le nom d origine est absent (/updated sans argument) :
+		// on derive le NOM DE FICHIER de notre propre exe en retirant le suffixe ".new" — correct dans les deux environnements
+		// (dev -> Project1.exe, install release -> MotecDataAnalyser.exe). L ancien repli dur "Project1.exe" etait faux pour une
+		// installation release. Si la derivation echoue aussi : on ne renomme pas plutot que de deviner un nom canonique inexistant.
+		size_t slashPos = selfW.find_last_of(L"\\/");            // NOM seul (sans chemin) — le target est dirPath + ce nom.
+		std::wstring fname = (slashPos == std::wstring::npos) ? selfW : selfW.substr(slashPos + 1);
+		if (fname.size() > 8 && _wcsnicmp(&fname[fname.size()-8], L".new.exe", 8) == 0)
+		{
+			std::wstring base = fname.substr(0, fname.size() - 4);   // retire ".exe"
+			if (base.size() > 4 && _wcsnicmp(&base[base.size()-4], L".new", 4) == 0)
+			{
+				origNameW = base.substr(0, base.size() - 4);          // retire ".new"
+			}
+		}
+	}
+	if (origNameW.empty()) return true;                                                                 // rien a faire : on reste sur .new.exe.
+
+	const String target = dirPath + origNameW.c_str();
 	if (_wcsicmp(target.c_str(), selfPath.c_str()) == 0) return true;                                  // deja au bon endroit.
 
 	return MoveFile(selfPath.c_str(), target.c_str()) != 0;                                            // best-effort : ignore l echec (l app continue).
@@ -72,18 +90,25 @@ int WINAPI _tWinMain(HINSTANCE, HINSTANCE, LPTSTR cmdLine, int)
 
 	try
 	{
+		// Chemin reel du processus AVANT toute init VCL : GetModuleFileNameW lit le nom ACTUEL de notre image,
+		// alors qu Application->ExeName est capture par Initialize() et reste stale si l exe a ete renomme au demarrage.
+		wchar_t selfPathBuf[MAX_PATH] = {0};
+		GetModuleFileNameW(NULL, selfPathBuf, MAX_PATH);
+
 		Application->Initialize();
 		Application->MainFormOnTaskBar = true;
 
 		// Self-update: when relaunched with /updated the previous exe was renamed to
 		// .old.exe. Delete it now that no process holds a lock on it (best-effort).
 		if (cmdLine && wcsstr(cmdLine, L"/updated") != NULL) {
-			const String oldExe = IncludeTrailingPathDelimiter(ExtractFilePath(Application->ExeName)) + "MotecDataAnalyser.old.exe";
+			markJustUpdated();   // anti-boucle : cette instance vient d'etre installee -> plus de popup update ce lancement.
+
+			const String oldExe = IncludeTrailingPathDelimiter(ExtractFilePath(selfPathBuf)) + "MotecDataAnalyser.old.exe";
 			DeleteFile(oldExe.c_str());   // ignore failure — file may already be gone
 
 			// La nouvelle instance tourne depuis MotecDataAnalyser.new.exe : on la renomme vers
 			// son nom d origine (passe en argument) pour que les raccourcis continuent a pointer.
-			SelfUpdateRenameFromNewExe(cmdLine, Application->ExeName);   // best-effort ; ignore l echec.
+			SelfUpdateRenameFromNewExe(cmdLine, selfPathBuf);   // best-effort ; ignore l echec.
 		}
 
 		Application->CreateForm(__classid(TFormMotecSetup), &FormMotecSetup);

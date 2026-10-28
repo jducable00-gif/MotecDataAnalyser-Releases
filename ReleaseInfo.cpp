@@ -58,7 +58,10 @@ static bool splitHttpUrl(const std::string& url, std::wstring& outHost, int& out
     }
 
     const size_t hostEnd = (colon == std::wstring::npos) ? wHostFull.size() : colon;   // host seul, port retiré
-    if (hostEnd == 0 || hostEnd >= wHostFull.size()) return false;                     // host vide -> échec net
+    if (hostEnd == 0) return false;                                                    // host vide ("https://:443/...") -> échec net.
+                                                                                       // ATTENTION : sans ':' , hostEnd==size est le CAS NORMAL ("https://github.com") —
+                                                                                       // l'ancienne condition "hostEnd >= size" rejetait TOUTES les URLs sans port explicite
+                                                                                       // et tuait le self-update à la première ligne de downloadReleaseAsset.
     outHost = wHostFull.substr(0, hostEnd);
 
     outPath = (ps != std::string::npos) ? toWideUtf8(url.substr(ps)) : L"/";           // path avec '/' initial, query incluse
@@ -70,23 +73,25 @@ static bool splitHttpUrl(const std::string& url, std::wstring& outHost, int& out
 // credentials Windows du compte connecte (memes mecanismes que git push ici).
 bool httpGetLatestRelease(const std::string& owner, const std::string& repo,
                           int timeoutMs, AppRelease& out) {
-    if (owner.empty() || repo.empty()) return false;
+    if (owner.empty() || repo.empty()) { ReleaseInfoLog("detection: empty owner/repo"); return false; }
+
+    ReleaseInfoLog(("detection begin: /repos/" + owner + "/" + repo + "/releases/latest").c_str());
 
     const std::wstring ua = toWideUtf8(std::string("MotecDataAnalyser/") + kAppVersion + " (+release-check)");
     HINTERNET session = WinHttpOpen(ua.c_str(), WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, NULL, NULL, 0);
-    if (!session) return false;
+    if (!session) { ReleaseInfoLog(("WinHttpOpen FAILED gle=" + std::to_string(GetLastError())).c_str()); return false; }
 
     bool ok = false;
     do {
         std::wstring wPath = toWideUtf8("/repos/" + owner + "/" + repo + "/releases/latest");
         HINTERNET connect = WinHttpConnect(session, L"api.github.com", INTERNET_DEFAULT_HTTPS_PORT, 0);
-        if (!connect) break;
+        if (!connect) { ReleaseInfoLog(("WinHttpConnect FAILED gle=" + std::to_string(GetLastError())).c_str()); break; }
 
         // lpszReferrer / acceptTypes : NULL (equivalents de WINHTTP_NO_REFERER /
         // WINHTTP_DEFAULT_ACCEPT_TYPES) — le header winhttp.h n'est pas inclus.
         HINTERNET request = WinHttpOpenRequest(connect, L"GET", wPath.c_str(), NULL,
                                                NULL, NULL, WINHTTP_FLAG_SECURE);
-        if (!request) { WinHttpCloseHandle(connect); break; }
+        if (!request) { ReleaseInfoLog(("WinHttpOpenRequest FAILED gle=" + std::to_string(GetLastError())).c_str()); WinHttpCloseHandle(connect); break; }
 
         // Timeouts reels (ms) : resolve / connect / send / receive.
         const DWORD t = timeoutMs > 0 ? static_cast<DWORD>(timeoutMs) : 8000u;
@@ -94,6 +99,7 @@ bool httpGetLatestRelease(const std::string& owner, const std::string& repo,
 
         std::wstring headers = L"Accept: application/vnd.github+json\r\n";
         if (!WinHttpSendRequest(request, headers.c_str(), static_cast<DWORD>(headers.size()), NULL, 0, 0, 0)) {
+            ReleaseInfoLog(("WinHttpSendRequest FAILED gle=" + std::to_string(GetLastError())).c_str());
             WinHttpCloseHandle(request); WinHttpCloseHandle(connect); break;
         }
 
@@ -101,10 +107,13 @@ bool httpGetLatestRelease(const std::string& owner, const std::string& repo,
         if (!WinHttpReceiveResponse(request, NULL) || !WinHttpQueryHeaders(
                 request, RELEASEINFO_QRY_STATUS,   // STATUS_CODE | FLAG_NUMBER
                 NULL /*WINHTTP_HEADER_NAME_BY_INDEX*/, &status, &sz, NULL)) {
+            ReleaseInfoLog(("WinHttpReceiveResponse/QueryHeaders FAILED gle=" + std::to_string(GetLastError())
+                           + " status=" + std::to_string(status)).c_str());
             WinHttpCloseHandle(request); WinHttpCloseHandle(connect); break;
         }
 
         if (status < 200 || status >= 300) {   // 401/403 = pas d'acces au repo prive ; 404 = aucun release
+            ReleaseInfoLog(("HTTP non-2xx status=" + std::to_string(status)).c_str());
             WinHttpCloseHandle(request); WinHttpCloseHandle(connect); break;
         }
 
@@ -116,7 +125,13 @@ bool httpGetLatestRelease(const std::string& owner, const std::string& repo,
             body.append(buf, bytes);
         }
 
+        ReleaseInfoLog(("HTTP 2xx OK, body=" + std::to_string(body.size()) + " bytes").c_str());
         ok = parseLatestReleaseJson(body, out);   // defini plus bas dans ce fichier
+        if (!ok) {
+            ReleaseInfoLog("parseLatestReleaseJson FAILED (bad JSON or missing tag_name/assets)");
+        } else {
+            ReleaseInfoLog(("detection OK: tag=" + out.tagName).c_str());
+        }
     } while (false);
 
     WinHttpCloseHandle(session);   // ferme egalement les handles connect/request enfants.
@@ -303,6 +318,37 @@ bool takePendingRelease(AppRelease& out) {
 }
 
 // ===============================
+// Anti-boucle self-update (voir markJustUpdated dans ReleaseInfo.h).
+namespace {
+    std::atomic<bool> g_justUpdated{false};
+}
+void markJustUpdated()   { g_justUpdated.store(true);  ReleaseInfoLog("markJustUpdated: /updated session — update popup suppressed for this run"); }
+bool wasJustUpdated()    { return g_justUpdated.load(); }
+
+// ===============================
+namespace {
+    std::mutex g_updateLogMutex;
+}
+void ReleaseInfoLog(const char* msg) {
+    try {
+        wchar_t buf[MAX_PATH]{}; DWORD n = GetModuleFileNameW(NULL, buf, MAX_PATH);
+        if (n == 0 || n >= MAX_PATH) return;
+        std::wstring dir(buf, n); size_t sl = dir.find_last_of(L"\\/");
+        if (sl != std::wstring::npos && sl > 2) dir.resize(sl);   // <dirExe>
+        const std::wstring path = dir + L"\\MotecDataAnalyser.update.log";   // double backslash : \M serait une séquence d'échappement invalide (W2218) et casserait le chemin.
+        HANDLE h = CreateFileW(path.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                               NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (h == INVALID_HANDLE_VALUE) return;   // log best-effort : ne jamais faire échouer l'update pour ça
+        SYSTEMTIME st{}; GetLocalTime(&st);
+        char line[1024];
+        int len = snprintf(line, sizeof(line), "[%04d-%02d-%02d %02d:%02d:%02d] %s\r\n",
+                           st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, msg);
+        if (len > 0) { DWORD wr = 0; WriteFile(h, line, static_cast<DWORD>(len), &wr, NULL); }
+        CloseHandle(h);
+    } catch (...) {}
+}
+
+// ===============================
 // Téléchargement d'un asset (self-update). Thread worker uniquement — jamais de VCL ici,
 // y compris dans onProgress() : la form ne lit que des atomiques via le callback.
 // Les assets GitHub répondent par un redirect 302 vers un CDN ; WinHTTP ne suit PAS les
@@ -312,30 +358,37 @@ bool downloadReleaseAsset(const std::string& urlUtf8, const std::wstring& destPa
     // host / port / path courants — re-découpés à chaque saut de redirect.
     std::wstring wHost; int port = 443; std::wstring wPath = L"/";
 
+    ReleaseInfoLog((std::string("downloadReleaseAsset START url=") + urlUtf8 + " dest=" + toUtf8(destPath)).c_str());
     HINTERNET session = WinHttpOpen(toWideUtf8(std::string("MotecDataAnalyser/") + kAppVersion).c_str(),
                                     WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, NULL, NULL, 0);
-    if (!session) return false;
+    if (!session) { ReleaseInfoLog(("WinHttpOpen FAILED gle=" + std::to_string(GetLastError())).c_str()); return false; }
 
     bool ok = false;
     do {
-        if (!splitHttpUrl(urlUtf8, wHost, port, wPath)) break; // URL initiale invalide -> abandon immédiat
+        if (!splitHttpUrl(urlUtf8, wHost, port, wPath)) { ReleaseInfoLog(("initial URL parse FAILED: " + urlUtf8).c_str()); break; }   // URL initiale invalide -> abandon immédiat
 
         HINTERNET connect = WinHttpConnect(session, wHost.c_str(), static_cast<USHORT>(port), 0);   // re-créé à chaque changement de host
-        if (!connect) break;
+        if (!connect) { ReleaseInfoLog(("WinHttpConnect FAILED gle=" + std::to_string(GetLastError()) + " host=" + toUtf8(wHost)).c_str()); break; }
         bool connectClosedInLoop = false;                      // true si le redirect a déjà fermé ce handle (pas de double-close en fin de bloc)
 
         for (int hop = 0; ; ++hop) {                           // boucle de redirects (max 5 sauts)
             if (hop > 4) break;                                // anti-boucle infinie CDN/proxy
 
             HINTERNET request = WinHttpOpenRequest(connect, L"GET", wPath.c_str(), NULL, NULL, NULL, WINHTTP_FLAG_SECURE);
-            if (!request) { connectClosedInLoop = true; break; }   // fermeture unique en fin de bloc (voir ci-dessous)
+            if (!request) { ReleaseInfoLog(("WinHttpOpenRequest FAILED gle=" + std::to_string(GetLastError()) + " hop=" + std::to_string(hop)).c_str()); connectClosedInLoop = true; break; }   // fermeture unique en fin de bloc (voir ci-dessous)
 
             const DWORD t = 15000u;                            // download : timeouts plus larges que le check (8 s)
             WinHttpSetTimeouts(request, t, t, t, t);
 
             std::wstring headers = L"Accept: */*\r\n";         // assets GitHub -> redirect CDN ; Accept libre
-            if (!WinHttpSendRequest(request, headers.c_str(), static_cast<DWORD>(headers.size()), NULL, 0, 0, 0)) { WinHttpCloseHandle(request); break; }
-            if (!WinHttpReceiveResponse(request, NULL))        { WinHttpCloseHandle(request); break; }
+            if (!WinHttpSendRequest(request, headers.c_str(), static_cast<DWORD>(headers.size()), NULL, 0, 0, 0)) {
+                ReleaseInfoLog(("WinHttpSendRequest FAILED gle=" + std::to_string(GetLastError())
+                    + " hop=" + std::to_string(hop) + " host=" + toUtf8(wHost)).c_str());   // proxy/SSL/DNS : cause n°1 d'échec silencieux
+                WinHttpCloseHandle(request); break; }
+            if (!WinHttpReceiveResponse(request, NULL)) {
+                ReleaseInfoLog(("WinHttpReceiveResponse FAILED gle=" + std::to_string(GetLastError())
+                    + " hop=" + std::to_string(hop) + " host=" + toUtf8(wHost)).c_str());   // timeout 15 s / reset TLS
+                WinHttpCloseHandle(request); break; }
 
             DWORD status = 599; DWORD sz = sizeof(status);     // WINHTTP_QUERY_STATUS_CODE | FLAG_NUMBER
             WinHttpQueryHeaders(request, RELEASEINFO_QRY_STATUS, NULL /*WINHTTP_HEADER_NAME_BY_INDEX*/, &status, &sz, NULL);
@@ -343,15 +396,15 @@ bool downloadReleaseAsset(const std::string& urlUtf8, const std::wstring& destPa
             if (status == 301 || status == 302 || status == 307) {   // redirect -> header Location
                 DWORD locLen = 0;                                  // WINHTTP_QUERY_LOCATION : taille requise d'abord (-1 + len dans *lpdwBufferLength)
                 WinHttpQueryHeaders(request, 33u /*WINHTTP_QUERY_LOCATION*/, NULL, NULL, &locLen, NULL);   // SDK winhttp.h : LOCATION=33 (4 = CONTENT_DESCRIPTION — bug v5.6.13)
-                if (locLen < 2) { WinHttpCloseHandle(request); break; }   // pas de Location exploitable
+                if (locLen < 2) { ReleaseInfoLog(("redirect hop=" + std::to_string(hop) + ": Location header absent/empty").c_str()); WinHttpCloseHandle(request); break; }   // pas de Location exploitable
 
                 std::wstring location(locLen - 1, L'\0');          // locLen incluait le NUL final
-                if (!WinHttpQueryHeaders(request, 33u /*WINHTTP_QUERY_LOCATION*/, NULL, &location[0], &locLen, NULL)) { WinHttpCloseHandle(request); break; }
+                if (!WinHttpQueryHeaders(request, 33u /*WINHTTP_QUERY_LOCATION*/, NULL, &location[0], &locLen, NULL)) { ReleaseInfoLog(("redirect hop=" + std::to_string(hop) + ": WinHttpQueryHeaders(LOCATION) FAILED gle=" + std::to_string(GetLastError())).c_str()); WinHttpCloseHandle(request); break; }
 
                 const std::string nextUrl = toUtf8(location);      // helper wide->utf8 ci-dessus (namespace anonyme)
                 std::wstring nHost; int nPort = 443; std::wstring nPath = L"/";
                 if (!splitHttpUrl(nextUrl, nHost, nPort, nPath))   // URLs absolues uniquement ; relatif -> abandon propre
-                    { WinHttpCloseHandle(request); break; }
+                    { ReleaseInfoLog(("redirect target parse FAILED: " + nextUrl).c_str()); WinHttpCloseHandle(request); break; }
 
                 wPath = nPath;                                     // nouveau GET vers le CDN au tour suivant
                 const bool sameTarget = (nHost == wHost && nPort == port);   // même host/port : l'handle connect reste valide tel quel
@@ -362,14 +415,20 @@ bool downloadReleaseAsset(const std::string& urlUtf8, const std::wstring& destPa
 
                 HINTERNET newConnect = sameTarget ? connect
                                                   : WinHttpConnect(session, wHost.c_str(), static_cast<USHORT>(port), 0);   // nouveau serveur CDN
-                if (!newConnect) { WinHttpCloseHandle(request); break; }           // échec de connexion -> abandon propre (request fermée explicitement ici avant le break)
+                if (!newConnect) {
+                    ReleaseInfoLog(("WinHttpConnect FAILED on redirect target gle=" + std::to_string(GetLastError())
+                        + " host=" + toUtf8(wHost)).c_str());   // échec de connexion -> abandon propre (request fermée explicitement ici avant le break)
+                    WinHttpCloseHandle(request); break; }
 
                 connect = newConnect;                                // l'ancien handle a déjà été fermé dans ce cas ; sinon même valeur
                 connectClosedInLoop = false;                         // le handle courant est à nouveau ouvert : il sera refermé en fin de bloc si la boucle s'y termine
                 WinHttpCloseHandle(request);                         // request du saut précédent terminée -> boucle sur le nouveau GET
             }
 
-            if (status != 200) { WinHttpCloseHandle(request); break; }   // 403/5xx -> échec net, pas de fichier partiel
+            if (status != 200) {
+                ReleaseInfoLog(("unexpected HTTP status=" + std::to_string(status)
+                    + " hop=" + std::to_string(hop)).c_str());   // 403/5xx -> échec net, pas de fichier partiel
+                WinHttpCloseHandle(request); break; }
 
             // --- Taille totale via Content-Length (-1 si absent / chunked) --------
             long long total = -1;
@@ -382,7 +441,10 @@ bool downloadReleaseAsset(const std::string& urlUtf8, const std::wstring& destPa
             // --- Écriture du fichier destination ----------------------------------
             HANDLE hFile = CreateFileW(destPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ, NULL,
                                        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);   // écrase un .new.exe éventuel d'un essai précédent
-            if (!hFile || hFile == INVALID_HANDLE_VALUE) { WinHttpCloseHandle(request); break; }
+            if (!hFile || hFile == INVALID_HANDLE_VALUE) {
+                ReleaseInfoLog(("CreateFileW FAILED gle=" + std::to_string(GetLastError())
+                    + " dest=" + toUtf8(destPath)).c_str());   // verrou AV / disque plein / chemin invalide
+                WinHttpCloseHandle(request); break; }
 
             char buf[65536];                                      // blocs de 64 Ko : ~80 écritures pour un exe de 5 Mo
             long long received = 0; bool ioOk = true, streamDone = false;
@@ -398,13 +460,19 @@ bool downloadReleaseAsset(const std::string& urlUtf8, const std::wstring& destPa
             CloseHandle(hFile);
             WinHttpCloseHandle(request); request = NULL;         // pas de double-close en fin de bloc
             ok = ioOk && streamDone && received > 0;              // flux terminé normalement + au moins 1 octet écrit
+            if (ok) ReleaseInfoLog(("download OK: " + std::to_string(received)
+                + " bytes -> " + toUtf8(destPath)).c_str());
+            else     ReleaseInfoLog(("read loop aborted: ioOk=" + std::string(ioOk ? "1":"0")
+                + " streamDone=" + std::string(streamDone?"1":"0")
+                + " received=" + std::to_string(received)
+                + " gle=" + std::to_string(GetLastError())).c_str());   // coupure réseau en cours de flux
             break;                                               // téléchargement achevé -> sortie définitive de la boucle (sans ça : re-GET du même URL)
         }   // boucle de redirects / lecture
 
         WinHttpCloseHandle(connect);                             // ferme aussi la request enfant éventuelle.
     } while (false);
 
-    if (!ok) DeleteFileW(destPath.c_str());                       // pas de fichier partiel laissé derrière
+    if (!ok) { ReleaseInfoLog("downloadReleaseAsset FAILED (partial file deleted)"); DeleteFileW(destPath.c_str()); }   // pas de fichier partiel laissé derrière
     WinHttpCloseHandle(session);                                  // ferme les handles enfants restants.
     return ok;
 }
